@@ -5,8 +5,8 @@ import AsyncDisplayKit
 import SwiftSignalKit
 import TelegramPresentationData
 
-private let labelFont = Font.regular(17.0)
-private let smallLabelFont = Font.regular(15.0)
+private let labelFont = UIFont(name: "SFProText-Regular", size: 16) ?? Font.regular(17.0)
+private let smallLabelFont = UIFont(name: "SFProText-Regular", size: 15) ?? Font.regular(15.0)
 
 private enum ToastDescription: Equatable {
     enum Key: Hashable {
@@ -14,12 +14,14 @@ private enum ToastDescription: Equatable {
         case microphone
         case mute
         case battery
+        case weakSignal
     }
     
     case camera
     case microphone
     case mute
     case battery
+    case weakSignal
     
     var key: Key {
         switch self {
@@ -31,6 +33,8 @@ private enum ToastDescription: Equatable {
             return .mute
         case .battery:
             return .battery
+        case .weakSignal:
+            return .weakSignal
         }
     }
 }
@@ -46,6 +50,7 @@ struct CallControllerToastContent: OptionSet {
     public static let microphone = CallControllerToastContent(rawValue: 1 << 1)
     public static let mute = CallControllerToastContent(rawValue: 1 << 2)
     public static let battery = CallControllerToastContent(rawValue: 1 << 3)
+    public static let weakSignal = CallControllerToastContent(rawValue: 1 << 4)
 }
 
 final class CallControllerToastContainerNode: ASDisplayNode {
@@ -66,7 +71,7 @@ final class CallControllerToastContainerNode: ASDisplayNode {
         super.init()
     }
     
-    private func updateToastsLayout(strings: PresentationStrings, content: CallControllerToastContent, width: CGFloat, bottomInset: CGFloat, animated: Bool) -> CGFloat {
+    private func updateToastsLayout(strings: PresentationStrings, content: CallControllerToastContent, size: CGSize, bottomInset: CGFloat, animated: Bool) -> CGFloat {
         let transition: ContainedViewLayoutTransition
         if animated {
             transition = .animated(duration: 0.3, curve: .spring)
@@ -92,6 +97,9 @@ final class CallControllerToastContainerNode: ASDisplayNode {
         }
         if content.contains(.battery) {
             toasts.append(.battery)
+        }
+        if content.contains(.weakSignal) {
+            toasts.append(.weakSignal)
         }
         
         var transitions: [ToastDescription.Key: (ContainedViewLayoutTransition, CGFloat, Bool)] = [:]
@@ -128,7 +136,7 @@ final class CallControllerToastContainerNode: ASDisplayNode {
                 case .mute:
                     toastContent = CallControllerToastItemNode.Content(
                         key: .mute,
-                        image: .microphone,
+                        image: .empty,
                         text: strings.Call_YourMicrophoneOff
                     )
                 case .battery:
@@ -137,8 +145,14 @@ final class CallControllerToastContainerNode: ASDisplayNode {
                         image: .battery,
                         text: strings.Call_BatteryLow(self.title).string
                     )
+                case .weakSignal:
+                    toastContent = CallControllerToastItemNode.Content(
+                        key: .weakSignal,
+                        image: .empty,
+                        text: "Weak network signal"
+                    )
             }
-            let toastHeight = toastNode.update(width: width, content: toastContent, transition: toastTransition)
+            let toastHeight = toastNode.update(width: size.width, content: toastContent, transition: toastTransition)
             transitions[toast.key] = (toastTransition, toastHeight, animateIn)
         }
         
@@ -162,8 +176,14 @@ final class CallControllerToastContainerNode: ASDisplayNode {
         
         for toastNode in self.visibleToastNodes {
             if let content = toastNode.currentContent, let (transition, toastHeight, animateIn) = transitions[content.key] {
-                transition.updateFrame(node: toastNode, frame: CGRect(x: 0.0, y: height, width: width, height: toastHeight))
-                height += toastHeight + spacing
+                if content.key == .weakSignal {
+                    let topSpacing = 12.0
+                    let statusHeight = 57.0
+                    transition.updateFrame(node: toastNode, frame: CGRect(x: 0.0, y: statusHeight / 2 + topSpacing, width: size.width, height: toastHeight))
+                } else {
+                    transition.updateFrame(node: toastNode, frame: CGRect(x: 0.0, y: height, width: size.width, height: toastHeight))
+                    height += toastHeight + spacing
+                }
                 
                 if animateIn {
                     toastNode.animateIn()
@@ -177,13 +197,12 @@ final class CallControllerToastContainerNode: ASDisplayNode {
         return height
     }
     
-    func updateLayout(strings: PresentationStrings, content: CallControllerToastContent?, constrainedWidth: CGFloat, bottomInset: CGFloat, transition: ContainedViewLayoutTransition) -> CGFloat {
-        self.validLayout = (constrainedWidth, bottomInset)
+    func updateLayout(strings: PresentationStrings, content: CallControllerToastContent?, size: CGSize, bottomInset: CGFloat, transition: ContainedViewLayoutTransition) -> CGFloat {
+        self.validLayout = (size.width, bottomInset)
         
         self.content = content
-        
         if let content = self.content {
-            return self.updateToastsLayout(strings: strings, content: content, width: constrainedWidth, bottomInset: bottomInset, animated: transition.isAnimated)
+            return self.updateToastsLayout(strings: strings, content: content, size: size, bottomInset: bottomInset, animated: transition.isAnimated)
         } else {
             return 0.0
         }
@@ -196,6 +215,7 @@ private class CallControllerToastItemNode: ASDisplayNode {
             case camera
             case microphone
             case battery
+            case empty
         }
         
         var key: ToastDescription.Key
@@ -271,6 +291,8 @@ private class CallControllerToastItemNode: ASDisplayNode {
                     image = generateTintedImage(image: UIImage(bundleImageName: "Call/CallToastMicrophone"), color: .white)
                 case .battery:
                     image = generateTintedImage(image: UIImage(bundleImageName: "Call/CallToastBattery"), color: .white)
+                case .empty:
+                    image = UIImage()
             }
             
             if transition.isAnimated, let image = image, let previousContent = self.iconNode.image {
@@ -282,40 +304,51 @@ private class CallControllerToastItemNode: ASDisplayNode {
                   
             self.textNode.attributedText = NSAttributedString(string: content.text, font: font, textColor: .white)
             
-            let iconSize = CGSize(width: 44.0, height: 28.0)
+            var iconSize = CGSize(width: 44.0, height: 28.0)
             let iconSpacing: CGFloat = isNarrowScreen ? 0.0 : 1.0
             let textSize = self.textNode.updateLayout(CGSize(width: width - inset * 2.0 - iconSize.width - iconSpacing, height: 100.0))
             
-            let backgroundSize = CGSize(width: iconSize.width + iconSpacing + textSize.width + 6.0 * 2.0, height: max(28.0, textSize.height + 4.0 * 2.0))
-            let backgroundFrame = CGRect(origin: CGPoint(x: floor((width - backgroundSize.width) / 2.0), y: 0.0), size: backgroundSize)
+            var backgroundSize = CGSize(width: iconSize.width + iconSpacing + textSize.width + 6.0 * 2.0, height: max(28.0, textSize.height + 4.0 * 2.0))
+            var backgroundFrame = CGRect(origin: CGPoint(x: floor((width - backgroundSize.width) / 2.0), y: 0.0), size: backgroundSize)
             
-            transition.updateFrame(node: self.clipNode, frame: backgroundFrame)
-            transition.updateFrame(view: self.effectView, frame: CGRect(origin: CGPoint(), size: backgroundFrame.size))
-            
-            self.iconNode.frame = CGRect(origin: CGPoint(), size: iconSize)
-            self.textNode.frame = CGRect(origin: CGPoint(x: iconSize.width + iconSpacing, y: topInset), size: textSize)
-            
-            self.currentHeight = backgroundSize.height
+            if content.image != .empty {
+                
+                transition.updateFrame(node: self.clipNode, frame: backgroundFrame)
+                transition.updateFrame(view: self.effectView, frame: CGRect(origin: CGPoint(), size: backgroundFrame.size))
+                
+                self.iconNode.frame = CGRect(origin: CGPoint(), size: iconSize)
+                
+                self.textNode.frame = CGRect(origin: CGPoint(x: iconSize.width + iconSpacing, y: topInset), size: textSize)
+                
+                self.currentHeight = backgroundSize.height
+            } else {
+                backgroundSize.width = textSize.width + 12.0 * 2
+                backgroundFrame.size = backgroundSize
+                backgroundFrame.origin =  CGPoint(x: floor((width - backgroundSize.width) / 2.0), y: 0.0)
+                iconSize = CGSize()
+                
+                transition.updateFrame(node: self.clipNode, frame: backgroundFrame)
+                transition.updateFrame(view: self.effectView, frame: CGRect(origin: CGPoint(), size: backgroundFrame.size))
+                
+                self.iconNode.frame = CGRect(origin: CGPoint(), size: iconSize)
+                self.textNode.frame = CGRect(origin: CGPoint(x: (backgroundSize.width - textSize.width) / 2, y: topInset), size: textSize)
+                self.currentHeight = backgroundSize.height
+            }
+
         }
         return self.currentHeight ?? 28.0
     }
     
     func animateIn() {
-        let targetFrame = self.clipNode.frame
-        let initialFrame = CGRect(x: floor((self.frame.width - 44.0) / 2.0), y: 0.0, width: 44.0, height: 28.0)
-        
-        self.clipNode.frame = initialFrame
-        
+
         self.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.2)
-        self.layer.animateSpring(from: 0.01 as NSNumber, to: 1.0 as NSNumber, keyPath: "transform.scale", duration: 0.3, damping: 105.0, completion: { _ in
-            self.clipNode.frame = targetFrame
-            
-            self.clipNode.layer.animateFrame(from: initialFrame, to: targetFrame, duration: 0.35, timingFunction: kCAMediaTimingFunctionSpring)
+        self.layer.animateSpring(from: 0.8 as NSNumber, to: 1.0 as NSNumber, keyPath: "transform.scale", duration: 0.3, damping: 105.0, completion: { _ in
+
         })
     }
     
     func animateOut(transition: ContainedViewLayoutTransition, completion: @escaping () -> Void) {
-        transition.updateTransformScale(node: self, scale: 0.1)
+        transition.updateTransformScale(node: self, scale: 0.7)
         transition.updateAlpha(node: self, alpha: 0.0, completion: { _ in
             completion()
         })
