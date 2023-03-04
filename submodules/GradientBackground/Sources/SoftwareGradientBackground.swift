@@ -566,5 +566,14 @@ public final class GradientBackgroundNode: ASDisplayNode {
         } else {
             completion()
         }
+
+        transition.updateFrame(view: self.contentView, frame: CGRect(origin: CGPoint(), size: size))
+        
+        if self.contentView.image !== previousImage || self.contentView.bounds.size != previousSize {
+            if let patternOverlayLayer = self.patternOverlayLayer, let imageHash = self.backgroundImageHash, let image = self.contentView.image, self.contentView.bounds.width > 1.0, self.contentView.bounds.height > 1.0 {
+                patternOverlayLayer.updateCompositionData(size: size, backgroundImage: image, backgroundImageHash: imageHash)
+            }
+        }
+        
     }
 }
