@@ -23,6 +23,32 @@ protocol CallControllerNodeProtocol: AnyObject {
     var acceptCall: (() -> Void)? { get set }
     var endCall: (() -> Void)? { get set }
     var back: (() -> Void)? { get set }
+    var presentCallRating: ((CallId, Bool) -> CallRatingNode?)? { get set }
+    var present: ((ViewController) -> Void)? { get set }
+    var callEnded: ((Bool) -> Void)? { get set }
+    var dismissedInteractively: (() -> Void)? { get set }
+    var dismissAllTooltips: (() -> Void)? { get set }
+    
+    func updateAudioOutputs(availableOutputs: [AudioSessionOutput], currentOutput: AudioSessionOutput?)
+    func updateCallState(_ callState: PresentationCallState)
+    func updatePeer(accountPeer: Peer, peer: Peer, hasOther: Bool)
+    
+    func animateIn()
+    func animateOut(completion: @escaping () -> Void)
+    func expandFromPipIfPossible()
+    
+    func containerLayoutUpdated(_ layout: ContainerViewLayout, navigationBarHeight: CGFloat, transition: ContainedViewLayoutTransition)
+}
+
+protocol LegacyCallControllerNodeProtocol: AnyObject {
+    var isMuted: Bool { get set }
+    
+    var toggleMute: (() -> Void)? { get set }
+    var setCurrentAudioOutput: ((AudioSessionOutput) -> Void)? { get set }
+    var beginAudioOuputSelection: ((Bool) -> Void)? { get set }
+    var acceptCall: (() -> Void)? { get set }
+    var endCall: (() -> Void)? { get set }
+    var back: (() -> Void)? { get set }
     var presentCallRating: ((CallId, Bool) -> Void)? { get set }
     var present: ((ViewController) -> Void)? { get set }
     var callEnded: ((Bool) -> Void)? { get set }
@@ -232,24 +258,25 @@ public final class CallController: ViewController {
         }
         
         self.controllerNode.presentCallRating = { [weak self] callId, isVideo in
+            var ratingNode: CallRatingNode?
             if let strongSelf = self, !strongSelf.presentedCallRating {
                 strongSelf.presentedCallRating = true
-                
-                Queue.mainQueue().after(0.5, {
-                    let window = strongSelf.window
-                    let controller = callRatingController(sharedContext: strongSelf.sharedContext, account: strongSelf.account, callId: callId, userInitiated: false, isVideo: isVideo, present: { c, a in
-                        if let window = window {
-                            c.presentationArguments = a
-                            window.present(c, on: .root, blockInteraction: false, completion: {})
-                        }
-                    }, push: { [weak self] c in
-                        if let strongSelf = self {
-                            strongSelf.push(c)
-                        }
-                    })
-                    strongSelf.present(controller, in: .window(.root))
-                })
+                ratingNode = CallRatingNodeController.obtainNode(sharedContext: strongSelf.sharedContext, account: strongSelf.account, callId: callId, userInitiated: false, isVideo: isVideo, push: { [weak self] feedbackController in
+                                            if let strongSelf = self {
+                                                strongSelf.push(feedbackController)
+                                            }
+                                        }, dismiss: { [weak self] in
+                                            if let strongSelf = self {
+                                                strongSelf.presentedCallRating = false
+                                                strongSelf.controllerNode.animateOut(completion: { [weak self] in
+                                                    self?.didPlayPresentationAnimation = false
+                                                    self?.presentingViewController?.dismiss(animated: false, completion: nil)
+                                                })
+                                            }
+                                        })
+
             }
+            return ratingNode
         }
         
         self.controllerNode.present = { [weak self] controller in
@@ -346,12 +373,17 @@ public final class CallController: ViewController {
     }
     
     override public func dismiss(completion: (() -> Void)? = nil) {
-        self.controllerNode.animateOut(completion: { [weak self] in
-            self?.didPlayPresentationAnimation = false
-            self?.presentingViewController?.dismiss(animated: false, completion: nil)
-            
-            completion?()
-        })
+        if !presentedCallRating {
+            self.controllerNode.animateOut(completion: { [weak self] in
+                self?.didPlayPresentationAnimation = false
+                self?.presentingViewController?.dismiss(animated: false, completion: nil)
+                completion?()
+            })
+        }
+        
+        
+        
+
     }
     
     @objc private func backPressed() {

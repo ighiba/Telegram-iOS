@@ -4,11 +4,11 @@ import Display
 import AsyncDisplayKit
 import SwiftSignalKit
 
-private let compactNameFont = Font.regular(28.0)
-private let regularNameFont = Font.regular(36.0)
+private let compactNameFont = UIFont(name: "SFProDisplay-Regular", size: 24) ?? Font.regular(24.0)
+private let regularNameFont = UIFont(name: "SFProDisplay-Regular", size: 28) ?? Font.regular(28.0)
 
-private let compactStatusFont = Font.regular(18.0)
-private let regularStatusFont = Font.regular(18.0)
+private let compactStatusFont = UIFont(name: "SFProDisplay-Regular", size: 18) ?? Font.regular(18.0)
+private let regularStatusFont = UIFont(name: "SFProDisplay-Regular", size: 18) ?? Font.regular(18.0)
 
 enum CallControllerStatusValue: Equatable {
     case text(string: String, displayLogo: Bool)
@@ -219,7 +219,7 @@ final class CallControllerStatusNode: ASDisplayNode {
         self.titleActivateAreaNode.frame = self.titleNode.frame
         self.statusActivateAreaNode.frame = self.statusContainerNode.frame
         
-        return titleLayout.size.height + spacing + statusLayout.size.height
+        return (titleLayout.size.height + spacing + statusLayout.size.height) * 0.838
     }
 }
 

@@ -13,7 +13,7 @@ import LocalizedPeerData
 import PhotoResources
 import CallsEmoji
 
-final class LegacyCallControllerNode: ASDisplayNode, CallControllerNodeProtocol {
+final class LegacyCallControllerNode: ASDisplayNode, LegacyCallControllerNodeProtocol {
     private let sharedContext: SharedAccountContext
     private let account: Account
     
@@ -443,7 +443,7 @@ final class LegacyCallControllerNode: ASDisplayNode, CallControllerNodeProtocol 
     
     @objc func keyPressed() {
         if self.keyPreviewNode == nil, let keyText = self.keyTextData?.1, let peer = self.peer {
-            let keyPreviewNode = CallControllerKeyPreviewNode(keyText: keyText, infoText: self.presentationData.strings.Call_EmojiDescription(EnginePeer(peer).compactDisplayTitle).string.replacingOccurrences(of: "%%", with: "%"), dismiss: { [weak self] in
+            let keyPreviewNode = CallControllerKeyPreviewNode(context: call.context, keyText: keyText, titleText: "This call in end-to end encrypted", infoText: self.presentationData.strings.Call_EmojiDescription(EnginePeer(peer).compactDisplayTitle).string.replacingOccurrences(of: "%%", with: "%"), hasVideo: false, dismiss: { [weak self] in
                 if let _ = self?.keyPreviewNode {
                     self?.backPressed()
                 }
