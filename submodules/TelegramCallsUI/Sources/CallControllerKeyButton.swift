@@ -3,6 +3,10 @@ import UIKit
 import Display
 import AsyncDisplayKit
 import CallsEmoji
+import AnimatedStickerNode
+import TelegramAnimatedStickerNode
+import TelegramCore
+import AccountContext
 
 private let labelFont = Font.regular(22.0)
 private let animationNodesCount = 3
@@ -73,8 +77,10 @@ private class EmojiSlotNode: ASDisplayNode {
 final class CallControllerKeyButton: HighlightableButtonNode {
     private let containerNode: ASDisplayNode
     private let nodes: [EmojiSlotNode]
+    private var animatedNodesSmall: [DefaultAnimatedStickerNodeImpl] = []
+    private var animatedNodesLarge: [DefaultAnimatedStickerNodeImpl] = []
     
-    var key: String = "" {
+    private var key: String = "" {
         didSet {
             var index = 0
             for emoji in self.key {
@@ -97,19 +103,23 @@ final class CallControllerKeyButton: HighlightableButtonNode {
         self.nodes.forEach({ self.containerNode.addSubnode($0) })
     }
         
-    func animateIn() {
+    func animateIn(duration: CGFloat) {
         self.layoutIfNeeded()
         self.containerNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.2)
         
-        var duration: Double = 0.75
-        for node in self.nodes {
-            node.animateIn(duration: duration)
-            duration += 0.3
+        let spacing = 16.0
+        var index = self.animatedNodesSmall.count
+        
+        for node in self.animatedNodesSmall {
+            let nodePoint = CGPoint(x: node.layer.position.x - spacing * CGFloat(index), y: node.layer.position.y)
+            node.layer.animatePosition(from: nodePoint, to: node.layer.position, duration: duration, timingFunction: CAMediaTimingFunctionName.easeInEaseOut.rawValue)
+            index -= 1
+
         }
     }
-    
+
     override func measure(_ constrainedSize: CGSize) -> CGSize {
-        return CGSize(width: 114.0, height: 26.0)
+        return CGSize(width: 102.0, height: 24.0)
     }
     
     override func layout() {
@@ -117,11 +127,71 @@ final class CallControllerKeyButton: HighlightableButtonNode {
         
         self.containerNode.frame = self.bounds
         var index = 0
-        let nodeSize = CGSize(width: 29.0, height: self.bounds.size.height)
-        for node in self.nodes {
-            node.frame = CGRect(origin: CGPoint(x: CGFloat(index) * nodeSize.width, y: 0.0), size: nodeSize)
+        let nodeSize = CGSize(width: 24.0, height: 24.0)
+        let spacing = 2.0
+        for node in self.animatedNodesSmall {
+            node.frame = CGRect(origin: CGPoint(x: CGFloat(index) * nodeSize.width + CGFloat(index) * spacing, y: 0.0), size: nodeSize)
             index += 1
         }
-        self.nodes.forEach({ self.containerNode.addSubnode($0) })
+        self.animatedNodesSmall.forEach({ self.containerNode.addSubnode($0) })
     }
+    
+    public func setKey(_ text: String, context: AccountContext) {
+        self.key = text
+        
+        self.animatedNodesSmall = obtainEmojiNodes(keyText: self.key, size: CGSize(width: 24.0, height: 24.0), for: context)
+        self.animatedNodesLarge = obtainEmojiNodes(keyText: self.key, size: CGSize(width: 48.0, height: 48.0), for: context)
+    }
+    
+    private func obtainEmojiNodes(keyText: String, size: CGSize, for context: AccountContext) -> [DefaultAnimatedStickerNodeImpl] {
+        let emojis = keyText.emojis
+        var emojiNodes: [DefaultAnimatedStickerNodeImpl] = []
+
+        let hasStickersWithoutAnimation: Bool = {
+            for emoji in emojis {
+                if context.animatedEmojiStickers[emoji]?.first?.file == nil {
+                    return true
+                }
+            }
+            return false
+        }()
+
+        for emoji in emojis {
+            let animationNode = DefaultAnimatedStickerNodeImpl()
+            animationNode.displaysAsynchronously = true
+      
+            let emojiFile: TelegramMediaFile? = context.animatedEmojiStickers[emoji]?.first?.file
+            
+            if emojiFile != nil && !hasStickersWithoutAnimation {
+                animationNode.setup(source: AnimatedStickerResourceSource(account: context.account, resource: emojiFile!.resource, fitzModifier: nil), width: Int(size.width), height: Int(size.height), playbackMode: .loop, mode: .direct(cachePathPrefix: nil))
+                animationNode.frame = CGRect(origin: CGPoint(), size: size)
+                emojiNodes.append(animationNode)
+            } else {
+                animationNode.frame = CGRect(origin: CGPoint(), size: size)
+                let staticEmojiImageView = self.generateStaticEmojiImageView(emoji: emoji, size: size)
+                animationNode.view.addSubview(staticEmojiImageView)
+                emojiNodes.append(animationNode)
+            }
+        }
+        return emojiNodes
+    }
+    
+    private func generateStaticEmojiImageView(emoji: String, size: CGSize) -> UIImageView {
+        let font = UIFont.systemFont(ofSize: size.width - 5)
+        let attributes = [NSAttributedString.Key.font: font]
+        let imageRect = CGRect(origin: CGPoint(), size: size)
+
+        
+        UIGraphicsBeginImageContextWithOptions(size, false, 0)
+        UIColor.clear.set()
+        UIRectFill(CGRect(origin: CGPoint(), size: size))
+        emoji.draw(at: CGPoint.zero, withAttributes: attributes)
+        let image = UIGraphicsGetImageFromCurrentImageContext()
+        UIGraphicsEndImageContext()
+        let emojiImageView = UIImageView(frame: imageRect)
+        emojiImageView.image = image
+
+        return emojiImageView
+    }
+    
 }
