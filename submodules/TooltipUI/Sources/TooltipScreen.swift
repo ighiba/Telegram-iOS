@@ -144,6 +144,24 @@ private final class TooltipScreenNode: ViewControllerTracingNode {
             }
             maskLayer.frame = CGRect(origin: CGPoint(), size: arrowSize)
             self.arrowContainer.layer.mask = maskLayer
+        } else if case .dark = style {
+            self.effectView = UIVisualEffectView(effect: UIBlurEffect(style: .dark))
+            self.backgroundContainerNode.clipsToBounds = true
+            self.backgroundContainerNode.cornerRadius = 14.0
+            if #available(iOS 13.0, *) {
+                self.backgroundContainerNode.layer.cornerCurve = .continuous
+            }
+            fontSize = 17.0
+            
+            self.arrowEffectView = UIVisualEffectView(effect: UIBlurEffect(style: .dark))
+            self.arrowContainer.view.addSubview(self.arrowEffectView!)
+            
+            let maskLayer = CAShapeLayer()
+            if let path = try? svgPath("M85.882251,0 C79.5170552,0 73.4125613,2.52817247 68.9116882,7.02834833 L51.4264069,24.5109211 C46.7401154,29.1964866 39.1421356,29.1964866 34.4558441,24.5109211 L16.9705627,7.02834833 C12.4696897,2.52817247 6.36519576,0 0,0 L85.882251,0 ", scale: CGPoint(x: 0.333333, y: 0.333333), offset: CGPoint()) {
+                maskLayer.path = path.cgPath
+            }
+            maskLayer.frame = CGRect(origin: CGPoint(), size: arrowSize)
+            self.arrowContainer.layer.mask = maskLayer
         } else if case let .gradient(leftColor, rightColor) = style {
             self.gradientNode = ASDisplayNode()
             self.gradientNode?.setLayerBlock({
@@ -204,6 +222,14 @@ private final class TooltipScreenNode: ViewControllerTracingNode {
         case .info:
             self.animatedStickerNode.setup(source: AnimatedStickerNodeLocalFileSource(name: "anim_infotip"), width: Int(70 * UIScreenScale), height: Int(70 * UIScreenScale), playbackMode: .once, mode: .direct(cachePathPrefix: nil))
             self.animatedStickerNode.automaticallyLoadFirstFrame = true
+        case .lock:
+            let image = generateTintedImage(image: UIImage(bundleImageName: "Chat/Input/Media/PanelSectionLockIcon"), color: UIColor.white)
+            let imageView = UIImageView(image: image)
+            imageView.frame = CGRect(x: 11, y: -2, width: 12.0, height: 19.0)
+            self.animatedStickerNode.view.frame = imageView.frame
+            self.animatedStickerNode.view.addSubview(imageView)
+            self.animatedStickerNode.automaticallyLoadFirstFrame = true
+            
         }
         
         super.init()
@@ -312,7 +338,7 @@ private final class TooltipScreenNode: ViewControllerTracingNode {
             animationSize = CGSize(width: 32.0, height: 32.0)
             animationInset = (70.0 - animationSize.width) / 2.0
             animationSpacing = 8.0
-        case .info:
+        case .info, .lock:
             animationSize = CGSize(width: 32.0, height: 32.0)
             animationInset = 0.0
             animationSpacing = 8.0
@@ -328,7 +354,7 @@ private final class TooltipScreenNode: ViewControllerTracingNode {
         switch self.tooltipStyle {
             case .default, .gradient:
                 backgroundHeight = max(animationSize.height, textSize.height) + contentVerticalInset * 2.0
-            case .light:
+            case .light, .dark:
                 backgroundHeight = max(28.0, max(animationSize.height, textSize.height) + 4.0 * 2.0)
         }
                     
@@ -470,7 +496,7 @@ private final class TooltipScreenNode: ViewControllerTracingNode {
         switch self.icon {
         case .chatListPress:
             animationDelay = 0.6
-        case .info:
+        case .info, .lock:
             animationDelay = 0.2
         case .none:
             animationDelay = 0.0
@@ -527,6 +553,7 @@ public final class TooltipScreen: ViewController {
     public enum Icon {
         case info
         case chatListPress
+        case lock
     }
     
     public enum DismissOnTouch {
@@ -553,6 +580,7 @@ public final class TooltipScreen: ViewController {
     public enum Style {
         case `default`
         case light
+        case dark
         case gradient(UIColor, UIColor)
     }
     
