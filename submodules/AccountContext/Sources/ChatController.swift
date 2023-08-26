@@ -671,6 +671,9 @@ public protocol ChatController: ViewController {
     
     var isSelectingMessagesUpdated: ((Bool) -> Void)? { get set }
     func cancelSelectingMessages()
+    
+    /// (titleNode, activityNode, self.avatarNode, navigationBar, chatBackgroundNode)
+    func getChatPreviewTransitionNodes() -> (ASDisplayNode?, ASDisplayNode?, ASDisplayNode?, ASDisplayNode?, ASDisplayNode?)
 }
 
 public protocol ChatMessagePreviewItemNode: AnyObject {

@@ -79,6 +79,48 @@ private final class ContextControllerContentSourceImpl: ContextControllerContent
     }
 }
 
+private final class ContextChatPreviewContentSourceImpl: ContextChatPreviewContentSource {
+    
+    let controller: ViewController
+    weak var sourceNode: ASDisplayNode?
+    
+    let navigationController: NavigationController?
+    
+    let transitionNodes: (ASDisplayNode?, ASDisplayNode?, ASDisplayNode?, ASDisplayNode?, ASDisplayNode?)
+    
+    let passthroughTouches: Bool = true
+    
+    init(
+        controller: ViewController,
+        sourceNode: ASDisplayNode?,
+        navigationController: NavigationController?,
+        transitionNodes: (ASDisplayNode?, ASDisplayNode?, ASDisplayNode?, ASDisplayNode?, ASDisplayNode?)
+    ) {
+        self.controller = controller
+        self.sourceNode = sourceNode
+        self.navigationController = navigationController
+        self.transitionNodes = transitionNodes
+    }
+    
+    func transitionInfo() -> ContextChatPreviewTakeControllerInfo? {
+        let sourceNode = self.sourceNode
+        return ContextChatPreviewTakeControllerInfo(
+            contentAreaInScreenSpace: CGRect(origin: .zero, size: CGSize(width: 10.0, height: 10.0)),
+            sourceNode: { [weak sourceNode] in
+                if let sourceNode = sourceNode {
+                    return (sourceNode.view, sourceNode.bounds)
+                } else {
+                    return nil
+                }
+            },
+            transitionNodes: self.transitionNodes
+        )
+    }
+    
+    func animatedIn() {
+    }
+}
+
 public class ChatListControllerImpl: TelegramBaseController, ChatListController {
     private var validLayout: ContainerViewLayout?
     
@@ -1326,7 +1368,13 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
                         } else {
                             let chatController = strongSelf.context.sharedContext.makeChatController(context: strongSelf.context, chatLocation: .peer(id: peer.peerId), subject: nil, botStart: nil, mode: .standard(previewing: true))
                             chatController.canReadHistory.set(false)
-                            source = .controller(ContextControllerContentSourceImpl(controller: chatController, sourceNode: node, navigationController: strongSelf.navigationController as? NavigationController))
+                            let contentSource = ContextChatPreviewContentSourceImpl(
+                                controller: chatController,
+                                sourceNode: node,
+                                navigationController: strongSelf.navigationController as? NavigationController,
+                                transitionNodes: chatController.getChatPreviewTransitionNodes()
+                            )
+                            source = .chatPreview(contentSource)
                         }
                         
                         let contextController = ContextController(account: strongSelf.context.account, presentationData: strongSelf.presentationData, source: source, items: chatContextMenuItems(context: strongSelf.context, peerId: peer.peerId, promoInfo: promoInfo, source: .chatList(filter: strongSelf.chatListDisplayNode.mainContainerNode.currentItemNode.chatListFilter), chatListController: strongSelf, joined: joined) |> map { ContextController.Items(content: .list($0)) }, gesture: gesture)

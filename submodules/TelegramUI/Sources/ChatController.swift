@@ -19096,6 +19096,12 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
     private func updateNextChannelToReadVisibility() {
         self.chatDisplayNode.historyNode.offerNextChannelToRead = self.offerNextChannelToRead && self.presentationInterfaceState.interfaceState.selectionState == nil
     }
+
+    public func getChatPreviewTransitionNodes() -> (ASDisplayNode?, ASDisplayNode?, ASDisplayNode?, ASDisplayNode?, ASDisplayNode?) {
+        let titleNode = chatTitleView?.titleTextNode
+        let activityNode = chatTitleView?.activityNode
+        return (titleNode, activityNode, self.avatarNode, self.navigationBar, self.chatBackgroundNode)
+    }
 }
 
 private final class ContextControllerContentSourceImpl: ContextControllerContentSource {

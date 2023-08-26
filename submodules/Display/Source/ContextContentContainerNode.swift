@@ -17,7 +17,7 @@ public final class ContextContentContainerNode: ASDisplayNode {
             break
         case .extracted:
             break
-        case let .controller(controller):
+        case let .controller(controller), let .chatPreview(controller, _):
             transition.updatePosition(node: controller, position: CGPoint(x: scaledSize.width / 2.0, y: scaledSize.height / 2.0))
             transition.updateBounds(node: controller, bounds: CGRect(origin: CGPoint(), size: size))
             transition.updateTransformScale(node: controller, scale: scaledSize.width / size.width)
