@@ -1668,7 +1668,7 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
                 break
             }
             
-            self.isUserInteractionEnabled = false
+            self.isUserInteractionEnabled = true
             self.isAnimatingOut = true
             
             self.scrollNode.view.setContentOffset(self.scrollNode.view.contentOffset, animated: false)
@@ -1698,8 +1698,8 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
                 }
             }
             
-            let defaultDuration = 5.2 * animationDurationFactor
-            let springDuration: Double = 10.35 * animationDurationFactor
+            let defaultDuration = 0.2 * animationDurationFactor
+            let springDuration: Double = 0.35 * animationDurationFactor
             let springDamping: CGFloat = 300.0
             
             if #available(iOS 10.0, *) {
@@ -1909,6 +1909,12 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
                     completedActionsNode = true
                     intermediateCompletion()
                 }
+                
+                let contentNodeCompletion: () -> Void = { [weak self] in
+                    self?.isUserInteractionEnabled = false
+                    completedContentNode = true
+                    intermediateCompletion()
+                }
 
                 self.contentContainerNode.layer.animateSpring(from: contentRectStart.height as NSNumber, to: contentRectEnd.height as NSNumber, keyPath: "bounds.size.height", duration: springDuration, initialVelocity: 0.0, damping: springDamping, removeOnCompletion: false)
                 self.contentContainerNode.allowsGroupOpacity = true
@@ -1916,8 +1922,13 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
                 self.contentContainerNode.layer.animateSpring(from: NSNumber(cgPoint: contentRectStart.center), to: NSNumber(cgPoint: contentRectEnd.center), keyPath: "position", duration: springDuration, initialVelocity: 0.0, damping: springDamping, removeOnCompletion: false) { [weak self] _ in
                     self?.contentContainerNode.isHidden = true
                     sourceController.sourceView.isHidden = false
-                    completedContentNode = true
-                    intermediateCompletion()
+                    if let sourceViewSnapshot {
+                        sourceViewSnapshot.layer.animateBackgroundColor(from: sourceViewBackgroundColor, to: UIColor.clear.cgColor, duration: defaultDuration * 0.3, removeOnCompletion: false) { _ in
+                            contentNodeCompletion()
+                        }
+                    } else {
+                        contentNodeCompletion()
+                    }
                 }
             } else {
                 if let contentNode = self.contentContainerNode.contentNode, case let .chatPreview(controller, _) = contentNode {
