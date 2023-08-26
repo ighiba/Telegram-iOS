@@ -987,35 +987,20 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
                 
                 extracted.willUpdateIsExtractedToContextPreview?(true, .animated(duration: 0.2, curve: .easeInOut))
             case .controller:
-
-                let defaultDuration: Double = 4 // 0.2 * animationDurationFactor
-                let springDuration: Double = 8 //0.52 * animationDurationFactor
+                let springDuration: Double = 0.52 * animationDurationFactor
                 let springDamping: CGFloat = 110.0
                 
-                let contentRectStart = self.originalProjectedContentViewFrame?.0 ?? .zero
-                let contentRectEnd = self.contentContainerNode.frame
-
-                let actionsPositionStart = CGPoint(
-                    x: self.actionsContainerNode.frame.center.x * 0.2,
-                    y: contentRectStart.center.y + contentRectStart.height / 2 + self.actionsContainerNode.frame.height * 0.2 / 2 + self.contentContainerNode.frame.origin.x * 0.2
-                )
-
+                self.actionsContainerNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.2 * animationDurationFactor)
                 self.actionsContainerNode.layer.animateSpring(from: 0.1 as NSNumber, to: 1.0 as NSNumber, keyPath: "transform.scale", duration: springDuration, initialVelocity: 0.0, damping: springDamping)
-                self.actionsContainerNode.allowsGroupOpacity = true
-                self.actionsContainerNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: defaultDuration) { [weak self] _ in
-                    self?.actionsContainerNode.allowsGroupOpacity = false
-                }
-
-                self.contentContainerNode.layer.animateSpring(from: contentRectStart.height as NSNumber, to: contentRectEnd.height as NSNumber, keyPath: "bounds.size.height", duration: springDuration, initialVelocity: 0.0, damping: springDamping)
                 self.contentContainerNode.allowsGroupOpacity = true
-                self.contentContainerNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: defaultDuration) { [weak self] _ in
+                self.contentContainerNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.2 * animationDurationFactor, completion: { [weak self] _ in
                     self?.contentContainerNode.allowsGroupOpacity = false
-                }
-
+                })
+                
                 if let originalProjectedContentViewFrame = self.originalProjectedContentViewFrame {
                     let localSourceFrame = self.view.convert(CGRect(origin: CGPoint(x: originalProjectedContentViewFrame.1.minX, y: originalProjectedContentViewFrame.1.minY), size: CGSize(width: originalProjectedContentViewFrame.1.width, height: originalProjectedContentViewFrame.1.height)), to: self.scrollNode.view)
-                    print(localSourceFrame)
-                    //self.contentContainerNode.layer.animateSpring(from: min(localSourceFrame.width / self.contentContainerNode.frame.width, localSourceFrame.height / self.contentContainerNode.frame.height) as NSNumber, to: 1.0 as NSNumber, keyPath: "transform.scale", duration: springDuration, initialVelocity: 0.0, damping: springDamping)
+                    
+                    self.contentContainerNode.layer.animateSpring(from: min(localSourceFrame.width / self.contentContainerNode.frame.width, localSourceFrame.height / self.contentContainerNode.frame.height) as NSNumber, to: 1.0 as NSNumber, keyPath: "transform.scale", duration: springDuration, initialVelocity: 0.0, damping: springDamping)
                     
                     switch self.source {
                     case let .controller(controller):
@@ -1023,12 +1008,26 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
                     default:
                         break
                     }
+                    
+                    let contentContainerOffset = CGPoint(x: localSourceFrame.center.x - self.contentContainerNode.frame.center.x, y: localSourceFrame.center.y - self.contentContainerNode.frame.center.y)
+                    if let contentNode = self.contentContainerNode.contentNode, case let .controller(controller) = contentNode {
+                        let snapshotView: UIView? = nil// controller.sourceNode.view.snapshotContentTree()
+                        if let snapshotView = snapshotView {
+                            controller.sourceView.isHidden = true
+                            
+                            self.view.insertSubview(snapshotView, belowSubview: self.contentContainerNode.view)
+                            snapshotView.layer.animateSpring(from: NSValue(cgPoint: localSourceFrame.center), to: NSValue(cgPoint: CGPoint(x: self.contentContainerNode.frame.midX, y: self.contentContainerNode.frame.minY + localSourceFrame.height / 2.0)), keyPath: "position", duration: springDuration, initialVelocity: 0.0, damping: springDamping, removeOnCompletion: false)
+                            //snapshotView.layer.animateSpring(from: 1.0 as NSNumber, to: (self.contentContainerNode.frame.width / localSourceFrame.width) as NSNumber, keyPath: "transform.scale", duration: springDuration, initialVelocity: 0.0, damping: springDamping, removeOnCompletion: false)
+                            snapshotView.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.2 * animationDurationFactor, removeOnCompletion: false, completion: { [weak snapshotView] _ in
+                                snapshotView?.removeFromSuperview()
+                            })
+                        }
+                    }
+                    self.actionsContainerNode.layer.animateSpring(from: NSValue(cgPoint: CGPoint(x: localSourceFrame.center.x - self.actionsContainerNode.position.x, y: localSourceFrame.center.y - self.actionsContainerNode.position.y)), to: NSValue(cgPoint: CGPoint()), keyPath: "position", duration: springDuration, initialVelocity: 0.0, damping: springDamping, additive: true)
+                    self.contentContainerNode.layer.animateSpring(from: NSValue(cgPoint: contentContainerOffset), to: NSValue(cgPoint: CGPoint()), keyPath: "position", duration: springDuration, initialVelocity: 0.0, damping: springDamping, additive: true, completion: { [weak self] _ in
+                        self?.animatedIn = true
+                    })
                 }
-                self.actionsContainerNode.layer.animateSpring(from: NSNumber(cgPoint: actionsPositionStart), to: NSNumber(cgPoint: self.actionsContainerNode.frame.center), keyPath: "position", duration: springDuration, initialVelocity: 0.0, damping: springDamping)
-                self.contentContainerNode.layer.animateSpring(from: NSNumber(cgPoint: contentRectStart.center), to: NSNumber(cgPoint: contentRectEnd.center), keyPath: "position", duration: springDuration, initialVelocity: 0.0, damping: springDamping) { [weak self] _ in
-                    self?.animatedIn = true
-                }
-                
             case let .chatPreview(source, transitionNodes):
                 
                 // MARK: - AnimateIn
