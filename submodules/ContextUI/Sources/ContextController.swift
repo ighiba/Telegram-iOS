@@ -1036,6 +1036,8 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
                 let springDuration: Double = 0.6 * animationDurationFactor
                 let springDamping: CGFloat = 110.0
                 let contentCornerRadius = self.contentContainerNode.cornerRadius
+                
+                let contentScale = self.contentContainerNode.bounds.width / self.view.bounds.width
             
                 let contentRectStart = self.originalProjectedContentViewFrame?.0 ?? .zero
                 let contentRectEnd = self.contentContainerNode.frame
@@ -1070,6 +1072,9 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
                     
                     titleComponentViewSnapshot?.isHidden = true
                     titleViewSnapshot?.isHidden = true
+                    
+                    let titleNodeSnapshot = titleNode.view.snapshotView(afterScreenUpdates: true)!
+                    titleNode.isHidden = true
 
                     if let titleView {
                         let titlePositionStart: CGPoint = {
@@ -1084,13 +1089,17 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
                             return position
                         }()
 
-                        let activityPositionStart = CGPoint(x: titleView.frame.center.x, y: titleView.frame.center.y + activityNode.view.frame.height)
-                        let activityPositionEnd = CGPoint(x: titlePositionEnd.x - self.contentContainerNode.frame.origin.x, y: activityNode.frame.center.y)
-                    
-                        titleNode.layer.animateSpring(from: NSNumber(cgPoint: titlePositionStart), to: NSNumber(cgPoint: titlePositionEnd), keyPath: "position", duration: springDuration, damping: springDamping, removeOnCompletion: false)
+                        let activityPositionStart = CGPoint(x: titleView.frame.center.x, y: activityNode.frame.center.y)
+
+                        titleNodeSnapshot.layer.transform = CATransform3DMakeScale(contentScale, contentScale, 1)
+                        titleNodeSnapshot.layer.animateSpring(from: NSNumber(cgPoint: titlePositionStart), to: NSNumber(cgPoint: titlePositionEnd), keyPath: "position", duration: springDuration, damping: springDamping, removeOnCompletion: false) { _ in
+                            titleNodeSnapshot.isHidden = true
+                            titleNode.isHidden = false
+                        }
                         
+                        activityNode.layer.transform = CATransform3DMakeScale(contentScale, contentScale, 1)
                         activityNode.layer.animateAlpha(from: 0.3, to: 1.0, duration: defaultDuration * 0.7)
-                        activityNode.layer.animateSpring(from: NSNumber(cgPoint: activityPositionStart), to: NSNumber(cgPoint: activityPositionEnd), keyPath: "position", duration: springDuration, damping: springDamping, removeOnCompletion: false)
+                        activityNode.layer.animateSpring(from: NSNumber(cgPoint: activityPositionStart), to: NSNumber(cgPoint: activityNode.frame.center), keyPath: "position", duration: springDuration, damping: springDamping, removeOnCompletion: true)
                     }
                     
                     avatarNode.layer.animateAlpha(from: 0.3, to: 1.0, duration: defaultDuration * 0.7)
@@ -1135,8 +1144,7 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
                     self.view.layer.addSublayer(backgroundNode.layer)
                     self.view.layer.addSublayer(self.contentContainerNode.layer)
                     self.view.addSubview(sourceViewSnapshot)
-                    self.view.layer.addSublayer(titleNode.layer)
-                    self.contentContainerNode.layer.addSublayer(activityNode.layer)
+                    self.view.addSubview(titleNodeSnapshot)
                 }
 
                 self.actionsContainerNode.layer.animateSpring(from: actionsContainerInitalScale as NSNumber, to: 1.0 as NSNumber, keyPath: "transform.scale", duration: springDuration, initialVelocity: 0.0, damping: springDamping)
