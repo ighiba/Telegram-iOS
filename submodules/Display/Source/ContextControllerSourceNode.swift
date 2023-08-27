@@ -176,7 +176,7 @@ open class ContextChatPreviewSourceNode: ContextControllerSourceNode {
             return
         }
         targetNode.layer.shadowPath = UIBezierPath(rect: targetRectScaled).cgPath
-        targetNode.layer.shadowOpacity = 0.1
+        targetNode.layer.shadowOpacity = 0.11
         targetNode.layer.shadowOffset = .zero
         targetNode.layer.shadowRadius = progress * 5
     }
