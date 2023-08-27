@@ -4572,7 +4572,7 @@ open class ListView: ASDisplayNode, UIScrollViewAccessibilityDelegate, UIGesture
                                                 strongSelf.reorderHeaderNodeToFront(headerNode)
                                             }
                                         }
-                                        if strongSelf.items[index].selectable {
+                                        if strongSelf.items[index].selectable && strongSelf.items[index].longTapSelectable {
                                             itemNode.setHighlighted(true, at: itemPoint, animated: false)
                                         }
                                         

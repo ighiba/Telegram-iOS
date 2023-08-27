@@ -83,6 +83,7 @@ private final class ContextChatPreviewContentSourceImpl: ContextChatPreviewConte
     
     let controller: ViewController
     weak var sourceNode: ASDisplayNode?
+    let sourceNodeInitialTransform: CATransform3D
     
     let navigationController: NavigationController?
     
@@ -93,11 +94,13 @@ private final class ContextChatPreviewContentSourceImpl: ContextChatPreviewConte
     init(
         controller: ViewController,
         sourceNode: ASDisplayNode?,
+        sourceNodeInitialTransform: CATransform3D,
         navigationController: NavigationController?,
         transitionNodes: (ASDisplayNode?, ASDisplayNode?, ASDisplayNode?, ASDisplayNode?, ASDisplayNode?)
     ) {
         self.controller = controller
         self.sourceNode = sourceNode
+        self.sourceNodeInitialTransform = sourceNodeInitialTransform
         self.navigationController = navigationController
         self.transitionNodes = transitionNodes
     }
@@ -113,6 +116,7 @@ private final class ContextChatPreviewContentSourceImpl: ContextChatPreviewConte
                     return nil
                 }
             },
+            sourceNodeInitialTransform:  self.sourceNodeInitialTransform,
             transitionNodes: self.transitionNodes
         )
     }
@@ -1371,6 +1375,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
                             let contentSource = ContextChatPreviewContentSourceImpl(
                                 controller: chatController,
                                 sourceNode: node,
+                                sourceNodeInitialTransform: node.view.layer.sublayerTransform,
                                 navigationController: strongSelf.navigationController as? NavigationController,
                                 transitionNodes: chatController.getChatPreviewTransitionNodes()
                             )

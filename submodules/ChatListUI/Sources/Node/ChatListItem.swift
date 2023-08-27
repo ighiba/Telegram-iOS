@@ -191,6 +191,7 @@ public class ChatListItem: ListViewItem, ChatListSearchItemNeighbour {
     let interaction: ChatListNodeInteraction
     
     public let selectable: Bool = true
+    public let longTapSelectable: Bool = false
     
     public var approximateHeight: CGFloat {
         return self.hiddenOffset ? 0.0 : 44.0
@@ -1194,7 +1195,7 @@ class ChatListItemNode: ItemListRevealOptionsItemNode {
         self.highlightedBackgroundNode = ASDisplayNode()
         self.highlightedBackgroundNode.isLayerBacked = true
         
-        self.contextContainer = ContextControllerSourceNode()
+        self.contextContainer = ContextChatPreviewSourceNode()
         
         self.mainContentContainerNode = ASDisplayNode()
         self.mainContentContainerNode.clipsToBounds = true

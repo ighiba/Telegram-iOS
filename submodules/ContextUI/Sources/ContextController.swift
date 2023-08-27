@@ -1033,7 +1033,7 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
                 // MARK: - AnimateIn
                 
                 let defaultDuration: Double = 0.2 * animationDurationFactor
-                let springDuration: Double = 0.3 * animationDurationFactor
+                let springDuration: Double = 0.35 * animationDurationFactor
                 let springDamping: CGFloat = 110.0
                 let contentCornerRadius = self.contentContainerNode.cornerRadius
                 
@@ -1056,8 +1056,18 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
                    let navigationBarNode = transitionNodes.3,
                    let backgroundNode = transitionNodes.4
                 {
+                    var sourceViewScaleX: CGFloat = 1
+                    var sourceViewScaleY: CGFloat = 1
+                    
+                    if case .chatPreview(let contentSource) = self.source, let transitionInfo = contentSource.transitionInfo() {
+                        sourceViewSnapshot.layer.sublayerTransform = transitionInfo.sourceNodeInitialTransform
+                        sourceViewScaleX = transitionInfo.sourceNodeInitialTransform.m11
+                        sourceViewScaleY = transitionInfo.sourceNodeInitialTransform.m22
+                    }
+                    
                     sourceController.sourceView.isHidden = true
-                    sourceViewSnapshot.backgroundColor = self.presentationData.theme.chatList.backgroundColor
+                    let maybeBackgroundColor = sourceController.sourceView.asyncdisplaykit_node?.supernode?.subnodes?.first(where: { $0.backgroundColor != nil })?.backgroundColor
+                    sourceViewSnapshot.layer.backgroundColor = maybeBackgroundColor?.cgColor ?? self.presentationData.theme.chatList.backgroundColor.cgColor
                     sourceViewSnapshot.layer.maskedCorners = [.layerMaxXMinYCorner, .layerMinXMinYCorner]
 
                     let avatarView = sourceController.sourceView.subviews.last { $0.frame.width == $0.frame.height }
@@ -1079,6 +1089,10 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
                             var position = convertFrame(titleView.bounds, from: titleView, to: self.view).origin
                             position.x += (titleNodeSnapshot.bounds.width / 2) * contentScale
                             position.y += (titleView.bounds.height / 2) * contentScale
+                            position.x += ((titleView.bounds.width * sourceViewScaleX) - titleView.bounds.width) / 2
+                            position.y += ((titleView.bounds.height * sourceViewScaleY) - titleView.bounds.height) / 2
+                            position.x -= ((sourceViewSnapshot.bounds.width * sourceViewScaleX) - sourceViewSnapshot.bounds.width) / 2
+                            position.y -= ((sourceViewSnapshot.bounds.height * sourceViewScaleY) - sourceViewSnapshot.bounds.height) / 2
                             return position
                         }()
                         let titleNodePositionEnd: CGPoint = {
@@ -1087,7 +1101,13 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
                             position.y += self.contentContainerNode.frame.origin.y
                             return position
                         }()
-                        let titleSnapshotPositionStart = convertFrame(titleView.bounds, from: titleView, to: self.view).center
+                        let titleSnapshotPositionStart: CGPoint = {
+                            var position = convertFrame(titleView.bounds, from: titleView, to: self.view).center
+                            position.x *= sourceViewScaleX
+                            position.x -= ((sourceViewSnapshot.bounds.width * sourceViewScaleX) - sourceViewSnapshot.bounds.width) / 2
+                            position.y -= (titleView.bounds.height * sourceViewScaleY) - titleView.bounds.height
+                            return position
+                        }()
                         let titleSnapshotPositionEnd: CGPoint = {
                             var position = titleNodePositionEnd
                             position.x = convertFrame(titleNode.frame, from: titleNode.view, to: self.contentContainerNode.view).origin.x
@@ -1097,7 +1117,13 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
                         }()
                         
                         if let titleComponentView, let titleComponentViewSnapshot {
-                            let titleComponentPositionStart = convertFrame(titleComponentView.bounds, from: titleComponentView, to: self.view).center
+                            let titleComponentPositionStart: CGPoint = {
+                                var position = convertFrame(titleComponentView.bounds, from: titleComponentView, to: self.view).center
+                                position.x *= sourceViewScaleX
+                                position.x -= ((sourceViewSnapshot.bounds.width * sourceViewScaleX) - sourceViewSnapshot.bounds.width) / 2
+                                position.y -= (titleComponentView.bounds.height * sourceViewScaleY) - titleComponentView.bounds.height
+                                return position
+                            }()
                             let titleComponentPositionEnd: CGPoint = {
                                 var position = titleNodePositionEnd
                                 position.x = convertFrame(titleNode.frame, from: titleNode.view, to: self.contentContainerNode.view).origin.x
@@ -1106,19 +1132,21 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
                                 return position
                             }()
                             
-                            titleComponentViewSnapshot.layer.animateAlpha(from: 1.0, to: 0.0, duration: defaultDuration, removeOnCompletion: false)
+                            titleComponentViewSnapshot.layer.transform = CATransform3DMakeScale(sourceViewScaleX, sourceViewScaleY, 1)
+                            titleComponentViewSnapshot.layer.animateAlpha(from: 1.0, to: 0.0, duration: defaultDuration * 0.7, removeOnCompletion: false)
                             titleComponentViewSnapshot.layer.animateSpring(from: NSNumber(cgPoint: titleComponentPositionStart), to: NSNumber(cgPoint: titleComponentPositionEnd), keyPath: "position", duration: springDuration, damping: springDamping, removeOnCompletion: false)
                         }
                         
+                        titleViewSnapshot.layer.transform = CATransform3DMakeScale(sourceViewScaleX, sourceViewScaleY, 1)
+                        titleViewSnapshot.layer.animateAlpha(from: 1.0, to: 0.0, duration: defaultDuration * 0.7, removeOnCompletion: false)
+                        titleViewSnapshot.layer.animateSpring(from: NSNumber(cgPoint: titleSnapshotPositionStart), to: NSNumber(cgPoint: titleSnapshotPositionEnd), keyPath: "position", duration: springDuration, damping: springDamping, removeOnCompletion: false)
+                        
                         titleNodeSnapshot.layer.transform = CATransform3DMakeScale(contentScale, contentScale, 1)
-                        titleNodeSnapshot.layer.animateAlpha(from: 0.0, to: 1.0, duration: defaultDuration, removeOnCompletion: false)
+                        titleNodeSnapshot.layer.animateAlpha(from: 0.0, to: 1.0, duration: defaultDuration * 0.7, removeOnCompletion: false)
                         titleNodeSnapshot.layer.animateSpring(from: NSNumber(cgPoint: titleNodePositionStart), to: NSNumber(cgPoint: titleNodePositionEnd), keyPath: "position", duration: springDuration, damping: springDamping, removeOnCompletion: false) { _ in
                             titleNodeSnapshot.isHidden = true
                             titleNode.isHidden = false
                         }
-                        
-                        titleViewSnapshot.layer.animateAlpha(from: 1.0, to: 0.0, duration: defaultDuration, removeOnCompletion: false)
-                        titleViewSnapshot.layer.animateSpring(from: NSNumber(cgPoint: titleSnapshotPositionStart), to: NSNumber(cgPoint: titleSnapshotPositionEnd), keyPath: "position", duration: springDuration, damping: springDamping, removeOnCompletion: false)
                         
                         let activityPositionStart = CGPoint(x: titleView.frame.center.x, y: activityNode.frame.center.y)
                         
@@ -1758,8 +1786,6 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
             )
             
             let sourceViewSnapshot = sourceController.sourceView.snapshotContentTree()
-            let sourceViewBackgroundColor = self.presentationData.theme.chatList.backgroundColor.cgColor
-            sourceViewSnapshot?.layer.backgroundColor = sourceViewBackgroundColor
             sourceController.sourceView.isHidden = true
 
             if let originalProjectedContentViewFrame = self.originalProjectedContentViewFrame,
@@ -1770,7 +1796,8 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
                let navigationBarNode = transitionNodes.3,
                let backgroundNode = transitionNodes.4
             {
-                sourceViewSnapshot.layer.backgroundColor = self.presentationData.theme.chatList.backgroundColor.cgColor
+                let maybeBackgroundColor = sourceController.sourceView.asyncdisplaykit_node?.supernode?.subnodes?.first(where: { $0.backgroundColor != nil })?.backgroundColor
+                sourceViewSnapshot.layer.backgroundColor = maybeBackgroundColor?.cgColor ?? self.presentationData.theme.chatList.backgroundColor.cgColor
                 sourceViewSnapshot.layer.maskedCorners = [.layerMaxXMinYCorner, .layerMinXMinYCorner]
 
                 let avatarView = sourceController.sourceView.subviews.last { $0.frame.width == $0.frame.height }
@@ -1922,13 +1949,7 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
                 self.contentContainerNode.layer.animateSpring(from: NSNumber(cgPoint: contentRectStart.center), to: NSNumber(cgPoint: contentRectEnd.center), keyPath: "position", duration: springDuration, initialVelocity: 0.0, damping: springDamping, removeOnCompletion: false) { [weak self] _ in
                     self?.contentContainerNode.isHidden = true
                     sourceController.sourceView.isHidden = false
-                    if let sourceViewSnapshot {
-                        sourceViewSnapshot.layer.animateBackgroundColor(from: sourceViewBackgroundColor, to: UIColor.clear.cgColor, duration: defaultDuration * 0.3, removeOnCompletion: false) { _ in
-                            contentNodeCompletion()
-                        }
-                    } else {
-                        contentNodeCompletion()
-                    }
+                    contentNodeCompletion()
                 }
             } else {
                 if let contentNode = self.contentContainerNode.contentNode, case let .chatPreview(controller, _) = contentNode {
@@ -2843,11 +2864,13 @@ public protocol ContextControllerContentSource: AnyObject {
 public final class ContextChatPreviewTakeControllerInfo {
     public let contentAreaInScreenSpace: CGRect
     public let sourceNode: () -> (UIView, CGRect)?
+    public let sourceNodeInitialTransform: CATransform3D
     public let transitionNodes: (ASDisplayNode?, ASDisplayNode?, ASDisplayNode?, ASDisplayNode?, ASDisplayNode?)
     
-    public init(contentAreaInScreenSpace: CGRect, sourceNode: @escaping () -> (UIView, CGRect)?, transitionNodes: (ASDisplayNode?, ASDisplayNode?, ASDisplayNode?, ASDisplayNode?, ASDisplayNode?)) {
+    public init(contentAreaInScreenSpace: CGRect, sourceNode: @escaping () -> (UIView, CGRect)?, sourceNodeInitialTransform: CATransform3D, transitionNodes: (ASDisplayNode?, ASDisplayNode?, ASDisplayNode?, ASDisplayNode?, ASDisplayNode?)) {
         self.contentAreaInScreenSpace = contentAreaInScreenSpace
         self.sourceNode = sourceNode
+        self.sourceNodeInitialTransform = sourceNodeInitialTransform
         self.transitionNodes = transitionNodes
     }
 }

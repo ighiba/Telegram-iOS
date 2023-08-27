@@ -4,6 +4,7 @@ import AsyncDisplayKit
 open class ContextControllerSourceNode: ContextReferenceContentNode {
     public private(set) var contextGesture: ContextGesture?
     
+    public var sideOffset: CGFloat { -15 }
     public var isGestureEnabled: Bool = true {
         didSet {
             self.contextGesture?.isEnabled = self.isGestureEnabled
@@ -68,7 +69,7 @@ open class ContextControllerSourceNode: ContextReferenceContentNode {
                 }
                 
                 let scaleSide = targetContentRect.width
-                let minScale: CGFloat = max(0.7, (scaleSide - 15.0) / scaleSide)
+                let minScale: CGFloat = max(0.7, (scaleSide + strongSelf.sideOffset) / scaleSide)
                 let currentScale = 1.0 * (1.0 - progress) + minScale * progress
                 
                 let originalCenterOffsetX: CGFloat = targetNode.bounds.width / 2.0 - targetContentRect.midX
@@ -80,31 +81,15 @@ open class ContextControllerSourceNode: ContextReferenceContentNode {
                 let scaleMidX: CGFloat = scaledCenterOffsetX - originalCenterOffsetX
                 let scaleMidY: CGFloat = scaledCenterOffsetY - originalCenterOffsetY
                 
+                let targetContentRectScaled = CGRect(x: 0, y: 0, width: targetContentRect.width * currentScale, height: targetContentRect.height * currentScale)
+                
                 switch update {
                 case .update:
-                    let sublayerTransform = CATransform3DTranslate(CATransform3DScale(CATransform3DIdentity, currentScale, currentScale, 1.0), scaleMidX, scaleMidY, 0.0)
-                    targetNode.layer.sublayerTransform = sublayerTransform
-                    if let additionalActivationProgressLayer = strongSelf.additionalActivationProgressLayer {
-                        additionalActivationProgressLayer.transform = sublayerTransform
-                    }
+                    strongSelf.handleUpdate(targetNode: targetNode, targetContentRectScaled: targetContentRectScaled, progress: progress, currentScale: currentScale, scaleMid: CGPoint(x: scaleMidX, y: scaleMidY))
                 case .begin:
-                    let sublayerTransform = CATransform3DTranslate(CATransform3DScale(CATransform3DIdentity, currentScale, currentScale, 1.0), scaleMidX, scaleMidY, 0.0)
-                    targetNode.layer.sublayerTransform = sublayerTransform
-                    if let additionalActivationProgressLayer = strongSelf.additionalActivationProgressLayer {
-                        additionalActivationProgressLayer.transform = sublayerTransform
-                    }
+                    strongSelf.handleBegin(targetNode: targetNode, targetContentRectScaled: targetContentRectScaled, progress: progress, currentScale: currentScale, scaleMid: CGPoint(x: scaleMidX, y: scaleMidY))
                 case .ended:
-                    let sublayerTransform = CATransform3DTranslate(CATransform3DScale(CATransform3DIdentity, currentScale, currentScale, 1.0), scaleMidX, scaleMidY, 0.0)
-                    let previousTransform = targetNode.layer.sublayerTransform
-                    targetNode.layer.sublayerTransform = sublayerTransform
-                    
-                    targetNode.layer.animate(from: NSValue(caTransform3D: previousTransform), to: NSValue(caTransform3D: sublayerTransform), keyPath: "sublayerTransform", timingFunction: CAMediaTimingFunctionName.easeOut.rawValue, duration: 0.2)
-                    
-                    if let additionalActivationProgressLayer = strongSelf.additionalActivationProgressLayer {
-                        DispatchQueue.main.asyncAfter(deadline: DispatchTime.now() + 0.2, execute: {
-                            additionalActivationProgressLayer.transform = sublayerTransform
-                        })
-                    }
+                    strongSelf.handleEnded(targetNode: targetNode, targetContentRectScaled: targetContentRectScaled, progress: progress, currentScale: currentScale, scaleMid: CGPoint(x: scaleMidX, y: scaleMidY))
                 }
             }
         }
@@ -124,6 +109,76 @@ open class ContextControllerSourceNode: ContextReferenceContentNode {
             }
         }
         contextGesture.isEnabled = self.isGestureEnabled
+    }
+    
+    public func handleUpdate(targetNode: ASDisplayNode, targetContentRectScaled: CGRect, progress: CGFloat, currentScale: CGFloat, scaleMid: CGPoint) {
+        let (scaleMidX, scaleMidY) = (scaleMid.x, scaleMid.y)
+        let sublayerTransform = CATransform3DTranslate(CATransform3DScale(CATransform3DIdentity, currentScale, currentScale, 1.0), scaleMidX, scaleMidY, 0.0)
+        targetNode.layer.sublayerTransform = sublayerTransform
+
+        if let additionalActivationProgressLayer = self.additionalActivationProgressLayer {
+            additionalActivationProgressLayer.transform = sublayerTransform
+        }
+    }
+    
+    public func handleBegin(targetNode: ASDisplayNode, targetContentRectScaled: CGRect, progress: CGFloat, currentScale: CGFloat, scaleMid: CGPoint) {
+        let (scaleMidX, scaleMidY) = (scaleMid.x, scaleMid.y)
+        let sublayerTransform = CATransform3DTranslate(CATransform3DScale(CATransform3DIdentity, currentScale, currentScale, 1.0), scaleMidX, scaleMidY, 0.0)
+        targetNode.layer.sublayerTransform = sublayerTransform
+
+        if let additionalActivationProgressLayer = self.additionalActivationProgressLayer {
+            additionalActivationProgressLayer.transform = sublayerTransform
+        }
+    }
+    
+    public func handleEnded(targetNode: ASDisplayNode, targetContentRectScaled: CGRect, progress: CGFloat, currentScale: CGFloat, scaleMid: CGPoint) {
+        let (scaleMidX, scaleMidY) = (scaleMid.x, scaleMid.y)
+        let sublayerTransform = CATransform3DTranslate(CATransform3DScale(CATransform3DIdentity, currentScale, currentScale, 1.0), scaleMidX, scaleMidY, 0.0)
+        let previousTransform = targetNode.layer.sublayerTransform
+        targetNode.layer.sublayerTransform = sublayerTransform
+        
+        targetNode.layer.animate(from: NSValue(caTransform3D: previousTransform), to: NSValue(caTransform3D: sublayerTransform), keyPath: "sublayerTransform", timingFunction: CAMediaTimingFunctionName.easeOut.rawValue, duration: 0.2)
+        
+        if let additionalActivationProgressLayer = self.additionalActivationProgressLayer {
+            DispatchQueue.main.asyncAfter(deadline: DispatchTime.now() + 0.2, execute: {
+                additionalActivationProgressLayer.transform = sublayerTransform
+            })
+        }
+    }
+}
+
+open class ContextChatPreviewSourceNode: ContextControllerSourceNode {
+    
+    override public var sideOffset: CGFloat { 10 }
+    
+    public override func handleBegin(targetNode: ASDisplayNode, targetContentRectScaled: CGRect, progress: CGFloat, currentScale: CGFloat, scaleMid: CGPoint) {
+        self.updateTargetNodeShadow(targetNode, targetRectScaled: targetContentRectScaled, progress: progress)
+        super.handleBegin(targetNode: targetNode, targetContentRectScaled: targetContentRectScaled, progress: progress, currentScale: currentScale, scaleMid: scaleMid)
+    }
+    
+    public override func handleUpdate(targetNode: ASDisplayNode, targetContentRectScaled: CGRect, progress: CGFloat, currentScale: CGFloat, scaleMid: CGPoint) {
+        self.updateTargetNodeShadow(targetNode, targetRectScaled: targetContentRectScaled, progress: progress)
+        super.handleBegin(targetNode: targetNode, targetContentRectScaled: targetContentRectScaled, progress: progress, currentScale: currentScale, scaleMid: scaleMid)
+    }
+    
+    public override func handleEnded(targetNode: ASDisplayNode, targetContentRectScaled: CGRect, progress: CGFloat, currentScale: CGFloat, scaleMid: CGPoint) {
+        self.updateTargetNodeShadow(targetNode, targetRectScaled: targetContentRectScaled, progress: progress)
+        super.handleBegin(targetNode: targetNode, targetContentRectScaled: targetContentRectScaled, progress: progress, currentScale: currentScale, scaleMid: scaleMid)
+    }
+    
+    private func updateTargetNodeShadow(_ targetNode: ASDisplayNode, targetRectScaled: CGRect, progress: CGFloat) {
+        if let maybeBackgroundColor = targetNode.supernode?.subnodes?.first(where: { $0.backgroundColor != nil })?.backgroundColor {
+            targetNode.layer.backgroundColor = maybeBackgroundColor.cgColor
+        }
+        guard progress > 0 else {
+            targetNode.layer.shadowOpacity = 0
+            targetNode.layer.backgroundColor = nil
+            return
+        }
+        targetNode.layer.shadowPath = UIBezierPath(rect: targetRectScaled).cgPath
+        targetNode.layer.shadowOpacity = 0.1
+        targetNode.layer.shadowOffset = .zero
+        targetNode.layer.shadowRadius = progress * 5
     }
 }
 
