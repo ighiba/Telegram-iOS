@@ -165,6 +165,7 @@ public final class ChatListNavigationBar: Component {
         private var currentLayout: CurrentLayout?
         private var rawScrollOffset: CGFloat?
         private var currentAllowAvatarsExpansion: Bool = false
+        private var currentAllowBarExpansion: Bool = true
         public private(set) var clippedScrollOffset: CGFloat?
         
         public var deferScrollApplication: Bool = false
@@ -215,16 +216,17 @@ public final class ChatListNavigationBar: Component {
         
         public func applyCurrentScroll(transition: Transition) {
             if let rawScrollOffset = self.rawScrollOffset, self.hasDeferredScrollOffset {
-                self.applyScroll(offset: rawScrollOffset, allowAvatarsExpansion: self.currentAllowAvatarsExpansion, transition: transition)
+                self.applyScroll(offset: rawScrollOffset, allowAvatarsExpansion: self.currentAllowAvatarsExpansion, allowBarExpansion: self.currentAllowBarExpansion, transition: transition)
             }
         }
         
-        public func applyScroll(offset: CGFloat, allowAvatarsExpansion: Bool, forceUpdate: Bool = false, transition: Transition) {
+        public func applyScroll(offset: CGFloat, allowAvatarsExpansion: Bool, allowBarExpansion: Bool = true, forceUpdate: Bool = false, transition: Transition) {
             let transition = transition
             
             self.rawScrollOffset = offset
             let allowAvatarsExpansionUpdated = self.currentAllowAvatarsExpansion != allowAvatarsExpansion
             self.currentAllowAvatarsExpansion = allowAvatarsExpansion
+            self.currentAllowBarExpansion = allowBarExpansion
             
             if self.deferScrollApplication && !forceUpdate {
                 self.hasDeferredScrollOffset = true
@@ -258,10 +260,22 @@ public final class ChatListNavigationBar: Component {
             self.backgroundView.update(size: CGSize(width: visibleSize.width, height: 1000.0), transition: transition.containedViewLayoutTransition)
             
             transition.setBounds(view: self.backgroundView, bounds: CGRect(origin: CGPoint(), size: CGSize(width: visibleSize.width, height: 1000.0)))
-            transition.animatePosition(view: self.backgroundView, from: CGPoint(x: 0.0, y: -visibleSize.height + self.backgroundView.layer.position.y), to: CGPoint(), additive: true)
-            self.backgroundView.layer.position = CGPoint(x: 0.0, y: visibleSize.height)
+
+            var backgroundViewYOffset = -visibleSize.height + self.backgroundView.layer.position.y
+            var backgroundViewY = visibleSize.height
+            var separatorY = visibleSize.height
+
+            if !allowBarExpansion, offset < 0 {
+                let lowestY = visibleSize.height + offset
+                backgroundViewYOffset = 0
+                backgroundViewY = lowestY + UIScreenPixel
+                separatorY = lowestY
+            }
             
-            transition.setFrameWithAdditivePosition(layer: self.separatorLayer, frame: CGRect(origin: CGPoint(x: 0.0, y: visibleSize.height), size: CGSize(width: visibleSize.width, height: UIScreenPixel)))
+            transition.animatePosition(view: self.backgroundView, from: CGPoint(x: 0.0, y: backgroundViewYOffset), to: CGPoint(), additive: true)
+            self.backgroundView.layer.position = CGPoint(x: 0.0, y: backgroundViewY)
+            
+            transition.setFrameWithAdditivePosition(layer: self.separatorLayer, frame: CGRect(origin: CGPoint(x: 0.0, y: separatorY), size: CGSize(width: visibleSize.width, height: UIScreenPixel)))
             
             let searchContentNode: NavigationBarSearchContentNode
             if let current = self.searchContentNode {
@@ -312,7 +326,7 @@ public final class ChatListNavigationBar: Component {
             let searchOffsetFraction = clippedSearchOffset / searchOffsetDistance
             searchContentNode.expansionProgress = 1.0 - searchOffsetFraction
             
-            if clippedScrollOffset <= 0 {
+            if !allowBarExpansion, clippedScrollOffset <= 0 {
                 searchFrame.origin.y = currentLayout.size.height - searchSize.height
             }
             

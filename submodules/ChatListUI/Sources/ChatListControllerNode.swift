@@ -2145,11 +2145,21 @@ final class ChatListControllerNode: ASDisplayNode, UIGestureRecognizerDelegate {
             }
         }
         
+        let allowBarExpansion: Bool = false
+        
         if let navigationBarComponentView = self.navigationBarView.view as? ChatListNavigationBar.View {
-            navigationBarComponentView.applyScroll(offset: offset, allowAvatarsExpansion: allowAvatarsExpansion, forceUpdate: false, transition: Transition(transition).withUserData(ChatListNavigationBar.AnimationHint(
-                disableStoriesAnimations: self.tempDisableStoriesAnimations,
-                crossfadeStoryPeers: false
-            )))
+            navigationBarComponentView.applyScroll(
+                offset: offset,
+                allowAvatarsExpansion: allowAvatarsExpansion,
+                allowBarExpansion: allowBarExpansion,
+                forceUpdate: false,
+                transition: Transition(transition).withUserData(
+                    ChatListNavigationBar.AnimationHint(
+                        disableStoriesAnimations: self.tempDisableStoriesAnimations,
+                        crossfadeStoryPeers: false
+                    )
+                )
+            )
         }
         
         let mainDelta: CGFloat
@@ -2415,7 +2425,7 @@ final class ChatListControllerNode: ASDisplayNode, UIGestureRecognizerDelegate {
     
     func willScrollToTop() {
         if let navigationBarComponentView = self.navigationBarView.view as? ChatListNavigationBar.View {
-            navigationBarComponentView.applyScroll(offset: 0.0, allowAvatarsExpansion: false, transition: Transition(animation: .curve(duration: 0.3, curve: .slide)))
+            navigationBarComponentView.applyScroll(offset: 0.0, allowAvatarsExpansion: false, allowBarExpansion: false, transition: Transition(animation: .curve(duration: 0.3, curve: .slide)))
         }
     }
     
