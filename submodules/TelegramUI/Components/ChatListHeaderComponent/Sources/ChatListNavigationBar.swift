@@ -312,6 +312,10 @@ public final class ChatListNavigationBar: Component {
             let searchOffsetFraction = clippedSearchOffset / searchOffsetDistance
             searchContentNode.expansionProgress = 1.0 - searchOffsetFraction
             
+            if clippedScrollOffset <= 0 {
+                searchFrame.origin.y = currentLayout.size.height - searchSize.height
+            }
+            
             transition.setFrameWithAdditivePosition(view: searchContentNode.view, frame: searchFrame)
             
             searchContentNode.updateLayout(size: searchSize, leftInset: component.sideInset, rightInset: component.sideInset, transition: transition.containedViewLayoutTransition)
