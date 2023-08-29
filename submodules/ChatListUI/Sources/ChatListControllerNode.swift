@@ -19,6 +19,7 @@ import ComponentDisplayAdapters
 import ComponentFlow
 import ChatFolderLinkPreviewScreen
 import ChatListHeaderComponent
+import ChatListArchiveFlowComponent
 import StoryPeerListComponent
 
 public enum ChatListContainerNodeFilter: Equatable {
@@ -1740,6 +1741,7 @@ final class ChatListControllerNode: ASDisplayNode, UIGestureRecognizerDelegate {
     private var tapRecognizer: UITapGestureRecognizer?
     var navigationBar: NavigationBar?
     let navigationBarView = ComponentView<Empty>()
+    let archiveFlowView = ComponentView<Empty>()
     weak var controller: ChatListControllerImpl?
     
     var toolbar: Toolbar?
@@ -2204,6 +2206,20 @@ final class ChatListControllerNode: ASDisplayNode, UIGestureRecognizerDelegate {
         
         let navigationBarLayout = self.updateNavigationBar(layout: layout, deferScrollApplication: true, transition: Transition(transition))
         self.mainContainerNode.initialScrollingOffset = ChatListNavigationBar.searchScrollHeight + navigationBarLayout.storiesInset
+
+        // TODO: updateArchiveFlowView method
+        // MARK: - Update archiveFlowView
+        
+        let _ = archiveFlowView.update(
+            transition: .immediate,
+            component: AnyComponent(ChatListArchiveFlowComponent(presentationData: self.presentationData)),
+            environment: {},
+            containerSize: layout.size
+        )
+        
+        if let archiveFlowView = archiveFlowView.view, archiveFlowView.superview == nil {
+            self.view.addSubview(archiveFlowView)
+        }
         
         navigationBarHeight = navigationBarLayout.navigationHeight
         visualNavigationHeight = navigationBarLayout.navigationHeight
@@ -2434,6 +2450,12 @@ final class ChatListControllerNode: ASDisplayNode, UIGestureRecognizerDelegate {
             return
         }
         self.updateNavigationScrolling(navigationHeight: containerLayout.navigationBarHeight, transition: self.tempNavigationScrollingTransition ?? .immediate)
+        
+        if let archiveFlowView = archiveFlowView.view as? ChatListArchiveFlowComponent.View {
+            if case .known(let scrollOffset) = offset {
+                archiveFlowView.applyScroll(offset: scrollOffset, navBarHeight: containerLayout.navigationBarHeight, layout: containerLayout.layout, transition: .immediate)
+            }
+        }
         
         if listView.isDragging {
             var overscrollSelectedId: EnginePeer.Id?

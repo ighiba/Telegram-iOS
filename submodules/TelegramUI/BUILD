@@ -347,6 +347,7 @@ swift_library(
         "//submodules/InviteLinksUI:InviteLinksUI",
         "//submodules/TelegramUI/Components/NotificationPeerExceptionController",
         "//submodules/TelegramUI/Components/ChatListHeaderComponent",
+        "//submodules/TelegramUI/Components/ChatListArchiveFlowComponent",
         "//submodules/TelegramUI/Components/ChatInputNode",
         "//submodules/TelegramUI/Components/ChatEntityKeyboardInputNode",
         "//submodules/TelegramUI/Components/StorageUsageScreen",
