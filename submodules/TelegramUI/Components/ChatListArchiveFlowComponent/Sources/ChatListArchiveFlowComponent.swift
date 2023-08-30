@@ -24,9 +24,6 @@ public final class ChatListArchiveFlowComponent: Component {
         private let insets = UIEdgeInsets(top: 8, left: 10, bottom: 8, right: 10)
         private let arrowIconWidth: CGFloat = 20
         
-        private let swipeDownColor = UIColor(rgb: 0xB2B6BD)
-        private let releaseForArchiveColor = UIColor(rgb: 0x3B82EA)
-        
         private let labelsContainer = UIView()
         private let swipeDownLabel = UILabel()
         private let releaseLabel = UILabel()
@@ -34,17 +31,27 @@ public final class ChatListArchiveFlowComponent: Component {
         private let arrowLine = UIView()
         private let arrowArchiveAnimationNode = AnimationNode(animation: "anim_arrow_archive", colors: [:], scale: 1.0)
         
+        private let swipeDownGradient = CAGradientLayer()
+        private let releaseForArchiveGradient = CAGradientLayer()
+        
+        private let swipeDownColor = UIColor(rgb: 0xB1B1B1)
+        private let releaseForArchiveColor = UIColor(rgb: 0x3A83F6)
+        private let swipeDownGradientColors: [CGColor] = [UIColor(rgb: 0xB1B1B1).cgColor, UIColor(rgb: 0xD9D9D9).cgColor]
+        private let releaseForArchiveGradientColors: [CGColor] = [UIColor(rgb: 0x3A83F6).cgColor, UIColor(rgb: 0x89C3F8).cgColor]
+        
         public override init(frame: CGRect) {
             super.init(frame: frame)
             
             self.layer.masksToBounds = true
-            self.backgroundColor = self.swipeDownColor
-            
+
+            self.configureGradients()
             self.configureArrowLine()
             self.configureArrowIcon()
             self.configureLabels()
             self.configureArrowArchiveAnimationNode()
             
+            self.layer.addSublayer(self.swipeDownGradient)
+            self.layer.addSublayer(self.releaseForArchiveGradient)
             self.labelsContainer.addSubview(swipeDownLabel)
             self.labelsContainer.addSubview(releaseLabel)
             self.addSubview(labelsContainer)
@@ -55,6 +62,22 @@ public final class ChatListArchiveFlowComponent: Component {
         
         required init?(coder: NSCoder) {
             fatalError("init(coder:) has not been implemented")
+        }
+        
+        private func configureGradients() {
+            let (startPoint, endPoint) = (CGPoint(x: 0.1, y: 0.5), CGPoint(x: 1, y: 0.25))
+            
+            self.swipeDownGradient.startPoint = startPoint
+            self.swipeDownGradient.endPoint = endPoint
+            self.swipeDownGradient.colors = self.swipeDownGradientColors
+            
+            let maskLayer = CAShapeLayer()
+            maskLayer.path = UIBezierPath(roundedRect: CGRect(x: 0, y: 0,width: self.arrowIconWidth, height: self.arrowIconWidth), cornerRadius: 25).cgPath
+            self.releaseForArchiveGradient.mask = maskLayer
+            self.releaseForArchiveGradient.mask?.transform = CATransform3DMakeScale(1, 1, 0)
+            self.releaseForArchiveGradient.startPoint = startPoint
+            self.releaseForArchiveGradient.endPoint = endPoint
+            self.releaseForArchiveGradient.colors = self.releaseForArchiveGradientColors
         }
         
         private func configureArrowLine() {
@@ -102,6 +125,8 @@ public final class ChatListArchiveFlowComponent: Component {
                 componentFrame.size.height = 0
             }
             transition.setFrame(view: self, frame: componentFrame)
+            transition.setFrame(layer: self.swipeDownGradient, frame: self.bounds)
+            transition.setFrame(layer: self.releaseForArchiveGradient, frame: self.bounds)
             
             var arrowLineFrame = self.arrowLine.frame
             var arrorIconFrame = self.arrowIcon.frame
@@ -124,6 +149,9 @@ public final class ChatListArchiveFlowComponent: Component {
             transition.setFrame(view: self.arrowLine, frame: arrowLineFrame)
             transition.setFrame(view: self.arrowIcon, frame: arrorIconFrame)
             transition.setFrame(view: self.arrowArchiveAnimationNode.view, frame: arrowArchiveAnimationFrame)
+            if let mask = self.releaseForArchiveGradient.mask {
+                transition.setFrame(layer: mask, frame: arrorIconFrame)
+            }
             
             self.swipeDownLabel.frame.origin.y = self.bounds.height - self.insets.bottom - self.swipeDownLabel.bounds.height
             self.releaseLabel.frame.origin.y = self.bounds.height - self.insets.bottom - self.releaseLabel.bounds.height
@@ -142,28 +170,29 @@ public final class ChatListArchiveFlowComponent: Component {
             
             let duration: CGFloat = 0.55
             let springDamping: CGFloat = 0.7
-            
-            if enterInRelease {
-                self.backgroundColor = self.releaseForArchiveColor
-                self.arrowIcon.backgroundColor = self.releaseForArchiveColor
 
+            if enterInRelease {
+                let maskScale: CGFloat = (self.bounds.width / self.arrowIconWidth) * 3
+                self.releaseForArchiveGradient.mask?.transform = CATransform3DMakeScale(maskScale, maskScale, 0)
+                
                 UIView.animate(withDuration: duration, delay: 0, usingSpringWithDamping: springDamping, initialSpringVelocity: 0, options: [.beginFromCurrentState]) { [weak self] in
                     self?.releaseLabel.alpha = 1
                     self?.swipeDownLabel.alpha = 0
                     self?.releaseLabel.transform = .identity
                     self?.swipeDownLabel.transform = CGAffineTransform(translationX: swipeDownLabelOffsetX, y: 0)
                     self?.arrowIcon.transform = CGAffineTransform(rotationAngle: .pi - 3.14159)
+                    self?.arrowIcon.backgroundColor = self?.releaseForArchiveColor
                 }
             } else if enterInSwipeDown {
-                self.backgroundColor = self.swipeDownColor
-                self.arrowIcon.backgroundColor = self.swipeDownColor
-                
+                self.releaseForArchiveGradient.mask?.transform = CATransform3DMakeScale(1, 1, 0)
+
                 UIView.animate(withDuration: duration, delay: 0, usingSpringWithDamping: springDamping, initialSpringVelocity: 0, options: [.beginFromCurrentState]) { [weak self] in
                     self?.releaseLabel.alpha = 0
                     self?.swipeDownLabel.alpha = 1
                     self?.releaseLabel.transform = CGAffineTransform(translationX: releaseLabelOffsetX, y: 0)
                     self?.swipeDownLabel.transform = .identity
                     self?.arrowIcon.transform = CGAffineTransform(rotationAngle: .pi)
+                    self?.arrowIcon.backgroundColor = self?.swipeDownColor
                 }
             }
         }
@@ -188,7 +217,7 @@ public final class ChatListArchiveFlowComponent: Component {
             let arrowArchiveAnimationNodeFrame = CGRect(x: 0, y: 0, width: animationViewWidth, height: animationViewWidth + 7.6)
             transition.setFrame(view: self.arrowArchiveAnimationNode.view, frame: arrowArchiveAnimationNodeFrame)
 
-            return .zero
+            return availableSize
         }
         
         private func updateLabel(_ label: UILabel, withText text: String, fontSize: CGFloat, availableSize: CGSize, containerOffsetX: CGFloat) {
