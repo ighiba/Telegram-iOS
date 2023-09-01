@@ -511,6 +511,14 @@ public extension CALayer {
         })
     }
     
+    func animateSpringPosition(from: CGPoint, to: CGPoint, duration: Double, delay: Double = 0.0, initialVelocity: CGFloat = 0.0, damping: CGFloat = 88.0, removeOnCompletion: Bool = true, additive: Bool = false, completion: ((Bool) -> Void)? = nil) {
+        self.animateSpring(from: NSNumber(cgPoint: from), to: NSNumber(cgPoint: to), keyPath: "position", duration: duration, delay: delay, initialVelocity: initialVelocity, damping: damping, removeOnCompletion: removeOnCompletion, additive: additive, completion: completion)
+    }
+    
+    func animateSpringScale(from: CGFloat, to: CGFloat, duration: Double, delay: Double = 0.0, initialVelocity: CGFloat = 0.0, damping: CGFloat = 88.0, removeOnCompletion: Bool = true, additive: Bool = false, completion: ((Bool) -> Void)? = nil) {
+        self.animateSpring(from: from as NSNumber, to: to as NSNumber, keyPath: "transform.scale", duration: duration, delay: delay, initialVelocity: initialVelocity, damping: damping, removeOnCompletion: removeOnCompletion, additive: additive, completion: completion)
+    }
+    
     func cancelAnimationsRecursive(key: String) {
         self.removeAnimation(forKey: key)
         if let sublayers = self.sublayers {
