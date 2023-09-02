@@ -312,22 +312,23 @@ public final class ChatListNavigationBar: Component {
                 self.searchContentNode = searchContentNode
                 self.addSubview(searchContentNode.view)
             }
+
+            let clippedSearchOffset = max(0.0, min(clippedScrollOffset, searchOffsetDistance))
+            let searchOffsetFraction = clippedSearchOffset / searchOffsetDistance
+            searchContentNode.expansionProgress = 1.0 - searchOffsetFraction
             
             let searchSize = CGSize(width: currentLayout.size.width - 6.0 * 2.0, height: navigationBarSearchContentHeight)
             var searchFrame = CGRect(origin: CGPoint(x: 6.0, y: visibleSize.height - searchSize.height), size: searchSize)
+            
+            let isBarShouldBeClipped: Bool = !allowBarExpansion && clippedScrollOffset <= 0
+            if isBarShouldBeClipped {
+                searchFrame.origin.y = currentLayout.size.height - searchSize.height
+            }
             if component.tabsNode != nil {
                 searchFrame.origin.y -= 40.0
             }
             if !component.isSearchActive {
                 searchFrame.origin.y -= component.accessoryPanelContainerHeight
-            }
-            
-            let clippedSearchOffset = max(0.0, min(clippedScrollOffset, searchOffsetDistance))
-            let searchOffsetFraction = clippedSearchOffset / searchOffsetDistance
-            searchContentNode.expansionProgress = 1.0 - searchOffsetFraction
-            
-            if !allowBarExpansion, clippedScrollOffset <= 0 {
-                searchFrame.origin.y = currentLayout.size.height - searchSize.height - component.accessoryPanelContainerHeight
             }
             
             transition.setFrameWithAdditivePosition(view: searchContentNode.view, frame: searchFrame)
@@ -463,7 +464,8 @@ public final class ChatListNavigationBar: Component {
                 }
             }
             
-            var tabsFrame = CGRect(origin: CGPoint(x: 0.0, y: visibleSize.height), size: CGSize(width: visibleSize.width, height: 46.0))
+            let tabsFrameY: CGFloat = isBarShouldBeClipped ? currentLayout.size.height : visibleSize.height
+            var tabsFrame = CGRect(origin: CGPoint(x: 0.0, y: tabsFrameY), size: CGSize(width: visibleSize.width, height: 46.0))
             if !component.isSearchActive {
                 tabsFrame.origin.y -= component.accessoryPanelContainerHeight
             }
@@ -471,13 +473,7 @@ public final class ChatListNavigationBar: Component {
                 tabsFrame.origin.y -= 46.0
             }
             
-            let accessoryPanelContainerY: CGFloat
-            if !allowBarExpansion, clippedScrollOffset <= 0 {
-                accessoryPanelContainerY = currentLayout.size.height
-            } else {
-                accessoryPanelContainerY = visibleSize.height
-            }
-            
+            let accessoryPanelContainerY: CGFloat = isBarShouldBeClipped ? currentLayout.size.height : visibleSize.height
             var accessoryPanelContainerFrame = CGRect(origin: CGPoint(x: 0.0, y: accessoryPanelContainerY), size: CGSize(width: visibleSize.width, height: component.accessoryPanelContainerHeight))
             if !component.isSearchActive {
                 accessoryPanelContainerFrame.origin.y -= component.accessoryPanelContainerHeight
