@@ -212,6 +212,13 @@ public class ChatListItem: ListViewItem, ChatListSearchItemNeighbour {
         }
     }
     
+    public var isArchive: Bool {
+        if case .groupReference(let data) = self.content {
+            return data.groupId == .archive
+        }
+        return false
+    }
+    
     public init(presentationData: ChatListPresentationData, context: AccountContext, chatListLocation: ChatListControllerLocation, filterData: ChatListItemFilterData?, index: EngineChatList.Item.Index, content: ChatListItemContent, editing: Bool, hasActiveRevealControls: Bool, selected: Bool, header: ListViewItemHeader?, enableContextActions: Bool, hiddenOffset: Bool, interaction: ChatListNodeInteraction) {
         self.presentationData = presentationData
         self.chatListLocation = chatListLocation

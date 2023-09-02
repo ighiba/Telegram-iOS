@@ -1124,6 +1124,7 @@ public final class ChatListNode: ListView {
     public var hidePsa: ((EnginePeer.Id) -> Void)?
     public var activateChatPreview: ((ChatListItem, Int64?, ASDisplayNode, ContextGesture?, CGPoint?) -> Void)?
     public var openStories: ((ChatListNode.OpenStoriesSubject, ASDisplayNode?) -> Void)?
+    public var archiveItemNodeWillUpdate: ((ASDisplayNode, CGFloat, CGFloat, CGFloat) -> Void)?
     
     private var theme: PresentationTheme
     
@@ -1232,6 +1233,8 @@ public final class ChatListNode: ListView {
     }
     
     public var startedScrollingAtUpperBound: Bool = false
+    
+    public var isArchiveFolderPendingToReveal: Bool = false
     
     private let autoSetReady: Bool
     
@@ -2890,6 +2893,25 @@ public final class ChatListNode: ListView {
         }
     }
     
+    func hasArchiveInList() -> Bool {
+        if self.currentState.hiddenItemShouldBeTemporaryRevealed {
+            return true
+        }
+       
+        if let itemNode = self.itemNodeAtIndex(1) as? ChatListItemNode, let item = itemNode.item {
+            if item.isArchive, case let .groupReference(groupReference) = item.content {
+                if !groupReference.hiddenByDefault {
+                    return true
+                }
+            }
+            if itemNode.frame.height > 0 {
+                return true
+            }
+        }
+        
+        return false
+    }
+    
     func hasItemsToBeRevealed() -> Bool {
         if self.currentState.hiddenItemShouldBeTemporaryRevealed {
             return false
@@ -3823,6 +3845,17 @@ public final class ChatListNode: ListView {
             }
         })
         self.selectionScrollDisplayLink?.isPaused = false
+    }
+    
+    override public func shouldRevealHiddenItems() -> Bool {
+        return self.isArchiveFolderPendingToReveal
+    }
+    
+    override public func willUpdateListItemNode(_ itemNode: ListViewItemNode, _ previousHeight: CGFloat, _ updatedHeight: CGFloat, _ transitionDuration: CGFloat) {
+        if let chatListItemNode = itemNode as? ChatListItemNode, let item = chatListItemNode.item, item.isArchive, self.isArchiveFolderPendingToReveal {
+            self.isArchiveFolderPendingToReveal = false
+            self.archiveItemNodeWillUpdate?(chatListItemNode, previousHeight, updatedHeight, transitionDuration)
+        }
     }
 }
 

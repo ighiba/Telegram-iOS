@@ -9,9 +9,11 @@ import AnimationUI
 public final class ChatListArchiveFlowComponent: Component {
     
     public let presentationData: PresentationData
+    public let progressHandler: (Bool) -> Void
     
-    public init(presentationData: PresentationData) {
+    public init(presentationData: PresentationData, progressHandler: @escaping (Bool) -> Void) {
         self.presentationData = presentationData
+        self.progressHandler = progressHandler
     }
 
     public final class View: UIView {
@@ -23,6 +25,9 @@ public final class ChatListArchiveFlowComponent: Component {
         private let targetHeight: CGFloat = 80
         private let insets = UIEdgeInsets(top: 8, left: 10, bottom: 8, right: 10)
         private let arrowIconWidth: CGFloat = 20
+        private var avatarWidth: CGFloat {
+            return min(60.0, floor((self.component?.presentationData.listsFontSize.baseDisplaySize ?? 60) * 60.0 / 17.0))
+        }
         
         private let labelsContainer = UIView()
         private let swipeDownLabel = UILabel()
@@ -33,12 +38,12 @@ public final class ChatListArchiveFlowComponent: Component {
         
         private let swipeDownGradient = CAGradientLayer()
         private let releaseForArchiveGradient = CAGradientLayer()
+
+        private let swipeDownGradientColors = PresentationThemeGradientColors(topColor: UIColor(rgb: 0xD9D9DD), bottomColor: UIColor(rgb: 0xB5BAC1))
+        private let releaseForArchiveGradientColors = PresentationThemeGradientColors(topColor: UIColor(rgb: 0x81C4FF), bottomColor: UIColor(rgb: 0x2D83F2))
         
-        private let swipeDownColor = UIColor(rgb: 0xB1B1B1)
-        private let releaseForArchiveColor = UIColor(rgb: 0x3A83F6)
-        private let swipeDownGradientColors: [CGColor] = [UIColor(rgb: 0xB1B1B1).cgColor, UIColor(rgb: 0xD9D9D9).cgColor]
-        private let releaseForArchiveGradientColors: [CGColor] = [UIColor(rgb: 0x3A83F6).cgColor, UIColor(rgb: 0x89C3F8).cgColor]
-        
+        private var isAnimatingOut: Bool = false
+
         public override init(frame: CGRect) {
             super.init(frame: frame)
             
@@ -69,7 +74,6 @@ public final class ChatListArchiveFlowComponent: Component {
             
             self.swipeDownGradient.startPoint = startPoint
             self.swipeDownGradient.endPoint = endPoint
-            self.swipeDownGradient.colors = self.swipeDownGradientColors
             
             let maskLayer = CAShapeLayer()
             maskLayer.path = UIBezierPath(roundedRect: CGRect(x: 0, y: 0,width: self.arrowIconWidth, height: self.arrowIconWidth), cornerRadius: 25).cgPath
@@ -77,7 +81,6 @@ public final class ChatListArchiveFlowComponent: Component {
             self.releaseForArchiveGradient.mask?.transform = CATransform3DMakeScale(1, 1, 0)
             self.releaseForArchiveGradient.startPoint = startPoint
             self.releaseForArchiveGradient.endPoint = endPoint
-            self.releaseForArchiveGradient.colors = self.releaseForArchiveGradientColors
         }
         
         private func configureArrowLine() {
@@ -89,8 +92,8 @@ public final class ChatListArchiveFlowComponent: Component {
         
         private func configureArrowIcon() {
             self.arrowIcon.image = generateTintedImage(image: UIImage(bundleImageName: "Chat List/ArchiveFlow/ArchiveFlowArrow"), color: .white)
-            self.arrowIcon.frame = self.arrowLine.frame
-            self.arrowIcon.backgroundColor = self.swipeDownColor
+            self.arrowIcon.frame = CGRect(x: self.insets.left, y: 0, width: self.arrowIconWidth, height: self.arrowIconWidth)
+            self.arrowIcon.backgroundColor = self.swipeDownGradientColors.bottomColor
             self.arrowIcon.layer.cornerRadius = self.arrowIconWidth / 2
             self.arrowIcon.transform = CGAffineTransform(rotationAngle: .pi)
         }
@@ -102,14 +105,15 @@ public final class ChatListArchiveFlowComponent: Component {
         
         private func configureArrowArchiveAnimationNode() {
             self.arrowArchiveAnimationNode.view.isHidden = true
+            let strokeColor = self.releaseForArchiveGradientColors.bottomColor
             self.arrowArchiveAnimationNode.setColors(colors: [
-                "**.Stroke 1": releaseForArchiveColor,
+                "**.Stroke 1": strokeColor,
                 "**.Fill 1" : .white
             ])
         }
 
         public func applyScroll(offset: CGFloat, navBarHeight: CGFloat, layout: ContainerViewLayout, transition: Transition) {
-            if self.bounds.height == 0 && offset > 0 {
+            if self.isAnimatingOut || self.bounds.height == 0 && offset > 0 {
                 return
             }
             
@@ -158,6 +162,7 @@ public final class ChatListArchiveFlowComponent: Component {
             self.labelsContainer.frame.size.height = self.bounds.height
             
             self.lastProgress = progress
+            self.component?.progressHandler(progress >= 1.0)
         }
         
         private func animateProgress(_ progress: CGFloat) {
@@ -181,7 +186,7 @@ public final class ChatListArchiveFlowComponent: Component {
                     self?.releaseLabel.transform = .identity
                     self?.swipeDownLabel.transform = CGAffineTransform(translationX: swipeDownLabelOffsetX, y: 0)
                     self?.arrowIcon.transform = CGAffineTransform(rotationAngle: .pi - 3.14159)
-                    self?.arrowIcon.backgroundColor = self?.releaseForArchiveColor
+                    self?.arrowIcon.backgroundColor = self?.releaseForArchiveGradientColors.bottomColor
                 }
             } else if enterInSwipeDown {
                 self.releaseForArchiveGradient.mask?.transform = CATransform3DMakeScale(1, 1, 0)
@@ -192,15 +197,137 @@ public final class ChatListArchiveFlowComponent: Component {
                     self?.releaseLabel.transform = CGAffineTransform(translationX: releaseLabelOffsetX, y: 0)
                     self?.swipeDownLabel.transform = .identity
                     self?.arrowIcon.transform = CGAffineTransform(rotationAngle: .pi)
-                    self?.arrowIcon.backgroundColor = self?.swipeDownColor
+                    self?.arrowIcon.backgroundColor = self?.swipeDownGradientColors.bottomColor
+                }
+            }
+        }
+        
+        public func animateOut(_ itemView: UIView, itemHeight: CGFloat, transitionDuration: CGFloat, completion: (() -> Void)? = nil) {
+            self.isAnimatingOut = true
+            self.component?.progressHandler(false)
+            let superLayer = self.layer.superlayer
+            let initialLayerPosition = self.layer.frame.origin
+            self.arrowIcon.isHidden = true
+            self.arrowLine.isHidden = false
+            self.swipeDownGradient.isHidden = true
+            self.arrowArchiveAnimationNode.isHidden = false
+            self.arrowArchiveAnimationNode.playOnce()
+            
+            self.arrowArchiveAnimationNode.speed = transitionDuration * 2
+
+            let sourceView = itemView.subviews.first
+            let itemViewSnapshot = itemView.snapshotContentTree()
+            if let itemViewSnapshot {
+                itemView.addSubview(itemViewSnapshot)
+            }
+            
+            self.layer.frame.origin = .zero
+            itemView.layer.addSublayer(self.layer)
+            sourceView?.isHidden = true
+
+            let duration: CGFloat = transitionDuration * 0.6
+            let springDuration: CGFloat = transitionDuration * 1.05
+            
+            let avatarPosition = CGPoint(x: self.arrowLine.frame.origin.x, y: (itemHeight - self.arrowLine.frame.width) / 2)
+            let arrowLineTargetPosition = CGPoint(x: avatarPosition.x, y: self.bounds.height * 0.6)
+            let arrowLineTargetFrame = CGRect(origin: arrowLineTargetPosition, size: CGSize(width: self.arrowLine.frame.width, height: 0))
+            self.arrowLine.layer.animateFrame(from: self.arrowLine.frame, to: arrowLineTargetFrame, duration: duration * 0.3, removeOnCompletion: false) { [weak self] _ in
+                self?.arrowLine.isHidden = true
+            }
+            
+            let arrowArchiveAnimationPositionEnd = avatarPosition.offsetBy(dx: self.arrowLine.frame.width / 2, dy: self.arrowLine.frame.width / 2)
+            self.arrowArchiveAnimationNode.layer.animateSpringPosition(from: self.arrowArchiveAnimationNode.frame.center, to: arrowArchiveAnimationPositionEnd, duration: springDuration, damping: 300.0, removeOnCompletion: false)
+            self.arrowArchiveAnimationNode.layer.animateSpringScale(from: 1.0, to: 1.07, duration: springDuration, delay: springDuration * 0.5, damping: 120.0, removeOnCompletion: false)
+
+            let avatarWidth = self.avatarWidth
+            if let mask = self.releaseForArchiveGradient.mask {
+                let startScale = (self.bounds.width / self.arrowIconWidth) * 3
+                let endScale = avatarWidth / self.arrowIconWidth
+                let offsetXY = self.arrowIconWidth / 2
+                mask.animateSpringPosition(from: mask.frame.center, to: avatarPosition.offsetBy(dx: offsetXY, dy: offsetXY), duration: springDuration, damping: 120.0, removeOnCompletion: false)
+                mask.animateSpringScale(from: startScale, to: endScale, duration: springDuration, damping: 120.0, removeOnCompletion: false)
+            }
+
+            self.labelsContainer.layer.animateAlpha(from: 1.0, to: 0.0, duration: duration * 0.05, delay: duration * 0.5, removeOnCompletion: false)
+            self.labelsContainer.layer.animateSpringPosition(from: self.labelsContainer.center, to: self.labelsContainer.center.offsetBy(dx: 0, dy: itemHeight - self.bounds.height), duration: springDuration, initialVelocity: 0.2, damping: 300.0, removeOnCompletion: false)
+
+            let gradientX: CGFloat = 0.5
+            let gradientYStart: CGFloat = avatarWidth * 0.8 / self.bounds.height
+            let gradientYEnd: CGFloat = avatarWidth * -0.1 / self.bounds.height
+            UIView.animate(withDuration: duration * 0.6, delay: duration * 0.3) { [weak self] in
+                self?.releaseForArchiveGradient.startPoint = CGPoint(x: gradientX, y: gradientYStart)
+                self?.releaseForArchiveGradient.endPoint = CGPoint(x: gradientX, y: gradientYEnd)
+            }
+            
+            let didComplete: () -> Void = { [weak self] in
+                guard let strongSelf = self else {
+                    completion?()
+                    return
+                }
+                
+                if let archiveFolderSnapshot = strongSelf.arrowArchiveAnimationNode.view.snapshotView(afterScreenUpdates: true) {
+                    let scale: CGFloat =  1.04
+                    archiveFolderSnapshot.layer.transform = CATransform3DMakeScale(scale, scale, 0)
+                    archiveFolderSnapshot.layer.frame = strongSelf.arrowArchiveAnimationNode.frame
+                    archiveFolderSnapshot.layer.frame.origin = arrowArchiveAnimationPositionEnd.offsetBy(
+                        dx: -strongSelf.arrowArchiveAnimationNode.frame.width * scale / 2,
+                        dy: -strongSelf.arrowArchiveAnimationNode.frame.height * scale / 2
+                    )
+                    
+                    let gradientLayer = CAGradientLayer()
+                    gradientLayer.frame = CGRect(x: strongSelf.insets.left, y: (itemHeight - avatarWidth) / 2, width: avatarWidth, height: avatarWidth)
+                    gradientLayer.cornerRadius = avatarWidth / 2
+                    gradientLayer.colors = strongSelf.gradientColors(strongSelf.releaseForArchiveGradientColors)
+                    gradientLayer.startPoint = CGPoint(x: 0.5, y: 0.7)
+                    gradientLayer.endPoint = CGPoint(x: 0.5, y: -0.3)
+                    
+                    sourceView?.layer.addSublayer(gradientLayer)
+                    sourceView?.layer.addSublayer(archiveFolderSnapshot.layer)
+                }
+                
+                strongSelf.lastProgress = 0
+                strongSelf.arrowIcon.isHidden = false
+                strongSelf.arrowLine.isHidden = false
+                strongSelf.swipeDownGradient.isHidden = false
+                strongSelf.arrowArchiveAnimationNode.isHidden = true
+                strongSelf.layer.frame = CGRect(origin: initialLayerPosition, size: CGSize(width: strongSelf.bounds.width, height: 0))
+                superLayer?.addSublayer(strongSelf.layer)
+                
+                strongSelf.arrowLine.layer.removeAllAnimations()
+                strongSelf.arrowArchiveAnimationNode.layer.removeAllAnimations()
+                strongSelf.releaseForArchiveGradient.mask?.removeAllAnimations()
+                strongSelf.labelsContainer.layer.removeAllAnimations()
+                
+                let labelCenterOffset = max(strongSelf.releaseLabel.bounds.width / 2, strongSelf.swipeDownLabel.bounds.width / 2)
+                let releaseLabelOffsetX: CGFloat = -strongSelf.bounds.width / 2 - labelCenterOffset
+                strongSelf.releaseLabel.transform = CGAffineTransform(translationX: releaseLabelOffsetX, y: 0)
+                strongSelf.swipeDownLabel.transform = .identity
+                strongSelf.releaseLabel.alpha = 0
+                strongSelf.swipeDownLabel.alpha = 1
+                
+                strongSelf.configureGradients()
+                strongSelf.configureArrowIcon()
+                
+                sourceView?.isHidden = false
+                itemViewSnapshot?.removeFromSuperview()
+                
+                strongSelf.isAnimatingOut = false
+                completion?()
+            }
+            
+            let heightDiff = self.lastProgress * self.targetHeight - itemHeight
+            let itemViewPositionStart =  sourceView?.frame.center.offsetBy(dx: 0, dy: heightDiff) ?? .zero
+            let itemViewPositionEnd = sourceView?.frame.center ?? .zero
+            itemViewSnapshot?.layer.animateSpringPosition(from: itemViewPositionStart, to: itemViewPositionEnd, duration: springDuration, initialVelocity: 0.2, damping: 300, removeOnCompletion: false) { _ in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    didComplete()
                 }
             }
         }
         
         public func update(component: ChatListArchiveFlowComponent, availableSize: CGSize, transition: Transition) -> CGSize {
             self.component = component
-            let avatarWidth = min(60.0, floor(component.presentationData.listsFontSize.baseDisplaySize * 60.0 / 17.0))
-            let arrowLineX = self.insets.left + avatarWidth / 2 - self.arrowIconWidth / 2
+            let arrowLineX = self.insets.left + self.avatarWidth / 2 - self.arrowIconWidth / 2
             self.arrowLine.frame.origin.x = arrowLineX
             self.arrowIcon.frame.origin.x = arrowLineX
 
@@ -216,21 +343,42 @@ public final class ChatListArchiveFlowComponent: Component {
             let animationViewWidth: CGFloat = 58
             let arrowArchiveAnimationNodeFrame = CGRect(x: 0, y: 0, width: animationViewWidth, height: animationViewWidth + 7.6)
             transition.setFrame(view: self.arrowArchiveAnimationNode.view, frame: arrowArchiveAnimationNodeFrame)
+            
+            self.updateColors()
 
             return availableSize
         }
         
         private func updateLabel(_ label: UILabel, withText text: String, fontSize: CGFloat, availableSize: CGSize, containerOffsetX: CGFloat) {
             label.text = text
-            label.textColor = .white
             label.font = Font.semibold(floor(fontSize * 17 / 18))
             label.sizeToFit()
             label.frame.origin.x = (availableSize.width - label.bounds.width) / 2 - containerOffsetX
         }
+        
+        private func updateColors() {
+            self.swipeDownGradient.colors = self.gradientColors(self.swipeDownGradientColors)
+            self.releaseForArchiveGradient.colors = self.gradientColors(self.releaseForArchiveGradientColors)
+            
+            self.swipeDownLabel.textColor = .white
+            self.releaseLabel.textColor = .white
+            
+            self.arrowArchiveAnimationNode.setColors(colors: [
+                "**.Stroke 1": self.releaseForArchiveGradientColors.bottomColor,
+                "**.Fill 1" : .white
+            ])
+        }
+        
+        private func gradientColors(_ themeGradientColors: PresentationThemeGradientColors) -> [CGColor] {
+            return [themeGradientColors.bottomColor.cgColor, themeGradientColors.topColor.cgColor]
+        }
     }
 
     static public func == (lhs: ChatListArchiveFlowComponent, rhs: ChatListArchiveFlowComponent) -> Bool {
-        return lhs.presentationData == rhs.presentationData
+        if lhs.presentationData != rhs.presentationData {
+            return false
+        }
+        return true
     }
 
     public func makeView() -> View {

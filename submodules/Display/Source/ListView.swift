@@ -2839,14 +2839,39 @@ open class ListView: ASDisplayNode, UIScrollViewAccessibilityDelegate, UIGesture
                                 })
                                 node.addTransitionOffsetAnimation(0.0, duration: insertionAnimationDuration * UIView.animationDurationFactor(), beginAt: timestamp)*/
                             } else {
-                                node.apparentHeight = previousApparentHeight
-                                node.animateFrameTransition(0.0, previousApparentHeight)
-                                node.addApparentHeightAnimation(updatedApparentHeight, duration: insertionAnimationDuration * UIView.animationDurationFactor(), beginAt: timestamp, invertOffsetDirection: invertOffsetDirection, update: { [weak node] progress, currentValue in
-                                    if let node = node {
-                                        node.animateFrameTransition(progress, currentValue)
-                                    }
-                                })
-                                
+                                if self.shouldRevealHiddenItems() {
+                                    let revealingAnimationDuration: CGFloat = 0.4
+                                    let transitionDuration: CGFloat = revealingAnimationDuration * UIView.animationDurationFactor()
+                                    self.willUpdateListItemNode(node, previousApparentHeight, updatedApparentHeight, transitionDuration)
+                                    let lastContentOffsetHeight: CGFloat = abs(scroller.contentOffset.y)
+                                    let transitionOffset: CGFloat = -(lastContentOffsetHeight - updatedApparentHeight)
+                                    node.apparentHeight = previousApparentHeight
+                                    node.animateFrameTransition(0.0, previousApparentHeight)
+                                    node.bounds.size.height = lastContentOffsetHeight
+                                    node.bounds.origin.y += transitionOffset
+                                    node.addApparentHeightAnimation(updatedApparentHeight, duration: 0, beginAt: timestamp, invertOffsetDirection: invertOffsetDirection, update: { [weak self, weak node] progress, currentValue in
+                                            if let strongSelf = self, let node = node {
+                                                node.animateFrameTransition(progress, currentValue)
+                                                strongSelf.scroller.setContentOffset(.zero, animated: false)
+                                                node.transitionOffset = transitionOffset / 2
+                                                
+                                                for itemNode in strongSelf.itemNodes where itemNode.index != node.index {
+                                                    itemNode.transitionOffset = transitionOffset
+                                                    itemNode.addTransitionOffsetAnimation(0, duration: transitionDuration, beginAt: timestamp)
+                                                }
+                                            }
+                                        }
+                                    )
+                                } else {
+                                    node.apparentHeight = previousApparentHeight
+                                    node.animateFrameTransition(0.0, previousApparentHeight)
+                                    node.addApparentHeightAnimation(updatedApparentHeight, duration: insertionAnimationDuration * UIView.animationDurationFactor(), beginAt: timestamp, invertOffsetDirection: invertOffsetDirection, update: { [weak node] progress, currentValue in
+                                        if let node = node {
+                                            node.animateFrameTransition(progress, currentValue)
+                                        }
+                                    })
+                                }
+ 
                                 if node.rotated {
                                     if currentAnimation == nil {
                                         let insetPart: CGFloat = previousInsets.bottom - layout.insets.bottom
@@ -5026,6 +5051,14 @@ open class ListView: ASDisplayNode, UIScrollViewAccessibilityDelegate, UIGesture
                 scrollDirection = self.rotated ? .down : .up
         }
         return self.scrollWithDirection(scrollDirection, distance: distance)
+    }
+
+    open func shouldRevealHiddenItems() -> Bool {
+        return false
+    }
+    
+    open func willUpdateListItemNode(_ itemNode: ListViewItemNode, _ previousHeight: CGFloat, _ updatedHeight: CGFloat, _ transitionDuration: CGFloat) {
+        
     }
 }
 

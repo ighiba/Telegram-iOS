@@ -1057,7 +1057,10 @@ public final class ChatListContainerNode: ASDisplayNode, UIGestureRecognizerDele
             }
             return canExpandHiddenItems()
         }
-        
+        itemNode.listNode.archiveItemNodeWillUpdate = { [weak self] itemNode, previousHeight, updatedHeight, transitionDuration in
+            self?.archiveItemNodeWillUpdate?(itemNode, previousHeight, updatedHeight, transitionDuration)
+        }
+
         self.currentItemStateValue.set(itemNode.listNode.state |> map { state in
             let filterId: Int32?
             switch id {
@@ -1123,6 +1126,7 @@ public final class ChatListContainerNode: ASDisplayNode, UIGestureRecognizerDele
     var didBeginSelectingChats: (() -> Void)?
     var canExpandHiddenItems: (() -> Bool)?
     public var displayFilterLimit: (() -> Void)?
+    public var archiveItemNodeWillUpdate: ((ASDisplayNode, CGFloat, CGFloat, CGFloat) -> Void)?
     
     public init(context: AccountContext, controller: ChatListControllerImpl?, location: ChatListControllerLocation, chatListMode: ChatListNodeMode = .chatList(appendContacts: true), previewing: Bool, controlsHistoryPreload: Bool, isInlineMode: Bool, presentationData: PresentationData, animationCache: AnimationCache, animationRenderer: MultiAnimationRenderer, filterBecameEmpty: @escaping (ChatListFilter?) -> Void, filterEmptyAction: @escaping (ChatListFilter?) -> Void, secondaryEmptyAction: @escaping () -> Void, openArchiveSettings: @escaping () -> Void) {
         self.context = context
@@ -1766,6 +1770,8 @@ final class ChatListControllerNode: ASDisplayNode, UIGestureRecognizerDelegate {
     private var allowOverscrollItemExpansion: Bool = false
     private var currentOverscrollItemExpansionTimestamp: Double?
     
+    private var canRevealArchiveFolder: Bool = false
+    
     private var containerLayout: (layout: ContainerViewLayout, navigationBarHeight: CGFloat, visualNavigationHeight: CGFloat, cleanNavigationBarHeight: CGFloat, storiesInset: CGFloat)?
     
     var contentScrollingEnded: ((ListView) -> Bool)?
@@ -1830,6 +1836,26 @@ final class ChatListControllerNode: ASDisplayNode, UIGestureRecognizerDelegate {
         }
         self.mainContainerNode.shouldStopScrolling = { [weak self] listView, velocity in
             return self?.shouldStopScrolling(listView: listView, velocity: velocity, isPrimary: true) ?? false
+        }
+        self.mainContainerNode.archiveItemNodeWillUpdate = { [weak self] itemNode, previousHeight, updatedHeight, transitionDuration in
+            guard let strongSelf = self else {
+                return
+            }
+            
+            let itemOffsetY: CGFloat
+            if case .known(let offset) = strongSelf.mainContainerNode.contentOffset {
+                itemOffsetY = -(abs(offset) - updatedHeight)
+            } else {
+                itemOffsetY = 0
+            }
+            
+            if strongSelf.canRevealArchiveFolder, let archiveView = strongSelf.archiveFlowView.view as? ChatListArchiveFlowComponent.View {
+                archiveView.animateOut(itemNode.view, itemHeight: updatedHeight, transitionDuration: transitionDuration) {
+                    itemNode.bounds.size.height = updatedHeight
+                    itemNode.bounds.origin.y -= itemOffsetY
+                    (itemNode as? ListViewItemNode)?.transitionOffset = 0
+                }
+            }
         }
         
         self.addSubnode(self.debugListView)
@@ -2209,10 +2235,15 @@ final class ChatListControllerNode: ASDisplayNode, UIGestureRecognizerDelegate {
 
         // TODO: updateArchiveFlowView method
         // MARK: - Update archiveFlowView
-        
+
         let _ = archiveFlowView.update(
             transition: .immediate,
-            component: AnyComponent(ChatListArchiveFlowComponent(presentationData: self.presentationData)),
+            component: AnyComponent(ChatListArchiveFlowComponent(
+                presentationData: self.presentationData,
+                progressHandler: { [weak self] canRevealArchiveFolder in
+                    self?.canRevealArchiveFolder = canRevealArchiveFolder
+                }
+            )),
             environment: {},
             containerSize: layout.size
         )
@@ -2441,7 +2472,11 @@ final class ChatListControllerNode: ASDisplayNode, UIGestureRecognizerDelegate {
     
     func willScrollToTop() {
         if let navigationBarComponentView = self.navigationBarView.view as? ChatListNavigationBar.View {
-            navigationBarComponentView.applyScroll(offset: 0.0, allowAvatarsExpansion: false, allowBarExpansion: false, transition: Transition(animation: .curve(duration: 0.3, curve: .slide)))
+            navigationBarComponentView.applyScroll(
+                offset: 0.0, allowAvatarsExpansion: false,
+                allowBarExpansion: false,
+                transition: Transition(animation: .curve(duration: 0.3, curve: .slide))
+            )
         }
     }
     
@@ -2453,7 +2488,15 @@ final class ChatListControllerNode: ASDisplayNode, UIGestureRecognizerDelegate {
         
         if let archiveFlowView = archiveFlowView.view as? ChatListArchiveFlowComponent.View {
             if case .known(let scrollOffset) = offset {
-                archiveFlowView.applyScroll(offset: scrollOffset, navBarHeight: containerLayout.navigationBarHeight, layout: containerLayout.layout, transition: .immediate)
+                guard !self.mainContainerNode.currentItemNode.hasArchiveInList() else {
+                    return
+                }
+
+                archiveFlowView.applyScroll(
+                    offset: scrollOffset, navBarHeight: containerLayout.navigationBarHeight,
+                    layout: containerLayout.layout,
+                    transition: .immediate
+                )
             }
         }
         
@@ -2503,7 +2546,7 @@ final class ChatListControllerNode: ASDisplayNode, UIGestureRecognizerDelegate {
                             manuallyAllow = true
                         }
                         
-                        if manuallyAllow, case let .known(value) = offset, value + listView.tempTopInset <= -40.0 {
+                        if manuallyAllow, case let .known(value) = offset, value + listView.tempTopInset <= -80.0 {
                             overscrollHiddenChatItemsAllowed = true
                         }
                     }
@@ -2519,11 +2562,11 @@ final class ChatListControllerNode: ASDisplayNode, UIGestureRecognizerDelegate {
                             if let currentOverscrollItemExpansionTimestamp = self.currentOverscrollItemExpansionTimestamp, currentOverscrollItemExpansionTimestamp <= timestamp - 0.0 {
                                 self.allowOverscrollItemExpansion = false
                                 
-                                if isPrimary {
-                                    self.mainContainerNode.currentItemNode.revealScrollHiddenItem()
-                                } else {
-                                    self.inlineStackContainerNode?.currentItemNode.revealScrollHiddenItem()
-                                }
+//                                if isPrimary {
+//                                    self.mainContainerNode.currentItemNode.revealScrollHiddenItem()
+//                                } else {
+//                                    self.inlineStackContainerNode?.currentItemNode.revealScrollHiddenItem()
+//                                }
                             }
                         }
                     }
@@ -2576,6 +2619,10 @@ final class ChatListControllerNode: ASDisplayNode, UIGestureRecognizerDelegate {
         }
         self.allowOverscrollItemExpansion = false
         self.currentOverscrollItemExpansionTimestamp = nil
+        if self.canRevealArchiveFolder {
+            self.mainContainerNode.currentItemNode.isArchiveFolderPendingToReveal = true
+            self.mainContainerNode.currentItemNode.revealScrollHiddenItem()
+        }
     }
     
     private func contentScrollingEnded(listView: ListView, isPrimary: Bool) -> Bool {
