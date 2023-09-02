@@ -137,6 +137,7 @@ public final class ChatListHeaderComponent: Component {
     public let storiesIncludeHidden: Bool
     public let storiesFraction: CGFloat
     public let storiesUnlocked: Bool
+    public let canExpandItems: Bool
     public let uploadProgress: Float?
     public let context: AccountContext
     public let theme: PresentationTheme
@@ -155,6 +156,7 @@ public final class ChatListHeaderComponent: Component {
         storiesIncludeHidden: Bool,
         storiesFraction: CGFloat,
         storiesUnlocked: Bool,
+        canExpandItems: Bool,
         uploadProgress: Float?,
         context: AccountContext,
         theme: PresentationTheme,
@@ -172,6 +174,7 @@ public final class ChatListHeaderComponent: Component {
         self.storiesIncludeHidden = storiesIncludeHidden
         self.storiesFraction = storiesFraction
         self.storiesUnlocked = storiesUnlocked
+        self.canExpandItems = canExpandItems
         self.uploadProgress = uploadProgress
         self.theme = theme
         self.strings = strings
@@ -940,6 +943,7 @@ public final class ChatListHeaderComponent: Component {
                         storySubscriptions: storySubscriptions,
                         collapseFraction: 1.0 - component.storiesFraction,
                         unlocked: component.storiesUnlocked,
+                        canExpandItems: component.canExpandItems,
                         uploadProgress: component.uploadProgress,
                         peerAction: { [weak self] peer in
                             guard let self else {

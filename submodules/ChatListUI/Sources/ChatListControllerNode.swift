@@ -2491,9 +2491,13 @@ final class ChatListControllerNode: ASDisplayNode, UIGestureRecognizerDelegate {
                 guard !self.mainContainerNode.currentItemNode.hasArchiveInList() else {
                     return
                 }
-
+                
+                let hasStories: Bool = self.controller?.orderedStorySubscriptions?.items.count != 0
+                let additionalOffset: CGFloat = hasStories ? ChatListNavigationBar.storiesScrollHeight : 0
+                
                 archiveFlowView.applyScroll(
-                    offset: scrollOffset, navBarHeight: containerLayout.navigationBarHeight,
+                    offset: scrollOffset + additionalOffset,
+                    navBarHeight: containerLayout.navigationBarHeight + additionalOffset,
                     layout: containerLayout.layout,
                     transition: .immediate
                 )

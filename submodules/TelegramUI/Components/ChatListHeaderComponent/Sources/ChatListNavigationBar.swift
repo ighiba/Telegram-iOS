@@ -264,9 +264,12 @@ public final class ChatListNavigationBar: Component {
             var backgroundViewYOffset = -visibleSize.height + self.backgroundView.layer.position.y
             var backgroundViewY = visibleSize.height
             var separatorY = visibleSize.height
-
-            if !allowBarExpansion, offset < 0 {
-                let lowestY = visibleSize.height + offset
+            
+            let hasStories: Bool = component.storySubscriptions?.items.count != 0
+            let additionalOffset: CGFloat = hasStories ? ChatListNavigationBar.storiesScrollHeight : 0
+            
+            if !allowBarExpansion, offset < 0 - additionalOffset {
+                let lowestY = visibleSize.height + offset + additionalOffset
                 backgroundViewYOffset = 0
                 backgroundViewY = lowestY + UIScreenPixel
                 separatorY = lowestY
@@ -320,9 +323,9 @@ public final class ChatListNavigationBar: Component {
             let searchSize = CGSize(width: currentLayout.size.width - 6.0 * 2.0, height: navigationBarSearchContentHeight)
             var searchFrame = CGRect(origin: CGPoint(x: 6.0, y: visibleSize.height - searchSize.height), size: searchSize)
             
-            let isBarShouldBeClipped: Bool = !allowBarExpansion && clippedScrollOffset <= 0
+            let isBarShouldBeClipped: Bool = !allowBarExpansion && clippedScrollOffset <= 0 - additionalOffset
             if isBarShouldBeClipped {
-                searchFrame.origin.y = currentLayout.size.height - searchSize.height
+                searchFrame.origin.y = currentLayout.size.height - searchSize.height + additionalOffset
             }
             if component.tabsNode != nil {
                 searchFrame.origin.y -= 40.0
@@ -377,6 +380,7 @@ public final class ChatListNavigationBar: Component {
                 storiesIncludeHidden: component.storiesIncludeHidden,
                 storiesFraction: storiesOffsetFraction,
                 storiesUnlocked: storiesUnlocked,
+                canExpandItems: allowBarExpansion,
                 uploadProgress: component.uploadProgress,
                 context: component.context,
                 theme: component.theme,
@@ -464,7 +468,7 @@ public final class ChatListNavigationBar: Component {
                 }
             }
             
-            let tabsFrameY: CGFloat = isBarShouldBeClipped ? currentLayout.size.height : visibleSize.height
+            let tabsFrameY: CGFloat = isBarShouldBeClipped ? currentLayout.size.height + additionalOffset : visibleSize.height
             var tabsFrame = CGRect(origin: CGPoint(x: 0.0, y: tabsFrameY), size: CGSize(width: visibleSize.width, height: 46.0))
             if !component.isSearchActive {
                 tabsFrame.origin.y -= component.accessoryPanelContainerHeight
@@ -473,7 +477,7 @@ public final class ChatListNavigationBar: Component {
                 tabsFrame.origin.y -= 46.0
             }
             
-            let accessoryPanelContainerY: CGFloat = isBarShouldBeClipped ? currentLayout.size.height : visibleSize.height
+            let accessoryPanelContainerY: CGFloat = isBarShouldBeClipped ? currentLayout.size.height + additionalOffset : visibleSize.height
             var accessoryPanelContainerFrame = CGRect(origin: CGPoint(x: 0.0, y: accessoryPanelContainerY), size: CGSize(width: visibleSize.width, height: component.accessoryPanelContainerHeight))
             if !component.isSearchActive {
                 accessoryPanelContainerFrame.origin.y -= component.accessoryPanelContainerHeight
@@ -566,6 +570,7 @@ public final class ChatListNavigationBar: Component {
                         storiesIncludeHidden: headerComponent.storiesIncludeHidden,
                         storiesFraction: headerComponent.storiesFraction,
                         storiesUnlocked: headerComponent.storiesUnlocked,
+                        canExpandItems: headerComponent.canExpandItems,
                         uploadProgress: storyUploadProgress,
                         context: headerComponent.context,
                         theme: headerComponent.theme,

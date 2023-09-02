@@ -55,6 +55,7 @@ public final class StoryPeerListComponent: Component {
     public let storySubscriptions: EngineStorySubscriptions?
     public let collapseFraction: CGFloat
     public let unlocked: Bool
+    public let canExpandItems: Bool
     public let uploadProgress: Float?
     public let peerAction: (EnginePeer?) -> Void
     public let contextPeerAction: (ContextExtractedContentContainingNode, ContextGesture, EnginePeer) -> Void
@@ -77,6 +78,7 @@ public final class StoryPeerListComponent: Component {
         storySubscriptions: EngineStorySubscriptions?,
         collapseFraction: CGFloat,
         unlocked: Bool,
+        canExpandItems: Bool,
         uploadProgress: Float?,
         peerAction: @escaping (EnginePeer?) -> Void,
         contextPeerAction: @escaping (ContextExtractedContentContainingNode, ContextGesture, EnginePeer) -> Void,
@@ -98,6 +100,7 @@ public final class StoryPeerListComponent: Component {
         self.storySubscriptions = storySubscriptions
         self.collapseFraction = collapseFraction
         self.unlocked = unlocked
+        self.canExpandItems = canExpandItems
         self.uploadProgress = uploadProgress
         self.peerAction = peerAction
         self.contextPeerAction = contextPeerAction
@@ -891,8 +894,14 @@ public final class StoryPeerListComponent: Component {
                 
                 let minItemScale: CGFloat = minimizedItemScale.interpolate(to: minimizedMaxItemScale, amount: collapsedState.minFraction) * (1.0 - collapsedState.activityFraction) + 0.1 * collapsedState.activityFraction
                 
-                let itemScale: CGFloat = minItemScale.interpolate(to: maximizedItemScale, amount: min(1.0, collapsedState.maxFraction))
-                
+                let scaleToInterpolate: CGFloat
+                if component.canExpandItems {
+                    scaleToInterpolate = maximizedItemScale
+                } else {
+                    scaleToInterpolate = 1 + (maximizedItemScale * 0.03)
+                }
+                let itemScale: CGFloat = minItemScale.interpolate(to: scaleToInterpolate, amount: min(1.0, collapsedState.maxFraction))
+
                 let itemFrame: CGRect
                 if isReallyVisible {
                     var adjustedRegularFrame = regularItemFrame
@@ -912,17 +921,19 @@ public final class StoryPeerListComponent: Component {
                     
                     var itemPosition = collapsedItemPosition.interpolate(to: adjustedRegularFrame.center, amount: min(1.0, collapsedState.maxFraction))
                     
-                    itemPosition.y += realTimeOverscrollFraction * 83.0 * 0.5
+                    let expansionFactorY: CGFloat = component.canExpandItems ? 1.0 : 0.05
+                    itemPosition.y += realTimeOverscrollFraction * 83.0 * 0.5 * expansionFactorY
                     
                     var bounceOffsetFraction = (adjustedRegularFrame.midX - itemLayout.frame(at: collapseStartIndex).midX) / itemLayout.containerSize.width
                     bounceOffsetFraction = max(-1.0, min(1.0, bounceOffsetFraction))
                     
                     let _ = bounceOffsetFraction
                     
+                    let expansionBounceFactor: CGFloat = component.canExpandItems ? 1.0 : 0.2
                     let bounceFactor = expandBoundsFraction * (1.0 + realTimeOverscrollFraction * 6.0)
                     let verticalBounceFactor = expandBoundsFraction * (1.0 + realTimeOverscrollFraction * 12.0)
-                    itemPosition.x += bounceFactor * (adjustedRegularFrame.midX - collapsedItemPosition.x) * 0.04
-                    itemPosition.y += verticalBounceFactor * (adjustedRegularFrame.midY - collapsedItemPosition.y) * 0.05
+                    itemPosition.x += bounceFactor * (adjustedRegularFrame.midX - collapsedItemPosition.x) * 0.04 * expansionBounceFactor
+                    itemPosition.y += verticalBounceFactor * (adjustedRegularFrame.midY - collapsedItemPosition.y) * 0.05 * expansionBounceFactor
                     
                     let itemSize = CGSize(width: adjustedRegularFrame.width * itemScale, height: adjustedRegularFrame.height)
                     
