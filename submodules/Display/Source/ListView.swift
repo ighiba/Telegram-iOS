@@ -2842,7 +2842,6 @@ open class ListView: ASDisplayNode, UIScrollViewAccessibilityDelegate, UIGesture
                                 if self.shouldRevealHiddenItems() {
                                     let revealingAnimationDuration: CGFloat = 0.4
                                     let transitionDuration: CGFloat = revealingAnimationDuration * UIView.animationDurationFactor()
-                                    self.willUpdateListItemNode(node, previousApparentHeight, updatedApparentHeight, transitionDuration)
                                     let lastContentOffsetHeight: CGFloat = abs(scroller.contentOffset.y)
                                     let transitionOffset: CGFloat = -(lastContentOffsetHeight - updatedApparentHeight)
                                     node.apparentHeight = previousApparentHeight
@@ -2854,7 +2853,7 @@ open class ListView: ASDisplayNode, UIScrollViewAccessibilityDelegate, UIGesture
                                                 node.animateFrameTransition(progress, currentValue)
                                                 strongSelf.scroller.setContentOffset(.zero, animated: false)
                                                 node.transitionOffset = transitionOffset / 2
-                                                
+                                                strongSelf.willUpdateListItemNode(node, previousApparentHeight, updatedApparentHeight, transitionDuration)
                                                 for itemNode in strongSelf.itemNodes where itemNode.index != node.index {
                                                     itemNode.transitionOffset = transitionOffset
                                                     itemNode.addTransitionOffsetAnimation(0, duration: transitionDuration, beginAt: timestamp)

@@ -46,8 +46,6 @@ public final class ChatListArchiveFlowComponent: Component {
 
         public override init(frame: CGRect) {
             super.init(frame: frame)
-            
-            self.layer.masksToBounds = true
 
             self.configureGradients()
             self.configureArrowLine()
@@ -55,6 +53,7 @@ public final class ChatListArchiveFlowComponent: Component {
             self.configureLabels()
             self.configureArrowArchiveAnimationNode()
             
+            self.layer.masksToBounds = true
             self.layer.addSublayer(self.swipeDownGradient)
             self.layer.addSublayer(self.releaseForArchiveGradient)
             self.labelsContainer.addSubview(swipeDownLabel)
@@ -329,7 +328,7 @@ public final class ChatListArchiveFlowComponent: Component {
             let heightDiff = self.lastProgress * self.targetHeight - itemHeight
             let itemViewPositionStart =  sourceView?.frame.center.offsetBy(dx: 0, dy: heightDiff) ?? .zero
             let itemViewPositionEnd = sourceView?.frame.center ?? .zero
-            itemViewSnapshot?.layer.animateSpringPosition(from: itemViewPositionStart, to: itemViewPositionEnd, duration: springDuration, initialVelocity: 0.2, damping: 300, removeOnCompletion: false) { _ in
+            itemViewSnapshot?.layer.animateSpringPosition(from: itemViewPositionStart, to: itemViewPositionEnd, duration: springDuration, initialVelocity: 3.5, damping: 300, removeOnCompletion: false) { _ in
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                     didComplete()
                 }
