@@ -213,7 +213,7 @@ public final class ChatListArchiveFlowComponent: Component {
             self.arrowArchiveAnimationNode.isHidden = false
             self.arrowArchiveAnimationNode.playOnce()
             
-            self.arrowArchiveAnimationNode.speed = transitionDuration * 2
+            self.arrowArchiveAnimationNode.speed = transitionDuration * 2.2
 
             let sourceView = itemView.subviews.first
             let itemViewSnapshot = itemView.snapshotContentTree()
@@ -266,23 +266,34 @@ public final class ChatListArchiveFlowComponent: Component {
                 }
                 
                 if let archiveFolderSnapshot = strongSelf.arrowArchiveAnimationNode.view.snapshotView(afterScreenUpdates: true) {
-                    let scale: CGFloat =  1.04
+                    let scale: CGFloat =  1.02
                     archiveFolderSnapshot.layer.transform = CATransform3DMakeScale(scale, scale, 0)
                     archiveFolderSnapshot.layer.frame = strongSelf.arrowArchiveAnimationNode.frame
-                    archiveFolderSnapshot.layer.frame.origin = arrowArchiveAnimationPositionEnd.offsetBy(
-                        dx: -strongSelf.arrowArchiveAnimationNode.frame.width * scale / 2,
-                        dy: -strongSelf.arrowArchiveAnimationNode.frame.height * scale / 2
-                    )
                     
                     let gradientLayer = CAGradientLayer()
-                    gradientLayer.frame = CGRect(x: strongSelf.insets.left, y: (itemHeight - avatarWidth) / 2, width: avatarWidth, height: avatarWidth)
+                    gradientLayer.frame = CGRect(x: 0, y: 0, width: avatarWidth, height: avatarWidth)
                     gradientLayer.cornerRadius = avatarWidth / 2
                     gradientLayer.colors = strongSelf.gradientColors(strongSelf.releaseForArchiveGradientColors)
                     gradientLayer.startPoint = CGPoint(x: 0.5, y: 0.7)
                     gradientLayer.endPoint = CGPoint(x: 0.5, y: -0.3)
                     
-                    sourceView?.layer.addSublayer(gradientLayer)
-                    sourceView?.layer.addSublayer(archiveFolderSnapshot.layer)
+                    if let avatarView = sourceView?.subviews.last(where: { $0.frame.width == $0.frame.height && $0.frame.width == avatarWidth }) {
+                        gradientLayer.frame.origin = .zero
+                        archiveFolderSnapshot.layer.frame.origin = CGPoint(
+                            x: (avatarView.bounds.width - archiveFolderSnapshot.layer.bounds.width * scale) / 2,
+                            y: (avatarView.bounds.height - archiveFolderSnapshot.layer.bounds.height * scale) / 2
+                        )
+                        avatarView.layer.addSublayer(gradientLayer)
+                        avatarView.layer.addSublayer(archiveFolderSnapshot.layer)
+                    } else {
+                        gradientLayer.frame.origin = CGPoint(x: strongSelf.insets.left, y: (itemHeight - avatarWidth) / 2)
+                        archiveFolderSnapshot.layer.frame.origin = arrowArchiveAnimationPositionEnd.offsetBy(
+                            dx: -strongSelf.arrowArchiveAnimationNode.frame.width * scale / 2,
+                            dy: -strongSelf.arrowArchiveAnimationNode.frame.height * scale / 2
+                        )
+                        sourceView?.layer.addSublayer(gradientLayer)
+                        sourceView?.layer.addSublayer(archiveFolderSnapshot.layer)
+                    }
                 }
                 
                 strongSelf.lastProgress = 0
