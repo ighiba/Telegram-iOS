@@ -327,7 +327,7 @@ public final class ChatListNavigationBar: Component {
             searchContentNode.expansionProgress = 1.0 - searchOffsetFraction
             
             if !allowBarExpansion, clippedScrollOffset <= 0 {
-                searchFrame.origin.y = currentLayout.size.height - searchSize.height
+                searchFrame.origin.y = currentLayout.size.height - searchSize.height - component.accessoryPanelContainerHeight
             }
             
             transition.setFrameWithAdditivePosition(view: searchContentNode.view, frame: searchFrame)
@@ -471,7 +471,14 @@ public final class ChatListNavigationBar: Component {
                 tabsFrame.origin.y -= 46.0
             }
             
-            var accessoryPanelContainerFrame = CGRect(origin: CGPoint(x: 0.0, y: visibleSize.height), size: CGSize(width: visibleSize.width, height: component.accessoryPanelContainerHeight))
+            let accessoryPanelContainerY: CGFloat
+            if !allowBarExpansion, clippedScrollOffset <= 0 {
+                accessoryPanelContainerY = currentLayout.size.height
+            } else {
+                accessoryPanelContainerY = visibleSize.height
+            }
+            
+            var accessoryPanelContainerFrame = CGRect(origin: CGPoint(x: 0.0, y: accessoryPanelContainerY), size: CGSize(width: visibleSize.width, height: component.accessoryPanelContainerHeight))
             if !component.isSearchActive {
                 accessoryPanelContainerFrame.origin.y -= component.accessoryPanelContainerHeight
             }
