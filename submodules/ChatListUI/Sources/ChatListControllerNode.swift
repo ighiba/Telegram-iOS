@@ -1771,6 +1771,7 @@ final class ChatListControllerNode: ASDisplayNode, UIGestureRecognizerDelegate {
     private var currentOverscrollItemExpansionTimestamp: Double?
     
     private var canRevealArchiveFolder: Bool = false
+    private var hasHiddenByDefaultArchive: Bool = false
     
     private var containerLayout: (layout: ContainerViewLayout, navigationBarHeight: CGFloat, visualNavigationHeight: CGFloat, cleanNavigationBarHeight: CGFloat, storiesInset: CGFloat)?
     
@@ -2035,6 +2036,8 @@ final class ChatListControllerNode: ASDisplayNode, UIGestureRecognizerDelegate {
     private func updateNavigationBar(layout: ContainerViewLayout, deferScrollApplication: Bool, transition: Transition) -> (navigationHeight: CGFloat, storiesInset: CGFloat) {
         let headerContent = self.controller?.updateHeaderContent()
         
+        self.hasHiddenByDefaultArchive = self.mainContainerNode.currentItemNode.hasHiddenByDefaultArchive()
+
         var tabsNode: ASDisplayNode?
         var tabsNodeIsSearch = false
         
@@ -2173,8 +2176,14 @@ final class ChatListControllerNode: ASDisplayNode, UIGestureRecognizerDelegate {
             }
         }
         
-        let allowBarExpansion: Bool = false
+        var allowBarExpansion: Bool = true
         
+        if let controller = self.controller, controller.location == .chatList(groupId: .archive) {
+            allowBarExpansion = true
+        } else if self.hasHiddenByDefaultArchive {
+            allowBarExpansion = false
+        }
+
         if let navigationBarComponentView = self.navigationBarView.view as? ChatListNavigationBar.View {
             navigationBarComponentView.applyScroll(
                 offset: offset,
@@ -2233,23 +2242,8 @@ final class ChatListControllerNode: ASDisplayNode, UIGestureRecognizerDelegate {
         let navigationBarLayout = self.updateNavigationBar(layout: layout, deferScrollApplication: true, transition: Transition(transition))
         self.mainContainerNode.initialScrollingOffset = ChatListNavigationBar.searchScrollHeight + navigationBarLayout.storiesInset
 
-        // TODO: updateArchiveFlowView method
-        // MARK: - Update archiveFlowView
-
-        let _ = archiveFlowView.update(
-            transition: .immediate,
-            component: AnyComponent(ChatListArchiveFlowComponent(
-                presentationData: self.presentationData,
-                progressHandler: { [weak self] canRevealArchiveFolder in
-                    self?.canRevealArchiveFolder = canRevealArchiveFolder
-                }
-            )),
-            environment: {},
-            containerSize: layout.size
-        )
-        
-        if let archiveFlowView = archiveFlowView.view, archiveFlowView.superview == nil {
-            self.view.addSubview(archiveFlowView)
+        self.updateArchiveFlowView(layout: layout, transition: .immediate) { [weak self] canRevealArchiveFolder in
+            self?.canRevealArchiveFolder = canRevealArchiveFolder
         }
         
         navigationBarHeight = navigationBarLayout.navigationHeight
@@ -2374,6 +2368,22 @@ final class ChatListControllerNode: ASDisplayNode, UIGestureRecognizerDelegate {
             navigationBarComponentView.applyCurrentScroll(transition: Transition(transition))
         }
     }
+
+    private func updateArchiveFlowView(layout: ContainerViewLayout, transition: Transition, progressHandler: @escaping (Bool) -> Void) {
+        let _ = archiveFlowView.update(
+            transition: transition,
+            component: AnyComponent(ChatListArchiveFlowComponent(
+                presentationData: self.presentationData,
+                progressHandler: progressHandler
+            )),
+            environment: {},
+            containerSize: layout.size
+        )
+        
+        if let archiveFlowView = archiveFlowView.view, archiveFlowView.superview == nil {
+            self.view.addSubview(archiveFlowView)
+        }
+    }
     
     func activateSearch(placeholderNode: SearchBarPlaceholderNode, displaySearchFilters: Bool, hasDownloads: Bool, initialFilter: ChatListSearchFilter, navigationController: NavigationController?) -> (ASDisplayNode, (Bool) -> Void)? {
         guard let (containerLayout, _, _, cleanNavigationBarHeight, _) = self.containerLayout, self.searchDisplayController == nil else {
@@ -2488,7 +2498,7 @@ final class ChatListControllerNode: ASDisplayNode, UIGestureRecognizerDelegate {
         
         if let archiveFlowView = archiveFlowView.view as? ChatListArchiveFlowComponent.View {
             if case .known(let scrollOffset) = offset {
-                guard !self.mainContainerNode.currentItemNode.hasArchiveInList() else {
+                guard self.hasHiddenByDefaultArchive && !self.mainContainerNode.currentItemNode.hasArchiveInList() else {
                     return
                 }
                 

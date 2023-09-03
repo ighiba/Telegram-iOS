@@ -2893,6 +2893,20 @@ public final class ChatListNode: ListView {
         }
     }
     
+    func hasHiddenByDefaultArchive() -> Bool {
+        var hasHiddenArchivedChats: Bool = false
+        self.forEachItemNode({ itemNode in
+            if let itemNode = itemNode as? ChatListItemNode, let item = itemNode.item {
+                if case let .groupReference(groupReference) = item.content, item.isArchive {
+                    if groupReference.hiddenByDefault {
+                        hasHiddenArchivedChats = true
+                    }
+                }
+            }
+        })
+        return hasHiddenArchivedChats
+    }
+    
     func hasArchiveInList() -> Bool {
         if self.currentState.hiddenItemShouldBeTemporaryRevealed {
             return true
@@ -2903,9 +2917,9 @@ public final class ChatListNode: ListView {
                 if !groupReference.hiddenByDefault {
                     return true
                 }
-            }
-            if itemNode.frame.height > 0 {
-                return true
+                if itemNode.frame.height > 0 {
+                    return true
+                }
             }
         }
         

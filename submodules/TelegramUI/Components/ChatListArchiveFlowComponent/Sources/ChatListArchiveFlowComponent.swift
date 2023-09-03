@@ -202,6 +202,9 @@ public final class ChatListArchiveFlowComponent: Component {
         }
         
         public func animateOut(_ itemView: UIView, itemHeight: CGFloat, transitionDuration: CGFloat, completion: (() -> Void)? = nil) {
+            guard !self.isAnimatingOut else {
+                return
+            }
             self.isAnimatingOut = true
             self.component?.progressHandler(false)
             let superLayer = self.layer.superlayer
@@ -210,6 +213,7 @@ public final class ChatListArchiveFlowComponent: Component {
             self.arrowLine.isHidden = false
             self.swipeDownGradient.isHidden = true
             self.arrowArchiveAnimationNode.isHidden = false
+            self.arrowArchiveAnimationNode.reset()
             self.arrowArchiveAnimationNode.playOnce()
             
             self.arrowArchiveAnimationNode.speed = transitionDuration * 2.2
@@ -295,28 +299,15 @@ public final class ChatListArchiveFlowComponent: Component {
                     }
                 }
                 
-                strongSelf.lastProgress = 0
                 strongSelf.arrowIcon.isHidden = false
                 strongSelf.arrowLine.isHidden = false
                 strongSelf.swipeDownGradient.isHidden = false
                 strongSelf.arrowArchiveAnimationNode.isHidden = true
+                strongSelf.arrowArchiveAnimationNode.reset()
                 strongSelf.layer.frame = CGRect(origin: initialLayerPosition, size: CGSize(width: strongSelf.bounds.width, height: 0))
                 superLayer?.addSublayer(strongSelf.layer)
                 
-                strongSelf.arrowLine.layer.removeAllAnimations()
-                strongSelf.arrowArchiveAnimationNode.layer.removeAllAnimations()
-                strongSelf.releaseForArchiveGradient.mask?.removeAllAnimations()
-                strongSelf.labelsContainer.layer.removeAllAnimations()
-                
-                let labelCenterOffset = max(strongSelf.releaseLabel.bounds.width / 2, strongSelf.swipeDownLabel.bounds.width / 2)
-                let releaseLabelOffsetX: CGFloat = -strongSelf.bounds.width / 2 - labelCenterOffset
-                strongSelf.releaseLabel.transform = CGAffineTransform(translationX: releaseLabelOffsetX, y: 0)
-                strongSelf.swipeDownLabel.transform = .identity
-                strongSelf.releaseLabel.alpha = 0
-                strongSelf.swipeDownLabel.alpha = 1
-                
-                strongSelf.configureGradients()
-                strongSelf.configureArrowIcon()
+                strongSelf.resetProgress()
                 
                 sourceView?.isHidden = false
                 itemViewSnapshot?.removeFromSuperview()
@@ -329,10 +320,30 @@ public final class ChatListArchiveFlowComponent: Component {
             let itemViewPositionStart =  sourceView?.frame.center.offsetBy(dx: 0, dy: heightDiff) ?? .zero
             let itemViewPositionEnd = sourceView?.frame.center ?? .zero
             itemViewSnapshot?.layer.animateSpringPosition(from: itemViewPositionStart, to: itemViewPositionEnd, duration: springDuration, initialVelocity: 3.5, damping: 300, removeOnCompletion: false) { _ in
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     didComplete()
                 }
             }
+        }
+        
+        public func resetProgress() {
+            self.lastProgress = 0
+            self.frame.size.height = 0
+            
+            self.arrowLine.layer.removeAllAnimations()
+            self.arrowArchiveAnimationNode.layer.removeAllAnimations()
+            self.releaseForArchiveGradient.mask?.removeAllAnimations()
+            self.labelsContainer.layer.removeAllAnimations()
+            
+            let labelCenterOffset = max(self.releaseLabel.bounds.width / 2, self.swipeDownLabel.bounds.width / 2)
+            let releaseLabelOffsetX: CGFloat = -self.bounds.width / 2 - labelCenterOffset
+            self.releaseLabel.transform = CGAffineTransform(translationX: releaseLabelOffsetX, y: 0)
+            self.swipeDownLabel.transform = .identity
+            self.releaseLabel.alpha = 0
+            self.swipeDownLabel.alpha = 1
+            
+            self.configureGradients()
+            self.configureArrowIcon()
         }
         
         public func update(component: ChatListArchiveFlowComponent, availableSize: CGSize, transition: Transition) -> CGSize {
