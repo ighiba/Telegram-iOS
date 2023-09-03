@@ -28,6 +28,9 @@ public final class ChatListArchiveFlowComponent: Component {
         private var avatarWidth: CGFloat {
             return min(60.0, floor((self.component?.presentationData.listsFontSize.baseDisplaySize ?? 60) * 60.0 / 17.0))
         }
+        private var arrowLineX: CGFloat {
+            return self.insets.left + self.avatarWidth / 2 - self.arrowIconWidth / 2
+        }
         
         private let labelsContainer = UIView()
         private let swipeDownLabel = UILabel()
@@ -43,6 +46,7 @@ public final class ChatListArchiveFlowComponent: Component {
         private let releaseForArchiveGradientColors = PresentationThemeGradientColors(topColor: UIColor(rgb: 0x81C4FF), bottomColor: UIColor(rgb: 0x2D83F2))
         
         private var isAnimatingOut: Bool = false
+        private var isNeedToReset: Bool = false
 
         public override init(frame: CGRect) {
             super.init(frame: frame)
@@ -84,14 +88,14 @@ public final class ChatListArchiveFlowComponent: Component {
         
         private func configureArrowLine() {
             self.arrowLine.alpha = 0.35
-            self.arrowLine.frame = CGRect(x: self.insets.left, y: 0, width: self.arrowIconWidth, height: self.arrowIconWidth)
+            self.arrowLine.frame = CGRect(x: arrowLineX, y: 0, width: self.arrowIconWidth, height: self.arrowIconWidth)
             self.arrowLine.backgroundColor = UIColor.white
             self.arrowLine.layer.cornerRadius = self.arrowIconWidth / 2
         }
         
         private func configureArrowIcon() {
             self.arrowIcon.image = generateTintedImage(image: UIImage(bundleImageName: "Chat List/ArchiveFlow/ArchiveFlowArrow"), color: .white)
-            self.arrowIcon.frame = CGRect(x: self.insets.left, y: 0, width: self.arrowIconWidth, height: self.arrowIconWidth)
+            self.arrowIcon.frame = CGRect(x: arrowLineX, y: 0, width: self.arrowIconWidth, height: self.arrowIconWidth)
             self.arrowIcon.backgroundColor = self.swipeDownGradientColors.bottomColor
             self.arrowIcon.layer.cornerRadius = self.arrowIconWidth / 2
             self.arrowIcon.transform = CGAffineTransform(rotationAngle: .pi)
@@ -114,6 +118,11 @@ public final class ChatListArchiveFlowComponent: Component {
         public func applyScroll(offset: CGFloat, navBarHeight: CGFloat, layout: ContainerViewLayout, transition: Transition) {
             if self.isAnimatingOut || self.bounds.height == 0 && offset > 0 {
                 return
+            }
+            
+            if self.isNeedToReset {
+                self.resetProgress()
+                self.isNeedToReset = false
             }
             
             let progress: CGFloat = offset < 0 ? abs(offset) / self.targetHeight : 0
@@ -319,7 +328,8 @@ public final class ChatListArchiveFlowComponent: Component {
             let heightDiff = self.lastProgress * self.targetHeight - itemHeight
             let itemViewPositionStart =  sourceView?.frame.center.offsetBy(dx: 0, dy: heightDiff) ?? .zero
             let itemViewPositionEnd = sourceView?.frame.center ?? .zero
-            itemViewSnapshot?.layer.animateSpringPosition(from: itemViewPositionStart, to: itemViewPositionEnd, duration: springDuration, initialVelocity: 3.5, damping: 300, removeOnCompletion: false) { _ in
+            itemViewSnapshot?.layer.animateSpringPosition(from: itemViewPositionStart, to: itemViewPositionEnd, duration: springDuration, initialVelocity: 3.5, damping: 300, removeOnCompletion: false) { [weak self] _ in
+                self?.isNeedToReset = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     didComplete()
                 }
@@ -348,9 +358,6 @@ public final class ChatListArchiveFlowComponent: Component {
         
         public func update(component: ChatListArchiveFlowComponent, availableSize: CGSize, transition: Transition) -> CGSize {
             self.component = component
-            let arrowLineX = self.insets.left + self.avatarWidth / 2 - self.arrowIconWidth / 2
-            self.arrowLine.frame.origin.x = arrowLineX
-            self.arrowIcon.frame.origin.x = arrowLineX
 
             let fontSize: CGFloat = component.presentationData.chatFontSize.itemListBaseFontSize
             let labelsContainerOffset = arrowLineX + self.arrowIconWidth / 2
