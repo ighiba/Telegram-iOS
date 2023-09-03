@@ -510,13 +510,29 @@ public extension CALayer {
             partialCompletion()
         })
     }
-    
+
+    func animateSpringScale(from: CGFloat, to: CGFloat, duration: Double, delay: Double = 0.0, initialVelocity: CGFloat = 0.0, damping: CGFloat = 88.0, removeOnCompletion: Bool = true, additive: Bool = false, completion: ((Bool) -> Void)? = nil) {
+        self.animateSpring(from: from as NSNumber, to: to as NSNumber, keyPath: "transform.scale", duration: duration, delay: delay, initialVelocity: initialVelocity, damping: damping, removeOnCompletion: removeOnCompletion, additive: additive, completion: completion)
+    }
+
     func animateSpringPosition(from: CGPoint, to: CGPoint, duration: Double, delay: Double = 0.0, initialVelocity: CGFloat = 0.0, damping: CGFloat = 88.0, removeOnCompletion: Bool = true, additive: Bool = false, completion: ((Bool) -> Void)? = nil) {
         self.animateSpring(from: NSNumber(cgPoint: from), to: NSNumber(cgPoint: to), keyPath: "position", duration: duration, delay: delay, initialVelocity: initialVelocity, damping: damping, removeOnCompletion: removeOnCompletion, additive: additive, completion: completion)
     }
     
-    func animateSpringScale(from: CGFloat, to: CGFloat, duration: Double, delay: Double = 0.0, initialVelocity: CGFloat = 0.0, damping: CGFloat = 88.0, removeOnCompletion: Bool = true, additive: Bool = false, completion: ((Bool) -> Void)? = nil) {
-        self.animateSpring(from: from as NSNumber, to: to as NSNumber, keyPath: "transform.scale", duration: duration, delay: delay, initialVelocity: initialVelocity, damping: damping, removeOnCompletion: removeOnCompletion, additive: additive, completion: completion)
+    func animateSpringBounds(from: CGRect, to: CGRect, duration: Double, delay: Double = 0.0, initialVelocity: CGFloat = 0.0, damping: CGFloat = 88.0, removeOnCompletion: Bool = true, additive: Bool = false, completion: ((Bool) -> Void)? = nil) {
+        self.animateSpring(from: NSNumber(cgRect: from), to: NSNumber(cgRect: to), keyPath: "bounds", duration: duration, delay: delay, initialVelocity: initialVelocity, damping: damping, removeOnCompletion: removeOnCompletion, additive: additive, completion: completion)
+    }
+    
+    func animateSpringWidth(from: CGFloat, to: CGFloat, duration: Double, delay: Double = 0.0, initialVelocity: CGFloat = 0.0, damping: CGFloat = 88.0, removeOnCompletion: Bool = true, additive: Bool = false, completion: ((Bool) -> Void)? = nil) {
+        self.animateSpring(from: from as NSNumber, to: to as NSNumber, keyPath: "bounds.size.width", duration: duration, delay: delay, initialVelocity: initialVelocity, damping: damping, removeOnCompletion: removeOnCompletion, additive: additive, completion: completion)
+    }
+    
+    func animateSpringHeight(from: CGFloat, to: CGFloat, duration: Double, delay: Double = 0.0, initialVelocity: CGFloat = 0.0, damping: CGFloat = 88.0, removeOnCompletion: Bool = true, additive: Bool = false, completion: ((Bool) -> Void)? = nil) {
+        self.animateSpring(from: from as NSNumber, to: to as NSNumber, keyPath: "bounds.size.height", duration: duration, delay: delay, initialVelocity: initialVelocity, damping: damping, removeOnCompletion: removeOnCompletion, additive: additive, completion: completion)
+    }
+    
+    func animateSpringCornerRadius(from: CGFloat, to: CGFloat, duration: Double, delay: Double = 0.0, initialVelocity: CGFloat = 0.0, damping: CGFloat = 88.0, removeOnCompletion: Bool = true, additive: Bool = false, completion: ((Bool) -> Void)? = nil) {
+        self.animateSpring(from: from as NSNumber, to: to as NSNumber, keyPath: "cornerRadius", duration: duration, delay: delay, initialVelocity: initialVelocity, damping: damping, removeOnCompletion: removeOnCompletion, additive: additive, completion: completion)
     }
     
     func cancelAnimationsRecursive(key: String) {

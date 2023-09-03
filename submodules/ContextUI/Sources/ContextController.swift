@@ -1033,8 +1033,8 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
                 // MARK: - AnimateIn
                 
                 let defaultDuration: Double = 0.2 * animationDurationFactor
-                let springDuration: Double = 0.35 * animationDurationFactor
-                let springDamping: CGFloat = 130.0
+                let springDuration: Double = 0.4 * animationDurationFactor
+                let springDamping: CGFloat = 110.0
                 let contentCornerRadius = self.contentContainerNode.cornerRadius
                 
                 let contentScale = self.contentContainerNode.bounds.width / self.view.bounds.width
@@ -1082,7 +1082,7 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
                     let titleComponentViewSnapshot = textContainerViewSnapshot?.subviews.last(where: { $0.frame == titleComponentView?.frame } )
                     
                     let titleNodeSnapshot = titleNode.view.snapshotView(afterScreenUpdates: true)!
-                    titleNode.isHidden = true
+                    titleNode.layer.opacity = 0.0
 
                     if let titleView, let titleViewSnapshot {
                         let titleNodePositionStart: CGPoint = {
@@ -1134,25 +1134,27 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
                             
                             titleComponentViewSnapshot.layer.transform = CATransform3DMakeScale(sourceViewScaleX, sourceViewScaleY, 1)
                             titleComponentViewSnapshot.layer.animateAlpha(from: 1.0, to: 0.0, duration: defaultDuration * 0.7, removeOnCompletion: false)
-                            titleComponentViewSnapshot.layer.animateSpring(from: NSNumber(cgPoint: titleComponentPositionStart), to: NSNumber(cgPoint: titleComponentPositionEnd), keyPath: "position", duration: springDuration, damping: springDamping, removeOnCompletion: false)
+                            titleComponentViewSnapshot.layer.animateSpringPosition(from: titleComponentPositionStart, to: titleComponentPositionEnd, duration: springDuration, damping: springDamping, removeOnCompletion: false)
                         }
                         
                         titleViewSnapshot.layer.transform = CATransform3DMakeScale(sourceViewScaleX, sourceViewScaleY, 1)
                         titleViewSnapshot.layer.animateAlpha(from: 1.0, to: 0.0, duration: defaultDuration * 0.7, removeOnCompletion: false)
-                        titleViewSnapshot.layer.animateSpring(from: NSNumber(cgPoint: titleSnapshotPositionStart), to: NSNumber(cgPoint: titleSnapshotPositionEnd), keyPath: "position", duration: springDuration, damping: springDamping, removeOnCompletion: false)
+                        titleViewSnapshot.layer.animateSpringPosition(from: titleSnapshotPositionStart, to: titleSnapshotPositionEnd, duration: springDuration, damping: springDamping, removeOnCompletion: false)
                         
                         titleNodeSnapshot.layer.transform = CATransform3DMakeScale(contentScale, contentScale, 1)
                         titleNodeSnapshot.layer.animateAlpha(from: 0.0, to: 1.0, duration: defaultDuration * 0.7, removeOnCompletion: false)
-                        titleNodeSnapshot.layer.animateSpring(from: NSNumber(cgPoint: titleNodePositionStart), to: NSNumber(cgPoint: titleNodePositionEnd), keyPath: "position", duration: springDuration, damping: springDamping, removeOnCompletion: false) { _ in
-                            titleNodeSnapshot.isHidden = true
-                            titleNode.isHidden = false
+                        titleNodeSnapshot.layer.animateSpringPosition(from: titleNodePositionStart, to: titleNodePositionEnd, duration: springDuration, damping: springDamping, removeOnCompletion: false) { _ in
+                            titleNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: defaultDuration * 0.5, removeOnCompletion: false) { _ in
+                                titleNode.layer.opacity = 1.0
+                                titleNodeSnapshot.isHidden = true
+                            }
                         }
                         
                         let activityPositionStart = CGPoint(x: titleView.frame.center.x, y: activityNode.frame.center.y)
                         
                         activityNode.layer.transform = CATransform3DMakeScale(contentScale, contentScale, 1)
                         activityNode.layer.animateAlpha(from: 0.3, to: 1.0, duration: defaultDuration * 0.7)
-                        activityNode.layer.animateSpring(from: NSNumber(cgPoint: activityPositionStart), to: NSNumber(cgPoint: activityNode.frame.center), keyPath: "position", duration: springDuration, damping: springDamping, removeOnCompletion: true)
+                        activityNode.layer.animateSpringPosition(from: activityPositionStart, to: activityNode.frame.center, duration: springDuration, damping: springDamping, removeOnCompletion: true)
                     }
                     
                     avatarNode.layer.animateAlpha(from: 0.3, to: 1.0, duration: defaultDuration * 0.7)
@@ -1173,10 +1175,10 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
                     let sourceViewSnapshotConvertedFrame = self.view.convert(CGRect(origin: CGPoint(x: originalProjectedContentViewFrame.1.minX, y: originalProjectedContentViewFrame.1.minY), size: CGSize(width: originalProjectedContentViewFrame.1.width, height: originalProjectedContentViewFrame.1.height)), to: self.scrollNode.view)
                     let newSourceViewSnapshotBounds = CGRect(x: 0, y: 0, width: self.contentContainerNode.bounds.width, height: navBarHeight)
                     
-                    sourceViewSnapshot.layer.animateSpring(from: NSNumber(cgPoint: sourceViewSnapshotConvertedFrame.center), to: NSNumber(cgPoint: sourceViewPositionEnd), keyPath: "position", duration: springDuration, initialVelocity: 0.0, damping: springDamping, removeOnCompletion: false)
-                    sourceViewSnapshot.layer.animateSpring(from: NSNumber(cgRect: sourceViewSnapshot.bounds), to: NSNumber(cgRect: newSourceViewSnapshotBounds), keyPath: "bounds", duration: springDuration, initialVelocity: 0.0, damping: springDamping, removeOnCompletion: false)
                     sourceViewSnapshot.layer.animateAlpha(from: 1.0, to: 0.0, duration: defaultDuration, timingFunction: CAMediaTimingFunctionName.easeOut.rawValue, removeOnCompletion: false)
-                    sourceViewSnapshot.layer.animateSpring(from: 0 as NSNumber, to: contentCornerRadius as NSNumber, keyPath: "cornerRadius", duration: springDuration, initialVelocity: 0.0, damping: springDamping, removeOnCompletion: false)
+                    sourceViewSnapshot.layer.animateSpringCornerRadius(from: 0, to: contentCornerRadius, duration: springDuration, initialVelocity: 0.0, damping: springDamping, removeOnCompletion: false)
+                    sourceViewSnapshot.layer.animateSpringBounds(from: sourceViewSnapshot.bounds, to: newSourceViewSnapshotBounds, duration: springDuration, damping: springDamping, removeOnCompletion: false)
+                    sourceViewSnapshot.layer.animateSpringPosition(from: sourceViewSnapshotConvertedFrame.center, to: sourceViewPositionEnd, duration: springDuration, damping: springDamping, removeOnCompletion: false)
                     
                     textContainerViewSnapshot?.layer.animateAlpha(from: 1.0, to: 0.0, duration: defaultDuration, removeOnCompletion: false)
 
@@ -1191,17 +1193,17 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
                     }
 
                     backgroundNode.layer.animateAlpha(from: 0.1, to: 1.0, duration: defaultDuration * 0.7)
-                    backgroundNode.layer.animateSpring(from: NSNumber(cgRect: sourceViewSnapshot.bounds), to: NSNumber(cgRect: self.contentContainerNode.bounds), keyPath: "bounds", duration: springDuration, initialVelocity: 0.0, damping: springDamping, removeOnCompletion: false)
-                    backgroundNode.layer.animateSpring(from: 0 as NSNumber, to: contentCornerRadius as NSNumber, keyPath: "cornerRadius", duration: springDuration, initialVelocity: 0.0, damping: springDamping, removeOnCompletion: false)
-                    backgroundNode.layer.animateSpring(from: NSNumber(cgPoint:  sourceViewSnapshotConvertedFrame.center), to: NSNumber(cgPoint: contentRectEnd.center), keyPath: "position", duration: springDuration, initialVelocity: 0.0, damping: springDamping, removeOnCompletion: false)
+                    backgroundNode.layer.animateSpringCornerRadius(from: 0, to: contentCornerRadius, duration: springDuration, damping: springDamping, removeOnCompletion: false)
+                    backgroundNode.layer.animateSpringBounds(from: sourceViewSnapshot.bounds, to: self.contentContainerNode.bounds, duration: springDuration, damping: springDamping, removeOnCompletion: false)
+                    backgroundNode.layer.animateSpringPosition(from: sourceViewSnapshotConvertedFrame.center, to: contentRectEnd.center, duration: springDuration, damping: springDamping, removeOnCompletion: false)
                     
                     let transitionDimLayer = CALayer()
                     transitionDimLayer.frame = backgroundNode.frame
                     transitionDimLayer.backgroundColor = maybeBackgroundColor?.cgColor
                     
-                    transitionDimLayer.animateSpring(from: NSNumber(cgRect: sourceViewSnapshot.bounds), to: NSNumber(cgRect: self.contentContainerNode.bounds), keyPath: "bounds", duration: springDuration, initialVelocity: 0.0, damping: springDamping, removeOnCompletion: false)
-                    transitionDimLayer.animateSpring(from: 0 as NSNumber, to: contentCornerRadius as NSNumber, keyPath: "cornerRadius", duration: springDuration, initialVelocity: 0.0, damping: springDamping, removeOnCompletion: false)
-                    transitionDimLayer.animateSpring(from: NSNumber(cgPoint:  sourceViewSnapshotConvertedFrame.center), to: NSNumber(cgPoint: contentRectEnd.center), keyPath: "position", duration: springDuration, initialVelocity: 0.0, damping: springDamping, removeOnCompletion: false) { _ in
+                    transitionDimLayer.animateSpringCornerRadius(from: 0, to: contentCornerRadius, duration: springDuration, damping: springDamping, removeOnCompletion: false)
+                    transitionDimLayer.animateSpringBounds(from: sourceViewSnapshot.bounds, to: self.contentContainerNode.bounds, duration: springDuration, damping: springDamping, removeOnCompletion: false)
+                    transitionDimLayer.animateSpringPosition(from: sourceViewSnapshotConvertedFrame.center, to: contentRectEnd.center, duration: springDuration, damping: springDamping, removeOnCompletion: false) { _ in
                         transitionDimLayer.removeFromSuperlayer()
                     }
                     
@@ -1219,19 +1221,19 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
                     }
                 }
 
-                self.actionsContainerNode.layer.animateSpring(from: actionsContainerInitalScale as NSNumber, to: 1.0 as NSNumber, keyPath: "transform.scale", duration: springDuration, initialVelocity: 0.0, damping: springDamping)
                 self.actionsContainerNode.allowsGroupOpacity = true
                 self.actionsContainerNode.layer.animateAlpha(from: 0.1, to: 1.0, duration: defaultDuration) { [weak self] _ in
                     self?.actionsContainerNode.allowsGroupOpacity = false
                 }
-                self.actionsContainerNode.layer.animateSpring(from: NSNumber(cgPoint: actionsPositionStart), to: NSNumber(cgPoint: self.actionsContainerNode.frame.center), keyPath: "position", duration: springDuration, initialVelocity: 0.0, damping: springDamping)
+                self.actionsContainerNode.layer.animateSpringScale(from: actionsContainerInitalScale, to: 1.0, duration: springDuration, damping: springDamping)
+                self.actionsContainerNode.layer.animateSpringPosition(from: actionsPositionStart, to: self.actionsContainerNode.frame.center, duration: springDuration, damping: springDamping)
 
-                self.contentContainerNode.layer.animateSpring(from: contentRectStart.height as NSNumber, to: contentRectEnd.height as NSNumber, keyPath: "bounds.size.height", duration: springDuration, initialVelocity: 0.0, damping: springDamping)
                 self.contentContainerNode.allowsGroupOpacity = true
                 self.contentContainerNode.layer.animateAlpha(from: 0.2, to: 1.0, duration: defaultDuration * 0.7) { [weak self] _ in
                     self?.contentContainerNode.allowsGroupOpacity = false
                 }
-                self.contentContainerNode.layer.animateSpring(from: NSNumber(cgPoint: contentRectStart.center), to: NSNumber(cgPoint: contentRectEnd.center), keyPath: "position", duration: springDuration, initialVelocity: 0.0, damping: springDamping) { [weak self] _ in
+                self.contentContainerNode.layer.animateSpringHeight(from: contentRectStart.height, to: contentRectEnd.height, duration: springDuration, damping: springDamping)
+                self.contentContainerNode.layer.animateSpringPosition(from: contentRectStart.center, to: contentRectEnd.center, duration: springDuration, damping: springDamping) { [weak self] _ in
                     self?.animatedIn = true
                 }
             }
@@ -1860,24 +1862,24 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
                         let titleComponentPositionEnd = convertFrame(titleComponentView.bounds, from: titleComponentView, to: self.view).center
                         
                         titleComponentViewSnapshot.layer.animateAlpha(from: 0.0, to: 1.0, duration: defaultDuration * 0.7, removeOnCompletion: false)
-                        titleComponentViewSnapshot.layer.animateSpring(from: NSNumber(cgPoint: titleComponentPositionStart), to: NSNumber(cgPoint: titleComponentPositionEnd), keyPath: "position", duration: springDuration, damping: springDamping, removeOnCompletion: false)
+                        titleComponentViewSnapshot.layer.animateSpringPosition(from: titleComponentPositionStart, to: titleComponentPositionEnd, duration: springDuration, damping: springDamping, removeOnCompletion: false)
                     }
 
                     titleNodeSnapshot.layer.transform = CATransform3DMakeScale(contentScale, contentScale, 1)
                     titleNodeSnapshot.layer.animateAlpha(from: 1.0, to: 0.0, duration: defaultDuration * 0.7, removeOnCompletion: false)
-                    titleNodeSnapshot.layer.animateSpring(from: NSNumber(cgPoint: titleNodePositionStart), to: NSNumber(cgPoint: titleNodePositionEnd), keyPath: "position", duration: springDuration, damping: springDamping, removeOnCompletion: false) { _ in
+                    titleNodeSnapshot.layer.animateSpringPosition(from: titleNodePositionStart, to: titleNodePositionEnd, duration: springDuration, damping: springDamping, removeOnCompletion: false) { _ in
                         titleNodeSnapshot.isHidden = true
                         titleNode.isHidden = false
                     }
                     
                     titleViewSnapshot.layer.animateAlpha(from: 0.0, to: 1.0, duration: defaultDuration * 0.7, removeOnCompletion: false)
-                    titleViewSnapshot.layer.animateSpring(from: NSNumber(cgPoint: titleSnapshotPositionStart), to: NSNumber(cgPoint: titleSnapshotPositionEnd), keyPath: "position", duration: springDuration, damping: springDamping, removeOnCompletion: false)
+                    titleViewSnapshot.layer.animateSpringPosition(from: titleSnapshotPositionStart, to: titleSnapshotPositionEnd, duration: springDuration, damping: springDamping, removeOnCompletion: false)
 
                     let activityPositionEnd = CGPoint(x: titleView.frame.center.x, y: activityNode.frame.center.y)
                     
                     activityNode.layer.transform = CATransform3DMakeScale(contentScale, contentScale, 1)
                     activityNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: defaultDuration * 0.7, removeOnCompletion: false)
-                    activityNode.layer.animateSpring(from: NSNumber(cgPoint: activityNode.frame.center), to: NSNumber(cgPoint: activityPositionEnd), keyPath: "position", duration: springDuration, damping: springDamping, removeOnCompletion: false)
+                    activityNode.layer.animateSpringPosition(from: activityNode.frame.center, to: activityPositionEnd, duration: springDuration, damping: springDamping, removeOnCompletion: false)
                 }
                 
                 avatarNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: defaultDuration * 0.7, removeOnCompletion: false)
@@ -1897,10 +1899,10 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
                 let sourceViewSnapshotConvertedFrame = self.view.convert(CGRect(origin: CGPoint(x: originalProjectedContentViewFrame.1.minX, y: originalProjectedContentViewFrame.1.minY), size: CGSize(width: originalProjectedContentViewFrame.1.width, height: originalProjectedContentViewFrame.1.height)), to: self.scrollNode.view)
                 let initialSourceViewSnapshotBounds = CGRect(x: 0, y: 0, width: self.contentContainerNode.bounds.width, height: navBarHeight)
 
-                sourceViewSnapshot.layer.animateSpring(from: NSNumber(cgRect: initialSourceViewSnapshotBounds), to: NSNumber(cgRect: sourceViewSnapshot.bounds), keyPath: "bounds", duration: springDuration, initialVelocity: 0.0, damping: springDamping, removeOnCompletion: false)
                 sourceViewSnapshot.layer.animateAlpha(from: 0.0, to: 1.0, duration: defaultDuration, timingFunction: CAMediaTimingFunctionName.easeOut.rawValue, removeOnCompletion: false)
-                sourceViewSnapshot.layer.animateSpring(from: contentCornerRadius as NSNumber, to: 0 as NSNumber, keyPath: "cornerRadius", duration: springDuration, initialVelocity: 0.0, damping: springDamping, removeOnCompletion: false)
-                sourceViewSnapshot.layer.animateSpring(from: NSNumber(cgPoint: sourceViewPositionStart), to: NSNumber(cgPoint: sourceViewSnapshotConvertedFrame.center), keyPath: "position", duration: springDuration, initialVelocity: 0.0, damping: springDamping, removeOnCompletion: false)
+                sourceViewSnapshot.layer.animateSpringCornerRadius(from: contentCornerRadius, to: 0, duration: springDuration, damping: springDamping, removeOnCompletion: false)
+                sourceViewSnapshot.layer.animateSpringBounds(from: initialSourceViewSnapshotBounds, to: sourceViewSnapshot.bounds, duration: springDuration, damping: springDamping, removeOnCompletion: false)
+                sourceViewSnapshot.layer.animateSpringPosition(from: sourceViewPositionStart, to: sourceViewSnapshotConvertedFrame.center, duration: springDuration, damping: springDamping, removeOnCompletion: false)
 
                 textContainerViewSnapshot?.layer.animateAlpha(from: 0.0, to: 1.0, duration: defaultDuration, removeOnCompletion: false)
 
@@ -1915,9 +1917,9 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
                 }
 
                 backgroundNode.layer.animateAlpha(from: 1.0, to: 0.01, duration: defaultDuration, removeOnCompletion: false)
-                backgroundNode.layer.animateSpring(from: NSNumber(cgRect: self.contentContainerNode.bounds), to: NSNumber(cgRect: sourceViewSnapshot.bounds), keyPath: "bounds", duration: springDuration, initialVelocity: 0.0, damping: springDamping, removeOnCompletion: false)
-                backgroundNode.layer.animateSpring(from: contentCornerRadius as NSNumber, to: 0 as NSNumber, keyPath: "cornerRadius", duration: springDuration, initialVelocity: 0.0, damping: springDamping, removeOnCompletion: false)
-                backgroundNode.layer.animateSpring(from: NSNumber(cgPoint: contentRectStart.center), to: NSNumber(cgPoint:  sourceViewSnapshotConvertedFrame.center), keyPath: "position", duration: springDuration, initialVelocity: 0.0, damping: springDamping, removeOnCompletion: false) { _ in
+                backgroundNode.layer.animateSpringCornerRadius(from: contentCornerRadius, to: 0, duration: springDuration, damping: springDamping, removeOnCompletion: false)
+                backgroundNode.layer.animateSpringBounds(from: self.contentContainerNode.bounds, to: sourceViewSnapshot.bounds, duration: springDuration, damping: springDamping, removeOnCompletion: false)
+                backgroundNode.layer.animateSpringPosition(from: contentRectStart.center, to: sourceViewSnapshotConvertedFrame.center, duration: springDuration, damping: springDamping, removeOnCompletion: false) { _ in
                     backgroundNode.isHidden = true
                 }
                 
@@ -1925,9 +1927,9 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
                 transitionDimLayer.frame = backgroundNode.frame
                 transitionDimLayer.backgroundColor = maybeBackgroundColor?.cgColor
                 
-                transitionDimLayer.animateSpring(from: NSNumber(cgRect: self.contentContainerNode.bounds), to: NSNumber(cgRect: sourceViewSnapshot.bounds), keyPath: "bounds", duration: springDuration, initialVelocity: 0.0, damping: springDamping, removeOnCompletion: false)
-                transitionDimLayer.animateSpring(from: contentCornerRadius as NSNumber, to: 0 as NSNumber, keyPath: "cornerRadius", duration: springDuration, initialVelocity: 0.0, damping: springDamping, removeOnCompletion: false)
-                transitionDimLayer.animateSpring(from: NSNumber(cgPoint: contentRectStart.center), to: NSNumber(cgPoint:  sourceViewSnapshotConvertedFrame.center), keyPath: "position", duration: springDuration, initialVelocity: 0.0, damping: springDamping, removeOnCompletion: false) { _ in
+                transitionDimLayer.animateSpringCornerRadius(from: contentCornerRadius, to: 0, duration: springDuration, damping: springDamping, removeOnCompletion: false)
+                transitionDimLayer.animateSpringBounds(from: self.contentContainerNode.bounds, to: sourceViewSnapshot.bounds, duration: springDuration, damping: springDamping, removeOnCompletion: false)
+                transitionDimLayer.animateSpringPosition(from: contentRectStart.center, to: sourceViewSnapshotConvertedFrame.center, duration: springDuration, damping: springDamping, removeOnCompletion: false) { _ in
                     transitionDimLayer.removeFromSuperlayer()
                 }
                 
@@ -1954,12 +1956,12 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
             }
             
             if animateOutToItem {
-                self.actionsContainerNode.layer.animateSpring(from: 1.0 as NSNumber, to: actionsContainerFinalScale as NSNumber, keyPath: "transform.scale", duration: springDuration, initialVelocity: 0.0, damping: springDamping, removeOnCompletion: false)
                 self.actionsContainerNode.allowsGroupOpacity = true
                 self.actionsContainerNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: defaultDuration * 0.5, removeOnCompletion: false) { [weak self] _ in
                     self?.actionsContainerNode.allowsGroupOpacity = false
                 }
-                self.actionsContainerNode.layer.animateSpring(from: NSNumber(cgPoint: self.actionsContainerNode.frame.center), to: NSNumber(cgPoint: actionsPositionEnd), keyPath: "position", duration: springDuration, initialVelocity: 0.0, damping: springDamping, removeOnCompletion: false) { _ in
+                self.actionsContainerNode.layer.animateSpringScale(from: 1.0, to: actionsContainerFinalScale, duration: springDuration, damping: springDamping, removeOnCompletion: false)
+                self.actionsContainerNode.layer.animateSpringPosition(from: self.actionsContainerNode.frame.center, to: actionsPositionEnd, duration: springDuration, damping: springDamping, removeOnCompletion: false) { _ in
                     completedActionsNode = true
                     intermediateCompletion()
                 }
@@ -1970,10 +1972,10 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
                     intermediateCompletion()
                 }
 
-                self.contentContainerNode.layer.animateSpring(from: contentRectStart.height as NSNumber, to: contentRectEnd.height as NSNumber, keyPath: "bounds.size.height", duration: springDuration, initialVelocity: 0.0, damping: springDamping, removeOnCompletion: false)
                 self.contentContainerNode.allowsGroupOpacity = true
                 self.contentContainerNode.layer.animateAlpha(from: 1.0, to: 0.05, duration: defaultDuration, removeOnCompletion: false)
-                self.contentContainerNode.layer.animateSpring(from: NSNumber(cgPoint: contentRectStart.center), to: NSNumber(cgPoint: contentRectEnd.center), keyPath: "position", duration: springDuration, initialVelocity: 0.0, damping: springDamping, removeOnCompletion: false) { [weak self] _ in
+                self.contentContainerNode.layer.animateSpringHeight(from: contentRectStart.height, to: contentRectEnd.height, duration: springDuration, damping: springDamping, removeOnCompletion: false)
+                self.contentContainerNode.layer.animateSpringPosition(from: contentRectStart.center, to: contentRectEnd.center, duration: springDuration, damping: springDamping, removeOnCompletion: false) { [weak self] _ in
                     self?.contentContainerNode.isHidden = true
                     sourceController.sourceView.isHidden = false
                     contentNodeCompletion()
