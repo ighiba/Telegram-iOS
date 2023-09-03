@@ -9,10 +9,12 @@ import AnimationUI
 public final class ChatListArchiveFlowComponent: Component {
     
     public let presentationData: PresentationData
+    public let safeInsets: UIEdgeInsets
     public let progressHandler: (Bool) -> Void
     
-    public init(presentationData: PresentationData, progressHandler: @escaping (Bool) -> Void) {
+    public init(presentationData: PresentationData, safeInsets: UIEdgeInsets, progressHandler: @escaping (Bool) -> Void) {
         self.presentationData = presentationData
+        self.safeInsets = safeInsets
         self.progressHandler = progressHandler
     }
 
@@ -26,10 +28,12 @@ public final class ChatListArchiveFlowComponent: Component {
         private let insets = UIEdgeInsets(top: 8, left: 10, bottom: 8, right: 10)
         private let arrowIconWidth: CGFloat = 20
         private var avatarWidth: CGFloat {
-            return min(60.0, floor((self.component?.presentationData.listsFontSize.baseDisplaySize ?? 60) * 60.0 / 17.0))
+            let baseDisplaySize: CGFloat = self.component?.presentationData.listsFontSize.baseDisplaySize ?? 60
+            return min(60.0, floor(baseDisplaySize * 60.0 / 17.0))
         }
         private var arrowLineX: CGFloat {
-            return self.insets.left + self.avatarWidth / 2 - self.arrowIconWidth / 2
+            let leftSafeInset: CGFloat = self.component?.safeInsets.left ?? 0
+            return leftSafeInset + self.insets.left + self.avatarWidth / 2 - self.arrowIconWidth / 2
         }
         
         private let labelsContainer = UIView()
@@ -88,14 +92,14 @@ public final class ChatListArchiveFlowComponent: Component {
         
         private func configureArrowLine() {
             self.arrowLine.alpha = 0.35
-            self.arrowLine.frame = CGRect(x: arrowLineX, y: 0, width: self.arrowIconWidth, height: self.arrowIconWidth)
+            self.arrowLine.frame = CGRect(x: self.arrowLineX, y: 0, width: self.arrowIconWidth, height: self.arrowIconWidth)
             self.arrowLine.backgroundColor = UIColor.white
             self.arrowLine.layer.cornerRadius = self.arrowIconWidth / 2
         }
         
         private func configureArrowIcon() {
             self.arrowIcon.image = generateTintedImage(image: UIImage(bundleImageName: "Chat List/ArchiveFlow/ArchiveFlowArrow"), color: .white)
-            self.arrowIcon.frame = CGRect(x: arrowLineX, y: 0, width: self.arrowIconWidth, height: self.arrowIconWidth)
+            self.arrowIcon.frame = CGRect(x: self.arrowLineX, y: 0, width: self.arrowIconWidth, height: self.arrowIconWidth)
             self.arrowIcon.backgroundColor = self.swipeDownGradientColors.bottomColor
             self.arrowIcon.layer.cornerRadius = self.arrowIconWidth / 2
             self.arrowIcon.transform = CGAffineTransform(rotationAngle: .pi)
@@ -358,6 +362,9 @@ public final class ChatListArchiveFlowComponent: Component {
         
         public func update(component: ChatListArchiveFlowComponent, availableSize: CGSize, transition: Transition) -> CGSize {
             self.component = component
+            
+            self.arrowIcon.frame.origin.x = self.arrowLineX
+            self.arrowLine.frame.origin.x = self.arrowLineX
 
             let fontSize: CGFloat = component.presentationData.chatFontSize.itemListBaseFontSize
             let labelsContainerOffset = self.arrowLineX + self.arrowIconWidth / 2
@@ -407,6 +414,9 @@ public final class ChatListArchiveFlowComponent: Component {
 
     static public func == (lhs: ChatListArchiveFlowComponent, rhs: ChatListArchiveFlowComponent) -> Bool {
         if lhs.presentationData != rhs.presentationData {
+            return false
+        }
+        if lhs.safeInsets != rhs.safeInsets {
             return false
         }
         return true

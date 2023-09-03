@@ -2374,6 +2374,7 @@ final class ChatListControllerNode: ASDisplayNode, UIGestureRecognizerDelegate {
             transition: transition,
             component: AnyComponent(ChatListArchiveFlowComponent(
                 presentationData: self.presentationData,
+                safeInsets: layout.safeInsets,
                 progressHandler: progressHandler
             )),
             environment: {},
