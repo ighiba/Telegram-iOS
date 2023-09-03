@@ -193,7 +193,7 @@ public final class ChatListArchiveFlowComponent: Component {
 
             if enterInRelease {
                 let maskScale: CGFloat = (self.bounds.width / self.arrowIconWidth) * 3
-                self.releaseForArchiveGradient.mask?.transform = CATransform3DMakeScale(maskScale, maskScale, 0)
+                self.releaseForArchiveGradient.mask?.transform = CATransform3DMakeScale(maskScale, maskScale, 1)
                 self.swipeDownLabel.transform = .identity
                 UIView.animate(withDuration: duration, delay: 0, usingSpringWithDamping: springDamping, initialSpringVelocity: 0, options: [.beginFromCurrentState]) { [weak self] in
                     self?.releaseLabel.alpha = 1
@@ -204,7 +204,7 @@ public final class ChatListArchiveFlowComponent: Component {
                     self?.arrowIcon.backgroundColor = self?.releaseForArchiveGradientColors.bottomColor
                 }
             } else if enterInSwipeDown {
-                self.releaseForArchiveGradient.mask?.transform = CATransform3DMakeScale(1, 1, 0)
+                self.releaseForArchiveGradient.mask?.transform = CATransform3DMakeScale(1, 1, 1)
                 self.releaseLabel.transform = .identity
                 UIView.animate(withDuration: duration, delay: 0, usingSpringWithDamping: springDamping, initialSpringVelocity: 0, options: [.beginFromCurrentState]) { [weak self] in
                     self?.releaseLabel.alpha = 0
@@ -286,7 +286,7 @@ public final class ChatListArchiveFlowComponent: Component {
                 
                 if let archiveFolderSnapshot = strongSelf.arrowArchiveAnimationNode.view.snapshotView(afterScreenUpdates: true) {
                     let scale: CGFloat =  1.02
-                    archiveFolderSnapshot.layer.transform = CATransform3DMakeScale(scale, scale, 0)
+                    archiveFolderSnapshot.layer.transform = CATransform3DMakeScale(scale, scale, 1)
                     archiveFolderSnapshot.layer.frame = strongSelf.arrowArchiveAnimationNode.frame
                     
                     let gradientLayer = CAGradientLayer()

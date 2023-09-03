@@ -19097,7 +19097,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         self.chatDisplayNode.historyNode.offerNextChannelToRead = self.offerNextChannelToRead && self.presentationInterfaceState.interfaceState.selectionState == nil
     }
 
-    public func getChatPreviewTransitionNodes() -> (ASDisplayNode?, ASDisplayNode?, ASDisplayNode?, ASDisplayNode?, ASDisplayNode?) {
+    public func getChatPreviewTransitionNodes() -> (titleNode: ASDisplayNode?, activityNode: ASDisplayNode?, avatarNode: ASDisplayNode?, navigationBar: ASDisplayNode?, chatBackgroundNode: ASDisplayNode?) {
         let titleNode = chatTitleView?.titleTextNode
         let activityNode = chatTitleView?.activityNode
         return (titleNode, activityNode, self.avatarNode, self.navigationBar, self.chatBackgroundNode)

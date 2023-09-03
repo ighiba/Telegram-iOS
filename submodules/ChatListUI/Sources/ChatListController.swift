@@ -87,7 +87,7 @@ private final class ContextChatPreviewContentSourceImpl: ContextChatPreviewConte
     
     let navigationController: NavigationController?
     
-    let transitionNodes: (ASDisplayNode?, ASDisplayNode?, ASDisplayNode?, ASDisplayNode?, ASDisplayNode?)
+    let transitionNodes: (titleNode: ASDisplayNode?, activityNode: ASDisplayNode?, avatarNode: ASDisplayNode?, navigationBar: ASDisplayNode?, chatBackgroundNode: ASDisplayNode?)
     
     let passthroughTouches: Bool = true
     
@@ -96,7 +96,7 @@ private final class ContextChatPreviewContentSourceImpl: ContextChatPreviewConte
         sourceNode: ASDisplayNode?,
         sourceNodeInitialTransform: CATransform3D,
         navigationController: NavigationController?,
-        transitionNodes: (ASDisplayNode?, ASDisplayNode?, ASDisplayNode?, ASDisplayNode?, ASDisplayNode?)
+        transitionNodes: (titleNode: ASDisplayNode?, activityNode: ASDisplayNode?, avatarNode: ASDisplayNode?, navigationBar: ASDisplayNode?, chatBackgroundNode: ASDisplayNode?)
     ) {
         self.controller = controller
         self.sourceNode = sourceNode

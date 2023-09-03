@@ -1050,11 +1050,11 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
 
                 if let sourceViewSnapshot = sourceController.sourceView.snapshotContentTree(),
                    let originalProjectedContentViewFrame = self.originalProjectedContentViewFrame,
-                   let titleNode = transitionNodes.0,
-                   let activityNode = transitionNodes.1,
-                   let avatarNode = transitionNodes.2,
-                   let navigationBarNode = transitionNodes.3,
-                   let backgroundNode = transitionNodes.4
+                   let titleNode = transitionNodes.titleNode,
+                   let activityNode = transitionNodes.activityNode,
+                   let avatarNode = transitionNodes.avatarNode,
+                   let navigationBarNode = transitionNodes.navigationBar,
+                   let backgroundNode = transitionNodes.chatBackgroundNode
                 {
                     var sourceViewScaleX: CGFloat = 1
                     var sourceViewScaleY: CGFloat = 1
@@ -1805,11 +1805,11 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
 
             if let originalProjectedContentViewFrame = self.originalProjectedContentViewFrame,
                let sourceViewSnapshot,
-               let titleNode = transitionNodes.0,
-               let activityNode = transitionNodes.1,
-               let avatarNode = transitionNodes.2,
-               let navigationBarNode = transitionNodes.3,
-               let backgroundNode = transitionNodes.4
+               let titleNode = transitionNodes.titleNode,
+               let activityNode = transitionNodes.activityNode,
+               let avatarNode = transitionNodes.avatarNode,
+               let navigationBarNode = transitionNodes.navigationBar,
+               let backgroundNode = transitionNodes.chatBackgroundNode
             {
                 let maybeBackgroundColor = sourceController.sourceView.asyncdisplaykit_node?.supernode?.subnodes?.first(where: { $0.backgroundColor != nil })?.backgroundColor
                 sourceViewSnapshot.layer.backgroundColor = maybeBackgroundColor?.cgColor ?? self.presentationData.theme.chatList.backgroundColor.cgColor
