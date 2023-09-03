@@ -245,7 +245,7 @@ public final class ChatListArchiveFlowComponent: Component {
             sourceView?.isHidden = true
 
             let duration: CGFloat = transitionDuration * 0.6
-            let springDuration: CGFloat = transitionDuration * 1.05
+            let springDuration: CGFloat = transitionDuration
             
             let avatarPosition = CGPoint(x: self.arrowLine.frame.origin.x, y: (itemHeight - self.arrowLine.frame.width) / 2)
             let arrowLineTargetPosition = CGPoint(x: avatarPosition.x, y: self.bounds.height * 0.6)
@@ -335,7 +335,7 @@ public final class ChatListArchiveFlowComponent: Component {
             let heightDiff = self.lastProgress * self.targetHeight - itemHeight
             let itemViewPositionStart =  sourceView?.frame.center.offsetBy(dx: 0, dy: heightDiff) ?? .zero
             let itemViewPositionEnd = sourceView?.frame.center ?? .zero
-            itemViewSnapshot?.layer.animateSpringPosition(from: itemViewPositionStart, to: itemViewPositionEnd, duration: springDuration, initialVelocity: 3.5, damping: 300, removeOnCompletion: false) { [weak self] _ in
+            itemViewSnapshot?.layer.animateSpringPosition(from: itemViewPositionStart, to: itemViewPositionEnd, duration: springDuration, initialVelocity: 1.0, damping: 300, removeOnCompletion: false) { [weak self] _ in
                 self?.isNeedToReset = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     didComplete()
