@@ -364,8 +364,8 @@ public final class ChatListArchiveFlowComponent: Component {
             let labelsContainerFrame = CGRect(x: labelsContainerOffset, y: 0, width: availableSize.width - labelsContainerOffset, height: self.bounds.height)
             transition.setFrame(view: self.labelsContainer, frame: labelsContainerFrame)
             
-            self.updateLabel(swipeDownLabel, withText: NSLocalizedString("Swipe down for archive", comment: ""), fontSize: fontSize, availableSize: availableSize, containerOffsetX: labelsContainerOffset)
-            self.updateLabel(releaseLabel, withText: NSLocalizedString("Release for archive", comment: ""), fontSize: fontSize, availableSize: availableSize, containerOffsetX: labelsContainerOffset)
+            self.updateLabel(swipeDownLabel, withText: component.presentationData.strings.ChatList_ArchiveFlowSwipe, fontSize: fontSize, availableSize: availableSize, containerOffsetX: labelsContainerOffset)
+            self.updateLabel(releaseLabel, withText: component.presentationData.strings.ChatList_ArchiveFlowRelease, fontSize: fontSize, availableSize: availableSize, containerOffsetX: labelsContainerOffset)
             self.releaseLabel.transform = CGAffineTransform(translationX: -availableSize.width, y: 0)
             
             let animationViewWidth: CGFloat = 58

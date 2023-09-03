@@ -9198,6 +9198,9 @@ Sorry for the inconvenience.";
 "ChatList.PanelNewChatsAvailable_1" = "1 New Chat Available";
 "ChatList.PanelNewChatsAvailable_any" = "%d New Chats Available";
 
+"ChatList.ArchiveFlowSwipe" = "Swipe down for archive";
+"ChatList.ArchiveFlowRelease" = "Release for archive";
+
 "ChatListFilter.SectionShare" = "SHARE FOLDER";
 "ChatListFilter.CreateLink" = "Create a new Link";
 "ChatListFilter.CreateLinkNew" = "Create an Invite Link";
