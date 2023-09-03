@@ -1032,13 +1032,13 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
                 
                 // MARK: - AnimateIn
                 
-                let defaultDuration: Double = 0.2 * animationDurationFactor
-                let springDuration: Double = 0.4 * animationDurationFactor
+                let defaultDuration: CGFloat = 0.2 * animationDurationFactor
+                let springDuration: CGFloat = 0.4 * animationDurationFactor
                 let springDamping: CGFloat = 110.0
                 let contentCornerRadius = self.contentContainerNode.cornerRadius
                 
-                let contentScale = self.contentContainerNode.bounds.width / self.view.bounds.width
-            
+                let contentScale = self.contentContainerNode.bounds.width / sourceController.sourceView.bounds.width
+
                 let contentRectStart = self.originalProjectedContentViewFrame?.0 ?? .zero
                 let contentRectEnd = self.contentContainerNode.frame
 
@@ -1071,15 +1071,15 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
                     sourceViewSnapshot.layer.maskedCorners = [.layerMaxXMinYCorner, .layerMinXMinYCorner]
 
                     let avatarView = sourceController.sourceView.subviews.last { $0.frame.width == $0.frame.height }
-                    let textContainerView = sourceController.sourceView.subviews.first(where: { !$0.subviews.isEmpty })
+                    let textContainerView = sourceController.sourceView.subviews.first { !$0.subviews.isEmpty }
                     let titleView = textContainerView?.subviews.first { $0.asyncdisplaykit_node is TextNode }
 
                     let avatarViewSnapshot = sourceViewSnapshot.subviews.first { $0.frame == avatarView?.frame }
                     let textContainerViewSnapshot = sourceViewSnapshot.subviews.first { $0.frame == textContainerView?.frame }
                     let titleViewSnapshot = textContainerViewSnapshot?.subviews.first { $0.frame == titleView?.frame }
                     
-                    let titleComponentView = textContainerView?.subviews.last(where: { $0.subviews.first?.subviews.first is UIImageView } )
-                    let titleComponentViewSnapshot = textContainerViewSnapshot?.subviews.last(where: { $0.frame == titleComponentView?.frame } )
+                    let titleComponentView = textContainerView?.subviews.last { $0.subviews.first?.subviews.first is UIImageView }
+                    let titleComponentViewSnapshot = textContainerViewSnapshot?.subviews.last { $0.frame == titleComponentView?.frame }
                     
                     let titleNodeSnapshot = titleNode.view.snapshotView(afterScreenUpdates: true)!
                     titleNode.layer.opacity = 0.0
@@ -1741,8 +1741,8 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
                 }
             }
             
-            let defaultDuration = 0.2 * animationDurationFactor
-            let springDuration: Double = 0.35 * animationDurationFactor
+            let defaultDuration: CGFloat = 0.2 * animationDurationFactor
+            let springDuration: CGFloat = 0.35 * animationDurationFactor
             let springDamping: CGFloat = 150.0
             
             if #available(iOS 10.0, *) {
@@ -1789,8 +1789,8 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
             sourceController.sourceView.isHidden = false
 
             let contentCornerRadius = self.contentContainerNode.cornerRadius
-            let contentScale = self.contentContainerNode.bounds.width / self.view.bounds.width
-        
+            let contentScale = self.contentContainerNode.bounds.width / sourceController.sourceView.bounds.width
+
             let contentRectStart = self.contentContainerNode.frame
             let contentRectEnd = self.originalProjectedContentViewFrame?.0 ?? .zero
 
@@ -1816,15 +1816,15 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
                 sourceViewSnapshot.layer.maskedCorners = [.layerMaxXMinYCorner, .layerMinXMinYCorner]
 
                 let avatarView = sourceController.sourceView.subviews.last { $0.frame.width == $0.frame.height }
-                let textContainerView = sourceController.sourceView.subviews.first(where: { !$0.subviews.isEmpty })
+                let textContainerView = sourceController.sourceView.subviews.first { !$0.subviews.isEmpty }
                 let titleView = textContainerView?.subviews.first { $0.asyncdisplaykit_node is TextNode }
 
                 let avatarViewSnapshot = sourceViewSnapshot.subviews.first { $0.frame == avatarView?.frame }
                 let textContainerViewSnapshot = sourceViewSnapshot.subviews.first { $0.frame == textContainerView?.frame }
                 let titleViewSnapshot = textContainerViewSnapshot?.subviews.first { $0.frame == titleView?.frame }
                 
-                let titleComponentView = textContainerView?.subviews.last(where: { $0.subviews.first?.subviews.first is UIImageView } )
-                let titleComponentViewSnapshot = textContainerViewSnapshot?.subviews.last(where: { $0.frame == titleComponentView?.frame } )
+                let titleComponentView = textContainerView?.subviews.last { $0.subviews.first?.subviews.first is UIImageView }
+                let titleComponentViewSnapshot = textContainerViewSnapshot?.subviews.last { $0.frame == titleComponentView?.frame }
                 
                 let titleNodeSnapshot = titleNode.view.snapshotView(afterScreenUpdates: true)
                 titleNode.isHidden = true
