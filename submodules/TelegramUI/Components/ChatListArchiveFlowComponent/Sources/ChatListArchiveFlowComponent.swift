@@ -187,7 +187,7 @@ public final class ChatListArchiveFlowComponent: Component {
             if enterInRelease {
                 let maskScale: CGFloat = (self.bounds.width / self.arrowIconWidth) * 3
                 self.releaseForArchiveGradient.mask?.transform = CATransform3DMakeScale(maskScale, maskScale, 0)
-                
+                self.swipeDownLabel.transform = .identity
                 UIView.animate(withDuration: duration, delay: 0, usingSpringWithDamping: springDamping, initialSpringVelocity: 0, options: [.beginFromCurrentState]) { [weak self] in
                     self?.releaseLabel.alpha = 1
                     self?.swipeDownLabel.alpha = 0
@@ -198,7 +198,7 @@ public final class ChatListArchiveFlowComponent: Component {
                 }
             } else if enterInSwipeDown {
                 self.releaseForArchiveGradient.mask?.transform = CATransform3DMakeScale(1, 1, 0)
-
+                self.releaseLabel.transform = .identity
                 UIView.animate(withDuration: duration, delay: 0, usingSpringWithDamping: springDamping, initialSpringVelocity: 0, options: [.beginFromCurrentState]) { [weak self] in
                     self?.releaseLabel.alpha = 0
                     self?.swipeDownLabel.alpha = 1
@@ -360,13 +360,15 @@ public final class ChatListArchiveFlowComponent: Component {
             self.component = component
 
             let fontSize: CGFloat = component.presentationData.chatFontSize.itemListBaseFontSize
-            let labelsContainerOffset = arrowLineX + self.arrowIconWidth / 2
+            let labelsContainerOffset = self.arrowLineX + self.arrowIconWidth / 2
             let labelsContainerFrame = CGRect(x: labelsContainerOffset, y: 0, width: availableSize.width - labelsContainerOffset, height: self.bounds.height)
             transition.setFrame(view: self.labelsContainer, frame: labelsContainerFrame)
             
             self.updateLabel(swipeDownLabel, withText: component.presentationData.strings.ChatList_ArchiveFlowSwipe, fontSize: fontSize, availableSize: availableSize, containerOffsetX: labelsContainerOffset)
             self.updateLabel(releaseLabel, withText: component.presentationData.strings.ChatList_ArchiveFlowRelease, fontSize: fontSize, availableSize: availableSize, containerOffsetX: labelsContainerOffset)
-            self.releaseLabel.transform = CGAffineTransform(translationX: -availableSize.width, y: 0)
+            let labelCenterOffset = max(self.releaseLabel.bounds.width / 2, self.swipeDownLabel.bounds.width / 2)
+            let releaseLabelOffsetX: CGFloat = -availableSize.width / 2 - labelCenterOffset
+            self.releaseLabel.transform = CGAffineTransform(translationX: releaseLabelOffsetX, y: 0)
             
             let animationViewWidth: CGFloat = 58
             let arrowArchiveAnimationNodeFrame = CGRect(x: 0, y: 0, width: animationViewWidth, height: animationViewWidth + 7.6)
@@ -381,6 +383,7 @@ public final class ChatListArchiveFlowComponent: Component {
             label.text = text
             label.font = Font.semibold(floor(fontSize * 17 / 18))
             label.sizeToFit()
+            label.transform = .identity
             label.frame.origin.x = (availableSize.width - label.bounds.width) / 2 - containerOffsetX
         }
         
