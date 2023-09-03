@@ -2244,6 +2244,9 @@ final class ChatListControllerNode: ASDisplayNode, UIGestureRecognizerDelegate {
         self.mainContainerNode.initialScrollingOffset = ChatListNavigationBar.searchScrollHeight + navigationBarLayout.storiesInset
 
         self.updateArchiveFlowView(layout: layout, transition: .immediate) { [weak self] canRevealArchiveFolder in
+            if canRevealArchiveFolder && self?.canRevealArchiveFolder != canRevealArchiveFolder {
+                HapticFeedback().impact(.light)
+            }
             self?.canRevealArchiveFolder = canRevealArchiveFolder
         }
         
