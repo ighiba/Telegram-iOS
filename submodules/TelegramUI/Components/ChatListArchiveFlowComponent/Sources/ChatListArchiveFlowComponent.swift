@@ -121,8 +121,11 @@ public final class ChatListArchiveFlowComponent: Component {
 
         public func applyScroll(offset: CGFloat, navBarHeight: CGFloat, layout: ContainerViewLayout, transition: Transition) {
             if self.isAnimatingOut || self.bounds.height == 0 && offset > 0 {
+                self.isHidden = true
                 return
             }
+            
+            self.isHidden = false
             
             if self.isNeedToReset {
                 self.resetProgress()

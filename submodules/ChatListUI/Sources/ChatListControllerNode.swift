@@ -1855,6 +1855,7 @@ final class ChatListControllerNode: ASDisplayNode, UIGestureRecognizerDelegate {
                     itemNode.bounds.size.height = updatedHeight
                     itemNode.bounds.origin.y -= itemOffsetY
                     (itemNode as? ListViewItemNode)?.transitionOffset = 0
+                    archiveView.isHidden = true
                 }
             }
         }
