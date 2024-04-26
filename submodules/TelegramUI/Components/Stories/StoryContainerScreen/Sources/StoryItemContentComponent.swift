@@ -30,18 +30,28 @@ final class StoryItemContentComponent: Component {
     let strings: PresentationStrings
     let peer: EnginePeer
     let item: EngineStoryItem
+    let availableReactions: StoryAvailableReactions?
+    let entityFiles: [MediaId: TelegramMediaFile]
     let audioMode: StoryContentItem.AudioMode
+    let baseRate: Double
     let isVideoBuffering: Bool
     let isCurrent: Bool
+    let preferHighQuality: Bool
+    let activateReaction: (UIView, MessageReaction.Reaction) -> Void
     
-    init(context: AccountContext, strings: PresentationStrings, peer: EnginePeer, item: EngineStoryItem, audioMode: StoryContentItem.AudioMode, isVideoBuffering: Bool, isCurrent: Bool) {
+    init(context: AccountContext, strings: PresentationStrings, peer: EnginePeer, item: EngineStoryItem, availableReactions: StoryAvailableReactions?, entityFiles: [MediaId: TelegramMediaFile], audioMode: StoryContentItem.AudioMode, baseRate: Double, isVideoBuffering: Bool, isCurrent: Bool, preferHighQuality: Bool, activateReaction: @escaping (UIView, MessageReaction.Reaction) -> Void) {
 		self.context = context
         self.strings = strings
         self.peer = peer
 		self.item = item
+        self.entityFiles = entityFiles
+        self.availableReactions = availableReactions
         self.audioMode = audioMode
+        self.baseRate = baseRate
         self.isVideoBuffering = isVideoBuffering
         self.isCurrent = isCurrent
+        self.preferHighQuality = preferHighQuality
+        self.activateReaction = activateReaction
 	}
 
 	static func ==(lhs: StoryItemContentComponent, rhs: StoryItemContentComponent) -> Bool {
@@ -57,10 +67,22 @@ final class StoryItemContentComponent: Component {
 		if lhs.item != rhs.item {
 			return false
 		}
+        if lhs.availableReactions != rhs.availableReactions {
+            return false
+        }
+        if lhs.entityFiles.keys != rhs.entityFiles.keys {
+            return false
+        }
+        if lhs.baseRate != rhs.baseRate {
+            return false
+        }
         if lhs.isVideoBuffering != rhs.isVideoBuffering {
             return false
         }
         if lhs.isCurrent != rhs.isCurrent {
+            return false
+        }
+        if lhs.preferHighQuality != rhs.preferHighQuality {
             return false
         }
 		return true
@@ -68,12 +90,15 @@ final class StoryItemContentComponent: Component {
 
     final class View: StoryContentItem.View {
         private let imageView: StoryItemImageView
+        private let overlaysView: StoryItemOverlaysView
         private var videoNode: UniversalVideoNode?
         private var loadingEffectView: StoryItemLoadingEffectView?
+        private var loadingEffectAppearanceTimer: SwiftSignalKit.Timer?
         
         private var mediaAreasEffectView: StoryItemLoadingEffectView?
         
         private var currentMessageMedia: EngineMedia?
+        private var currentMessageMetadataMedia: EngineMedia?
         private var fetchDisposable: Disposable?
         private var priorityDisposable: Disposable?
         
@@ -98,7 +123,7 @@ final class StoryItemContentComponent: Component {
         override var videoPlaybackPosition: Double? {
             return self.videoPlaybackStatus?.timestamp
         }
-        
+
         private let hierarchyTrackingLayer: HierarchyTrackingLayer
         
         private var fetchPriorityResourceId: String?
@@ -107,18 +132,33 @@ final class StoryItemContentComponent: Component {
 		override init(frame: CGRect) {
             self.hierarchyTrackingLayer = HierarchyTrackingLayer()
             self.imageView = StoryItemImageView()
+            self.overlaysView = StoryItemOverlaysView()
             
 			super.init(frame: frame)
             
             self.layer.addSublayer(self.hierarchyTrackingLayer)
             
             self.addSubview(self.imageView)
+            self.addSubview(self.overlaysView)
             
             self.hierarchyTrackingLayer.isInHierarchyUpdated = { [weak self] value in
                 guard let self else {
                     return
                 }
                 self.updateProgressMode(update: true)
+            }
+            
+            self.overlaysView.activate = { [weak self] view, reaction in
+                guard let self, let component = self.component else {
+                    return
+                }
+                component.activateReaction(view, reaction)
+            }
+            self.overlaysView.requestUpdate = { [weak self] in
+                guard let self else {
+                    return
+                }
+                self.state?.updated(transition: .immediate)
             }
 		}
         
@@ -132,6 +172,13 @@ final class StoryItemContentComponent: Component {
             self.currentProgressTimer?.invalidate()
             self.videoProgressDisposable?.dispose()
             self.currentFetchPriority?.disposable.dispose()
+        }
+        
+        func allowsInstantPauseOnTouch(point: CGPoint) -> Bool {
+            if let _ = self.overlaysView.hitTest(self.convert(self.convert(point, to: self.overlaysView), to: self.overlaysView), with: nil) {
+                return false
+            }
+            return true
         }
         
         private func performActionAfterImageContentLoaded(update: Bool) {
@@ -185,9 +232,10 @@ final class StoryItemContentComponent: Component {
                         priority: .gallery
                     )
                     videoNode.isHidden = true
+                    videoNode.setBaseRate(component.baseRate)
                     
                     self.videoNode = videoNode
-                    self.addSubview(videoNode.view)
+                    self.insertSubview(videoNode.view, aboveSubview: self.imageView)
                     
                     videoNode.playbackCompleted = { [weak self] in
                         guard let self else {
@@ -242,7 +290,9 @@ final class StoryItemContentComponent: Component {
                         }
                         
                         self.videoPlaybackStatus = status
-                        self.updateVideoPlaybackProgress()
+                        if !self.isSeeking {
+                            self.updateVideoPlaybackProgress()
+                        }
                     })
                 }
             }
@@ -252,6 +302,10 @@ final class StoryItemContentComponent: Component {
             if self.progressMode != progressMode {
                 self.progressMode = progressMode
                 self.updateProgressMode(update: true)
+                
+                if let component = self.component, !self.overlaysView.bounds.isEmpty {
+                    self.updateOverlays(component: component, size: self.overlaysView.bounds.size, synchronousLoad: false, transition: .immediate)
+                }
             }
         }
         
@@ -280,6 +334,12 @@ final class StoryItemContentComponent: Component {
                 } else {
                     videoNode.setSoundMuted(soundMuted: true)
                 }
+            }
+        }
+        
+        override func setBaseRate(_ baseRate: Double) {
+            if let videoNode = self.videoNode {
+                videoNode.setBaseRate(baseRate)
             }
         }
         
@@ -321,7 +381,9 @@ final class StoryItemContentComponent: Component {
                             }
                             
                             if case .file = self.currentMessageMedia {
-                                self.updateVideoPlaybackProgress()
+                                if !self.isSeeking {
+                                    self.updateVideoPlaybackProgress()
+                                }
                             } else {
                                 if !self.markedAsSeen {
                                     self.markedAsSeen = true
@@ -358,7 +420,28 @@ final class StoryItemContentComponent: Component {
             }
         }
         
-        private func updateVideoPlaybackProgress() {
+        var effectiveTimestamp: Double {
+            guard let videoPlaybackStatus = self.videoPlaybackStatus else {
+                return 0.0
+            }
+            return videoPlaybackStatus.timestamp
+        }
+        
+        var effectiveDuration: Double {
+            let effectiveDuration: Double
+            if let videoPlaybackStatus, videoPlaybackStatus.duration > 0.0 {
+                effectiveDuration = videoPlaybackStatus.duration
+            } else if case let .file(file) = self.currentMessageMedia, let duration = file.duration {
+                effectiveDuration = Double(max(1, duration))
+            } else if case let .file(file) = self.currentMessageMetadataMedia, let duration = file.duration {
+                effectiveDuration = Double(max(1, duration))
+            } else {
+                effectiveDuration = 1.0
+            }
+            return effectiveDuration
+        }
+        
+        private func updateVideoPlaybackProgress(_ scrubbingTimestamp: Double? = nil) {
             guard let videoPlaybackStatus = self.videoPlaybackStatus else {
                 return
             }
@@ -375,6 +458,8 @@ final class StoryItemContentComponent: Component {
             if videoPlaybackStatus.duration > 0.0 {
                 effectiveDuration = videoPlaybackStatus.duration
             } else if case let .file(file) = self.currentMessageMedia, let duration = file.duration {
+                effectiveDuration = Double(max(1, duration))
+            } else if case let .file(file) = self.currentMessageMetadataMedia, let duration = file.duration {
                 effectiveDuration = Double(max(1, duration))
             } else {
                 effectiveDuration = 1.0
@@ -439,6 +524,13 @@ final class StoryItemContentComponent: Component {
                 }
             }
             
+            if let scrubbingTimestamp {
+                currentProgress = CGFloat(scrubbingTimestamp / effectiveDuration)
+                if currentProgress.isNaN || !currentProgress.isFinite {
+                    currentProgress = 0.0
+                }
+            }
+            
             let clippedProgress = max(0.0, min(1.0, currentProgress))
             self.environment?.presentationProgressUpdated(clippedProgress, isBuffering, false)
         }
@@ -449,9 +541,44 @@ final class StoryItemContentComponent: Component {
                     return result
                 }
             }
+            if let result = self.overlaysView.hitTest(self.convert(point, to: self.overlaysView), with: event) {
+                return result
+            }
             return nil
         }
         
+        private func updateOverlays(component: StoryItemContentComponent, size: CGSize, synchronousLoad: Bool, transition: Transition) {
+            self.overlaysView.update(
+                context: component.context,
+                strings: component.strings,
+                peer: component.peer,
+                story: component.item,
+                availableReactions: component.availableReactions,
+                entityFiles: component.entityFiles,
+                size: size,
+                isCaptureProtected: component.item.isForwardingDisabled,
+                attemptSynchronous: synchronousLoad,
+                isActive: self.progressMode == .play,
+                transition: transition
+            )
+        }
+        
+        private var isSeeking = false
+        func seekTo(_ timestamp: Double, apply: Bool) {
+            guard let videoNode = self.videoNode else {
+                return
+            }
+            if apply {
+                videoNode.seek(timestamp)
+            }
+            self.isSeeking = true
+            self.updateVideoPlaybackProgress(timestamp)
+        }
+        
+        func seekEnded() {
+            self.isSeeking = false
+        }
+
         func update(component: StoryItemContentComponent, availableSize: CGSize, state: EmptyComponentState, environment: Environment<StoryContentItem.Environment>, transition: Transition) -> CGSize {
             let previousItem = self.component?.item
             
@@ -469,16 +596,34 @@ final class StoryItemContentComponent: Component {
             
             let peerReference = PeerReference(component.peer._asPeer())
             
+            let selectedMedia: EngineMedia
             var messageMedia: EngineMedia?
-            switch component.item.media {
-            case let .image(image):
-                messageMedia = .image(image)
-            case let .file(file):
-                messageMedia = .file(file)
-            case .unsupported:
-                self.contentLoaded = true
-            default:
-                break
+            if !component.preferHighQuality, !component.item.isMy, let alternativeMedia = component.item.alternativeMedia {
+                selectedMedia = alternativeMedia
+                
+                switch alternativeMedia {
+                case let .image(image):
+                    messageMedia = .image(image)
+                case let .file(file):
+                    messageMedia = .file(file)
+                case .unsupported:
+                    self.contentLoaded = true
+                default:
+                    break
+                }
+            } else {
+                selectedMedia = component.item.media
+                
+                switch component.item.media {
+                case let .image(image):
+                    messageMedia = .image(image)
+                case let .file(file):
+                    messageMedia = .file(file)
+                case .unsupported:
+                    self.contentLoaded = true
+                default:
+                    break
+                }
             }
             
             var reloadMedia = false
@@ -487,10 +632,14 @@ final class StoryItemContentComponent: Component {
                 reloadMedia = true
                 
                 if let videoNode = self.videoNode {
+                    self.videoProgressDisposable?.dispose()
+                    self.videoProgressDisposable = nil
+                    
                     self.videoNode = nil
                     videoNode.view.removeFromSuperview()
                 }
             }
+            self.currentMessageMetadataMedia = component.item.media
             
             var fetchPriorityResourceId: String?
             switch messageMedia {
@@ -573,17 +722,19 @@ final class StoryItemContentComponent: Component {
                     strings: component.strings,
                     peer: component.peer,
                     storyId: component.item.id,
-                    media: component.item.media,
+                    media: messageMedia,
                     size: availableSize,
                     isCaptureProtected: component.item.isForwardingDisabled,
                     attemptSynchronous: synchronousLoad,
                     transition: transition
                 )
+                self.updateOverlays(component: component, size: availableSize, synchronousLoad: synchronousLoad, transition: transition)
                 applyState = true
                 if self.imageView.isContentLoaded {
                     self.contentLoaded = true
                 }
                 transition.setFrame(view: self.imageView, frame: CGRect(origin: CGPoint(), size: availableSize))
+                transition.setFrame(view: self.overlaysView, frame: CGRect(origin: CGPoint(), size: availableSize))
                 
                 var dimensions: CGSize?
                 switch messageMedia {
@@ -593,6 +744,16 @@ final class StoryItemContentComponent: Component {
                     dimensions = file.dimensions?.cgSize
                 default:
                     break
+                }
+                if dimensions == nil {
+                    switch component.item.media {
+                    case let .image(image):
+                        dimensions = image.representations.last?.dimensions.cgSize
+                    case let .file(file):
+                        dimensions = file.dimensions?.cgSize
+                    default:
+                        break
+                    }
                 }
                 
                 if let dimensions {
@@ -613,7 +774,7 @@ final class StoryItemContentComponent: Component {
                 }
             }
             
-            switch component.item.media {
+            switch selectedMedia {
             case .image, .file:
                 if let unsupportedText = self.unsupportedText {
                     self.unsupportedText = nil
@@ -719,12 +880,30 @@ final class StoryItemContentComponent: Component {
                 if let current = self.loadingEffectView {
                     loadingEffectView = current
                 } else {
-                    loadingEffectView = StoryItemLoadingEffectView(effectAlpha: 0.1, borderAlpha: 0.2, duration: 1.0, hasCustomBorder: true, playOnce: false)
+                    loadingEffectView = StoryItemLoadingEffectView(effectAlpha: 0.1, borderAlpha: 0.2, duration: 1.0, hasCustomBorder: false, playOnce: false)
+                    loadingEffectView.alpha = 0.0
                     self.loadingEffectView = loadingEffectView
                     self.addSubview(loadingEffectView)
+                    
+                    if self.loadingEffectAppearanceTimer == nil {
+                        let timer = SwiftSignalKit.Timer(timeout: 0.2, repeat: false, completion: { [weak self] in
+                            guard let self else {
+                                return
+                            }
+                            if let loadingEffectView = self.loadingEffectView {
+                                loadingEffectView.alpha = 1.0
+                                loadingEffectView.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.18)
+                            }
+                            self.loadingEffectAppearanceTimer = nil
+                        }, queue: Queue.mainQueue())
+                        timer.start()
+                        self.loadingEffectAppearanceTimer = timer
+                    }
                 }
                 loadingEffectView.update(size: availableSize, transition: transition)
             } else if let loadingEffectView = self.loadingEffectView {
+                self.loadingEffectAppearanceTimer?.invalidate()
+                self.loadingEffectAppearanceTimer = nil
                 self.loadingEffectView = nil
                 loadingEffectView.layer.animateAlpha(from: loadingEffectView.alpha, to: 0.0, duration: 0.18, removeOnCompletion: false, completion: { [weak loadingEffectView] _ in
                     loadingEffectView?.removeFromSuperview()

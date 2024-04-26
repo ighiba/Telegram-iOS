@@ -19,6 +19,8 @@ import MediaResources
 import MultilineTextComponent
 import ShimmerEffect
 import TextFormat
+import LegacyMessageInputPanel
+import LegacyMessageInputPanelInputView
 
 private let buttonSize = CGSize(width: 88.0, height: 49.0)
 private let smallButtonWidth: CGFloat = 69.0
@@ -85,7 +87,7 @@ private final class IconComponent: Component {
                     
                     self.disposable = (svgIconImageFile(account: component.account, fileReference: fileReference)
                     |> runOn(Queue.concurrentDefaultQueue())
-                    |> deliverOnMainQueue).start(next: { [weak self] transform in
+                    |> deliverOnMainQueue).startStrict(next: { [weak self] transform in
                         let arguments = TransformImageArguments(corners: ImageCorners(), imageSize: availableSize, boundingSize: availableSize, intrinsicInsets: UIEdgeInsets())
                         let drawingContext = transform(arguments)
                         let image = drawingContext?.generateImage()?.withRenderingMode(.alwaysTemplate)
@@ -94,7 +96,7 @@ private final class IconComponent: Component {
                         } else {
                             self?.image = image
                         }
-                    })
+                    }).strict()
                 } else {
                     if let tintColor = component.tintColor {
                         self.image = generateTintedImage(image: UIImage(bundleImageName: component.name), color: tintColor, backgroundColor: nil)
@@ -176,7 +178,7 @@ private final class AttachButtonComponent: CombinedComponent {
             let imageName: String
             var imageFile: TelegramMediaFile?
             var animationFile: TelegramMediaFile?
-            var botPeer: Peer?
+            var botPeer: EnginePeer?
             
             let component = context.component
             let strings = component.strings
@@ -200,21 +202,24 @@ private final class AttachButtonComponent: CombinedComponent {
             case .gift:
                 name = strings.Attachment_Gift
                 imageName = "Chat/Attach Menu/Gift"
-            case let .app(peer, appName, appIcons):
-                botPeer = peer
-                name = appName
+            case let .app(bot):
+                botPeer = bot.peer
+                name = bot.shortName
                 imageName = ""
-                if let file = appIcons[.iOSAnimated] {
+                if let file = bot.icons[.iOSAnimated] {
                     animationFile = file
-                } else if let file = appIcons[.iOSStatic] {
+                } else if let file = bot.icons[.iOSStatic] {
                     imageFile = file
-                } else if let file = appIcons[.default] {
+                } else if let file = bot.icons[.default] {
                     imageFile = file
                 }
             case .standalone:
                 name = ""
                 imageName = ""
                 imageFile = nil
+            case .quickReply:
+                name = strings.Attachment_Reply
+                imageName = "Chat/Attach Menu/Reply"
             }
 
             let tintColor = component.isSelected ? component.theme.rootController.tabBar.selectedIconColor : component.theme.rootController.tabBar.iconColor
@@ -245,7 +250,7 @@ private final class AttachButtonComponent: CombinedComponent {
                 )
             } else {
                 var fileReference: FileMediaReference?
-                if let peer = botPeer.flatMap({ PeerReference($0 )}), let imageFile = imageFile {
+                if let peer = botPeer.flatMap({ PeerReference($0._asPeer())}), let imageFile = imageFile {
                     fileReference = .attachBot(peer: peer, media: imageFile)
                 }
                 
@@ -372,54 +377,6 @@ private final class LoadingProgressNode: ASDisplayNode {
         super.layout()
         
         self.foregroundNode.cornerRadius = self.frame.height / 2.0
-    }
-}
-
-public struct AttachmentMainButtonState {
-    public enum Background {
-        case color(UIColor)
-        case premium
-    }
-    
-    public enum Progress: Equatable {
-        case none
-        case side
-        case center
-    }
-    
-    public enum Font: Equatable {
-        case regular
-        case bold
-    }
-    
-    public let text: String?
-    public let font: Font
-    public let background: Background
-    public let textColor: UIColor
-    public let isVisible: Bool
-    public let progress: Progress
-    public let isEnabled: Bool
-    
-    public init(
-        text: String?,
-        font: Font,
-        background: Background,
-        textColor: UIColor,
-        isVisible: Bool,
-        progress: Progress,
-        isEnabled: Bool
-    ) {
-        self.text = text
-        self.font = font
-        self.background = background
-        self.textColor = textColor
-        self.isVisible = isVisible
-        self.progress = progress
-        self.isEnabled = isEnabled
-    }
-    
-    static var initial: AttachmentMainButtonState {
-        return AttachmentMainButtonState(text: nil, font: .bold, background: .color(.clear), textColor: .clear, isVisible: false, progress: .none, isEnabled: false)
     }
 }
 
@@ -723,8 +680,9 @@ private final class MainButtonNode: HighlightTrackingButtonNode {
     }
 }
 
-final class AttachmentPanel: ASDisplayNode, UIScrollViewDelegate {
+final class AttachmentPanel: ASDisplayNode, ASScrollViewDelegate {
     private let context: AccountContext
+    private let isScheduledMessages: Bool
     private var presentationData: PresentationData
     private var presentationDataDisposable: Disposable?
     
@@ -775,13 +733,14 @@ final class AttachmentPanel: ASDisplayNode, UIScrollViewDelegate {
     
     var mainButtonPressed: () -> Void = { }
     
-    init(context: AccountContext, chatLocation: ChatLocation?, updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)?, makeEntityInputView: @escaping () -> AttachmentTextInputPanelInputView?) {
+    init(context: AccountContext, chatLocation: ChatLocation?, isScheduledMessages: Bool, updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)?, makeEntityInputView: @escaping () -> AttachmentTextInputPanelInputView?) {
         self.context = context
         self.presentationData = updatedPresentationData?.initial ?? context.sharedContext.currentPresentationData.with { $0 }
+        self.isScheduledMessages = isScheduledMessages
         
         self.makeEntityInputView = makeEntityInputView
                 
-        self.presentationInterfaceState = ChatPresentationInterfaceState(chatWallpaper: .builtin(WallpaperSettings()), theme: self.presentationData.theme, strings: self.presentationData.strings, dateTimeFormat: self.presentationData.dateTimeFormat, nameDisplayOrder: self.presentationData.nameDisplayOrder, limitsConfiguration: self.context.currentLimitsConfiguration.with { $0 }, fontSize: self.presentationData.chatFontSize, bubbleCorners: self.presentationData.chatBubbleCorners, accountPeerId: self.context.account.peerId, mode: .standard(previewing: false), chatLocation: chatLocation ?? .peer(id: context.account.peerId), subject: nil, peerNearbyData: nil, greetingData: nil, pendingUnpinnedAllMessages: false, activeGroupCallInfo: nil, hasActiveGroupCall: false, importState: nil, threadData: nil, isGeneralThreadClosed: nil)
+        self.presentationInterfaceState = ChatPresentationInterfaceState(chatWallpaper: .builtin(WallpaperSettings()), theme: self.presentationData.theme, strings: self.presentationData.strings, dateTimeFormat: self.presentationData.dateTimeFormat, nameDisplayOrder: self.presentationData.nameDisplayOrder, limitsConfiguration: self.context.currentLimitsConfiguration.with { $0 }, fontSize: self.presentationData.chatFontSize, bubbleCorners: self.presentationData.chatBubbleCorners, accountPeerId: self.context.account.peerId, mode: .standard(.default), chatLocation: chatLocation ?? .peer(id: context.account.peerId), subject: nil, peerNearbyData: nil, greetingData: nil, pendingUnpinnedAllMessages: false, activeGroupCallInfo: nil, hasActiveGroupCall: false, importState: nil, threadData: nil, isGeneralThreadClosed: nil, replyMessage: nil, accountPeerColor: nil, businessIntro: nil)
         
         self.containerNode = ASDisplayNode()
         self.containerNode.clipsToBounds = true
@@ -805,9 +764,10 @@ final class AttachmentPanel: ASDisplayNode, UIScrollViewDelegate {
         
         self.mainButtonNode.addTarget(self, action: #selector(self.buttonPressed), forControlEvents: .touchUpInside)
         
-        self.interfaceInteraction = ChatPanelInterfaceInteraction(setupReplyMessage: { _, _ in
+        self.interfaceInteraction = ChatPanelInterfaceInteraction(setupReplyMessage: { _, _  in
         }, setupEditMessage: { _, _ in
         }, beginMessageSelection: { _, _ in
+        }, cancelMessageSelection: { _ in
         }, deleteSelectedMessages: {
         }, reportSelectedMessages: {
         }, reportMessages: { _, _ in
@@ -822,6 +782,8 @@ final class AttachmentPanel: ASDisplayNode, UIScrollViewDelegate {
                 strongSelf.updateChatPresentationInterfaceState(animated: true, { $0.updatedInterfaceState({ $0.withUpdatedForwardOptionsState($0.forwardOptionsState) }) })
             }
         }, presentForwardOptions: { _ in
+        }, presentReplyOptions: { _ in
+        }, presentLinkOptions: { _ in
         }, shareSelectedMessages: {
         }, updateTextInputStateAndMode: { [weak self] f in
             if let strongSelf = self {
@@ -862,14 +824,17 @@ final class AttachmentPanel: ASDisplayNode, UIScrollViewDelegate {
         }, sendContextResult: { _, _, _, _ in
             return false
         }, sendBotCommand: { _, _ in
+        }, sendShortcut: { _ in
+        }, openEditShortcuts: {
         }, sendBotStart: { _ in
         }, botSwitchChatWithPayload: { _, _ in
         }, beginMediaRecording: { _ in
         }, finishMediaRecording: { _ in
         }, stopMediaRecording: {
         }, lockMediaRecording: {
+        }, resumeMediaRecording: {  
         }, deleteRecordedMedia: {
-        }, sendRecordedMedia: { _ in
+        }, sendRecordedMedia: { _, _ in
         }, displayRestrictedInfo: { _, _ in
         }, displayVideoUnmuteTip: { _ in
         }, switchMediaRecordingMode: {
@@ -963,7 +928,7 @@ final class AttachmentPanel: ASDisplayNode, UIScrollViewDelegate {
             }
             let _ = (strongSelf.context.account.viewTracker.peerView(peerId)
             |> take(1)
-            |> deliverOnMainQueue).start(next: { [weak self] peerView in
+            |> deliverOnMainQueue).startStandalone(next: { [weak self] peerView in
                 guard let strongSelf = self, let peer = peerViewMainPeer(peerView) else {
                     return
                 }
@@ -978,7 +943,7 @@ final class AttachmentPanel: ASDisplayNode, UIScrollViewDelegate {
                     sendWhenOnlineAvailable = false
                 }
                 
-                let controller = ChatSendMessageActionSheetController(context: strongSelf.context, peerId: strongSelf.presentationInterfaceState.chatLocation.peerId, forwardMessageIds: strongSelf.presentationInterfaceState.interfaceState.forwardMessageIds, hasEntityKeyboard: hasEntityKeyboard, gesture: gesture, sourceSendButton: node, textInputNode: textInputNode, attachment: true, canSendWhenOnline: sendWhenOnlineAvailable, completion: {
+                let controller = ChatSendMessageActionSheetController(context: strongSelf.context, peerId: strongSelf.presentationInterfaceState.chatLocation.peerId, forwardMessageIds: strongSelf.presentationInterfaceState.interfaceState.forwardMessageIds, hasEntityKeyboard: hasEntityKeyboard, gesture: gesture, sourceSendButton: node, textInputView: textInputNode.textView, attachment: true, canSendWhenOnline: sendWhenOnlineAvailable, completion: {
                 }, sendMessage: { [weak textInputPanelNode] mode in
                     switch mode {
                     case .generic:
@@ -1021,13 +986,18 @@ final class AttachmentPanel: ASDisplayNode, UIScrollViewDelegate {
         }, addDoNotTranslateLanguage: { _ in
         }, hideTranslationPanel: {
         }, openPremiumGift: {
+        }, openPremiumRequiredForMessaging: {
+        }, openBoostToUnrestrict: {
+        }, updateVideoTrimRange: { _, _, _, _ in
+        }, updateHistoryFilter: { _ in
+        }, updateDisplayHistoryFilterAsList: { _ in
         }, requestLayout: { _ in
         }, chatController: {
             return nil
         }, statuses: nil)
         
         self.presentationDataDisposable = ((updatedPresentationData?.signal ?? context.sharedContext.presentationData)
-        |> deliverOnMainQueue).start(next: { [weak self] presentationData in
+        |> deliverOnMainQueue).startStrict(next: { [weak self] presentationData in
             if let strongSelf = self {
                 strongSelf.presentationData = presentationData
                 
@@ -1040,7 +1010,7 @@ final class AttachmentPanel: ASDisplayNode, UIScrollViewDelegate {
                     let _ = strongSelf.update(layout: layout, buttons: strongSelf.buttons, isSelecting: strongSelf.isSelecting, elevateProgress: strongSelf.elevateProgress, transition: .immediate)
                 }
             }
-        })
+        }).strict()
     }
     
     deinit {
@@ -1056,7 +1026,7 @@ final class AttachmentPanel: ASDisplayNode, UIScrollViewDelegate {
             self.containerNode.layer.cornerCurve = .continuous
         }
     
-        self.scrollNode.view.delegate = self
+        self.scrollNode.view.delegate = self.wrappedScrollViewDelegate
         self.scrollNode.view.showsHorizontalScrollIndicator = false
         self.scrollNode.view.showsVerticalScrollIndicator = false
         
@@ -1140,10 +1110,10 @@ final class AttachmentPanel: ASDisplayNode, UIScrollViewDelegate {
             }
             
             let type = self.buttons[i]
-            if case let .app(peer, _, iconFiles) = type {
-                for (name, file) in iconFiles {
-                    if [.default, .iOSAnimated, .placeholder].contains(name) {
-                        if self.iconDisposables[file.fileId] == nil, let peer = PeerReference(peer) {
+            if case let .app(bot) = type {
+                for (name, file) in bot.icons {
+                    if [.default, .iOSAnimated, .iOSSettingsStatic, .placeholder].contains(name) {
+                        if self.iconDisposables[file.fileId] == nil, let peer = PeerReference(bot.peer._asPeer()) {
                             if case .placeholder = name {
                                 let account = self.context.account
                                 let path = account.postbox.mediaBox.cachedRepresentationCompletePath(file.resource.id, representation: CachedPreparedSvgRepresentation())
@@ -1163,7 +1133,7 @@ final class AttachmentPanel: ASDisplayNode, UIScrollViewDelegate {
                                     self.iconDisposables[file.fileId] = accountFullSizeData.start()
                                 }
                             } else {
-                                self.iconDisposables[file.fileId] = freeMediaFileInteractiveFetched(account: self.context.account, userLocation: .other, fileReference: .attachBot(peer: peer, media: file)).start()
+                                self.iconDisposables[file.fileId] = freeMediaFileInteractiveFetched(account: self.context.account, userLocation: .other, fileReference: .attachBot(peer: peer, media: file)).startStrict()
                             }
                         }
                     }
@@ -1212,10 +1182,12 @@ final class AttachmentPanel: ASDisplayNode, UIScrollViewDelegate {
                 accessibilityTitle = self.presentationData.strings.Attachment_Poll
             case .gift:
                 accessibilityTitle = self.presentationData.strings.Attachment_Gift
-            case let .app(_, appName, _):
-                accessibilityTitle = appName
+            case let .app(bot):
+                accessibilityTitle = bot.shortName
             case .standalone:
                 accessibilityTitle = ""
+            case .quickReply:
+                accessibilityTitle = self.presentationData.strings.Attachment_Reply
             }
             buttonView.isAccessibilityElement = true
             buttonView.accessibilityLabel = accessibilityTitle
@@ -1248,7 +1220,7 @@ final class AttachmentPanel: ASDisplayNode, UIScrollViewDelegate {
     private func loadTextNodeIfNeeded() {
         if let _ = self.textInputPanelNode {
         } else {
-            let textInputPanelNode = AttachmentTextInputPanelNode(context: self.context, presentationInterfaceState: self.presentationInterfaceState, isAttachment: true, presentController: { [weak self] c in
+            let textInputPanelNode = AttachmentTextInputPanelNode(context: self.context, presentationInterfaceState: self.presentationInterfaceState, isAttachment: true, isScheduledMessages: self.isScheduledMessages, presentController: { [weak self] c in
                 if let strongSelf = self {
                     strongSelf.present(c)
                 }

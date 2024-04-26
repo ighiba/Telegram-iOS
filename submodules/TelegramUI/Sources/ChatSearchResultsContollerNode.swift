@@ -76,13 +76,18 @@ private enum ChatListSearchEntry: Comparable, Identifiable {
         return false
     }
     
-    public func item(context: AccountContext, interaction: ChatListNodeInteraction) -> ListViewItem {
+    public func item(context: AccountContext, interaction: ChatListNodeInteraction, location: ChatListControllerLocation) -> ListViewItem {
         switch self {
             case let .message(message, peer, readState, presentationData):
+                var displayAsMessage = true
+                if case .savedMessagesChats = location {
+                    displayAsMessage = false
+                }
+            
                 return ChatListItem(
                     presentationData: presentationData,
                     context: context,
-                    chatListLocation: .chatList(groupId: .root),
+                    chatListLocation: location,
                     filterData: nil,
                     index: .chatList(EngineChatList.Item.Index.ChatList(pinningIndex: nil, messageIndex: message.index)),
                     content: .peer(ChatListItemContent.PeerData(
@@ -95,15 +100,19 @@ private enum ChatListSearchEntry: Comparable, Identifiable {
                         hasUnseenMentions: false,
                         hasUnseenReactions: false,
                         draftState: nil,
+                        mediaDraftContentType: nil,
                         inputActivities: nil,
                         promoInfo: nil,
                         ignoreUnreadBadge: true,
-                        displayAsMessage: true,
+                        displayAsMessage: displayAsMessage,
                         hasFailedMessages: false,
                         forumTopicData: nil,
                         topForumTopicItems: [],
                         autoremoveTimeout: nil,
-                        storyState: nil
+                        storyState: nil,
+                        requiresPremiumForMessaging: false,
+                        displayAsTopicList: false,
+                        tags: []
                     )),
                     editing: false,
                     hasActiveRevealControls: false,
@@ -129,17 +138,17 @@ public struct ChatListSearchContainerTransition {
     }
 }
 
-private func chatListSearchContainerPreparedTransition(from fromEntries: [ChatListSearchEntry], to toEntries: [ChatListSearchEntry], context: AccountContext, interaction: ChatListNodeInteraction) -> ChatListSearchContainerTransition {
+private func chatListSearchContainerPreparedTransition(from fromEntries: [ChatListSearchEntry], to toEntries: [ChatListSearchEntry], context: AccountContext, interaction: ChatListNodeInteraction, location: ChatListControllerLocation) -> ChatListSearchContainerTransition {
     let (deleteIndices, indicesAndItems, updateIndices) = mergeListsStableWithUpdates(leftList: fromEntries, rightList: toEntries)
     
     let deletions = deleteIndices.map { ListViewDeleteItem(index: $0, directionHint: nil) }
-    let insertions = indicesAndItems.map { ListViewInsertItem(index: $0.0, previousIndex: $0.2, item: $0.1.item(context: context, interaction: interaction), directionHint: nil) }
-    let updates = updateIndices.map { ListViewUpdateItem(index: $0.0, previousIndex: $0.2, item: $0.1.item(context: context, interaction: interaction), directionHint: nil) }
+    let insertions = indicesAndItems.map { ListViewInsertItem(index: $0.0, previousIndex: $0.2, item: $0.1.item(context: context, interaction: interaction, location: location), directionHint: nil) }
+    let updates = updateIndices.map { ListViewUpdateItem(index: $0.0, previousIndex: $0.2, item: $0.1.item(context: context, interaction: interaction, location: location), directionHint: nil) }
     
     return ChatListSearchContainerTransition(deletions: deletions, insertions: insertions, updates: updates)
 }
 
-class ChatSearchResultsControllerNode: ViewControllerTracingNode, UIScrollViewDelegate {
+class ChatSearchResultsControllerNode: ViewControllerTracingNode, ASScrollViewDelegate {
     private let context: AccountContext
     private var presentationData: PresentationData
     private let animationCache: AnimationCache
@@ -148,6 +157,7 @@ class ChatSearchResultsControllerNode: ViewControllerTracingNode, UIScrollViewDe
     private let searchQuery: String
     private var searchResult: SearchMessagesResult
     private var searchState: SearchMessagesState
+    private let mappedLocation: ChatListControllerLocation
     
     private var interaction: ChatListNodeInteraction?
     
@@ -173,6 +183,12 @@ class ChatSearchResultsControllerNode: ViewControllerTracingNode, UIScrollViewDe
         self.searchQuery = searchQuery
         self.searchResult = searchResult
         self.searchState = searchState
+        
+        if case let .peer(peerId, _, _, _, _, _, _) = location, peerId == context.account.peerId {
+            self.mappedLocation = .savedMessagesChats
+        } else {
+            self.mappedLocation = .chatList(groupId: .root)
+        }
          
         let presentationData = context.sharedContext.currentPresentationData.with { $0 }
         self.presentationData = presentationData
@@ -212,7 +228,7 @@ class ChatSearchResultsControllerNode: ViewControllerTracingNode, UIScrollViewDe
         
         let interaction = ChatListNodeInteraction(context: context, animationCache: self.animationCache, animationRenderer: self.animationRenderer, activateSearch: {
         }, peerSelected: { _, _, _, _ in
-        }, disabledPeerSelected: { _, _ in
+        }, disabledPeerSelected: { _, _, _ in
         }, togglePeerSelected: { _, _ in
         }, togglePeersSelection: { _, _ in
         }, additionalCategorySelected: { _ in
@@ -251,9 +267,9 @@ class ChatSearchResultsControllerNode: ViewControllerTracingNode, UIScrollViewDe
             switch item.content {
             case let .peer(peerData):
                 if let message = peerData.messages.first {
-                    let chatController = strongSelf.context.sharedContext.makeChatController(context: strongSelf.context, chatLocation: .peer(id: peerData.peer.peerId), subject: .message(id: .id(message.id), highlight: true, timecode: nil), botStart: nil, mode: .standard(previewing: true))
+                    let chatController = strongSelf.context.sharedContext.makeChatController(context: strongSelf.context, chatLocation: .peer(id: peerData.peer.peerId), subject: .message(id: .id(message.id), highlight: ChatControllerSubject.MessageHighlight(quote: nil), timecode: nil), botStart: nil, mode: .standard(.previewing))
                     chatController.canReadHistory.set(false)
-                    let contextController = ContextController(account: strongSelf.context.account, presentationData: strongSelf.presentationData, source: .controller(ContextControllerContentSourceImpl(controller: chatController, sourceNode: node)), items: .single(ContextController.Items(content: .list([]))), gesture: gesture)
+                    let contextController = ContextController(presentationData: strongSelf.presentationData, source: .controller(ContextControllerContentSourceImpl(controller: chatController, sourceNode: node)), items: .single(ContextController.Items(content: .list([]))), gesture: gesture)
                     presentInGlobalOverlay(contextController)
                 } else {
                     gesture?.cancel()
@@ -266,20 +282,27 @@ class ChatSearchResultsControllerNode: ViewControllerTracingNode, UIScrollViewDe
         }, openStorageManagement: {
         }, openPasswordSetup: {
         }, openPremiumIntro: {
+        }, openPremiumGift: { _ in
+        }, openPremiumManagement: {
+        }, openActiveSessions: {
+        }, openBirthdaySetup: {
+        }, performActiveSessionAction: { _, _ in
         }, openChatFolderUpdates: {
         }, hideChatFolderUpdates: {
         }, openStories: { _, _ in
+        }, dismissNotice: { _ in
+        }, editPeer: { _ in
         })
         interaction.searchTextHighightState = searchQuery
         self.interaction = interaction
         
         self.disposable.set((signal
-        |> deliverOnMainQueue).start(next: { [weak self] entries in
+        |> deliverOnMainQueue).startStrict(next: { [weak self] entries in
             if let strongSelf = self {
                 let previousEntries = strongSelf.previousEntries.swap(entries)
                 
                 let firstTime = previousEntries == nil
-                let transition = chatListSearchContainerPreparedTransition(from: previousEntries ?? [], to: entries, context: context, interaction: interaction)
+                let transition = chatListSearchContainerPreparedTransition(from: previousEntries ?? [], to: entries, context: context, interaction: interaction, location: strongSelf.mappedLocation)
                 strongSelf.enqueueTransition(transition, firstTime: firstTime)
             }
         }))
@@ -310,7 +333,7 @@ class ChatSearchResultsControllerNode: ViewControllerTracingNode, UIScrollViewDe
         self.isLoadingMore = true
         
         self.loadMoreDisposable.set((self.context.engine.messages.searchMessages(location: self.location, query: self.searchQuery, state: self.searchState)
-        |> deliverOnMainQueue).start(next: { [weak self] (updatedResult, updatedState) in
+        |> deliverOnMainQueue).startStrict(next: { [weak self] (updatedResult, updatedState) in
             guard let strongSelf = self else {
                 return
             }
@@ -343,12 +366,12 @@ class ChatSearchResultsControllerNode: ViewControllerTracingNode, UIScrollViewDe
             }
             
             strongSelf.disposable.set((signal
-            |> deliverOnMainQueue).start(next: { entries in
+            |> deliverOnMainQueue).startStrict(next: { entries in
                 if let strongSelf = self {
                     let previousEntries = strongSelf.previousEntries.swap(entries)
                     
                     let firstTime = previousEntries == nil
-                    let transition = chatListSearchContainerPreparedTransition(from: previousEntries ?? [], to: entries, context: context, interaction: interaction)
+                    let transition = chatListSearchContainerPreparedTransition(from: previousEntries ?? [], to: entries, context: context, interaction: interaction, location: strongSelf.mappedLocation)
                     strongSelf.enqueueTransition(transition, firstTime: firstTime)
                 }
             }))

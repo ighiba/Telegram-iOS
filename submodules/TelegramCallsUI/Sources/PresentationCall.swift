@@ -342,6 +342,32 @@ public final class PresentationCallImpl: PresentationCall {
     }
     
     private func updateSessionState(sessionState: CallSession, callContextState: OngoingCallContextState?, reception: Int32?, audioSessionControl: ManagedAudioSessionControl?) {
+        self.reception = reception
+        
+        if let ongoingContext = self.ongoingContext {
+            if self.receptionDisposable == nil, case .active = sessionState.state {
+                self.reception = 4
+                
+                var canUpdate = false
+                self.receptionDisposable = (ongoingContext.reception
+                |> delay(1.0, queue: .mainQueue())
+                |> deliverOnMainQueue).start(next: { [weak self] reception in
+                    if let strongSelf = self {
+                        if let sessionState = strongSelf.sessionState {
+                            if canUpdate {
+                                strongSelf.updateSessionState(sessionState: sessionState, callContextState: strongSelf.callContextState, reception: reception, audioSessionControl: strongSelf.audioSessionControl)
+                            } else {
+                                strongSelf.reception = reception
+                            }
+                        } else {
+                            strongSelf.reception = reception
+                        }
+                    }
+                })
+                canUpdate = true
+            }
+        }
+        
         if case .video = sessionState.type {
             self.isVideo = true
         }
@@ -349,8 +375,9 @@ public final class PresentationCallImpl: PresentationCall {
         let previousControl = self.audioSessionControl
         self.sessionState = sessionState
         self.callContextState = callContextState
-        self.reception = reception
         self.audioSessionControl = audioSessionControl
+        
+        let reception = self.reception
         
         if previousControl != nil && audioSessionControl == nil {
             print("updateSessionState \(sessionState.state) \(audioSessionControl != nil)")
@@ -494,7 +521,7 @@ public final class PresentationCallImpl: PresentationCall {
                 presentationState = PresentationCallState(state: .terminated(id, reason, self.callWasActive && (options.contains(.reportRating) || self.shouldPresentCallRating)), videoState: mappedVideoState, remoteVideoState: .inactive, remoteAudioState: mappedRemoteAudioState, remoteBatteryLevel: mappedRemoteBatteryLevel)
             case let .requesting(ringing):
                 presentationState = PresentationCallState(state: .requesting(ringing), videoState: mappedVideoState, remoteVideoState: mappedRemoteVideoState, remoteAudioState: mappedRemoteAudioState, remoteBatteryLevel: mappedRemoteBatteryLevel)
-            case let .active(_, _, keyVisualHash, _, _, _, _):
+            case let .active(_, _, keyVisualHash, _, _, _, _, _):
                 self.callWasActive = true
                 if let callContextState = callContextState {
                     switch callContextState.state {
@@ -532,14 +559,14 @@ public final class PresentationCallImpl: PresentationCall {
                 if let _ = audioSessionControl {
                     self.audioSessionShouldBeActive.set(true)
                 }
-            case let .active(id, key, _, connections, maxLayer, version, allowsP2P):
+            case let .active(id, key, _, connections, maxLayer, version, customParameters, allowsP2P):
                 self.audioSessionShouldBeActive.set(true)
                 if let _ = audioSessionControl, !wasActive || previousControl == nil {
                     let logName = "\(id.id)_\(id.accessHash)"
 
                     let updatedConnections = connections
                     
-                    let ongoingContext = OngoingCallContext(account: self.context.account, callSessionManager: self.callSessionManager, callId: id, internalId: self.internalId, proxyServer: proxyServer, initialNetworkType: self.currentNetworkType, updatedNetworkType: self.updatedNetworkType, serializedData: self.serializedData, dataSaving: dataSaving, key: key, isOutgoing: sessionState.isOutgoing, video: self.videoCapturer, connections: updatedConnections, maxLayer: maxLayer, version: version, allowP2P: allowsP2P, enableTCP: self.enableTCP, enableStunMarking: self.enableStunMarking, audioSessionActive: self.audioSessionActive.get(), logName: logName, preferredVideoCodec: self.preferredVideoCodec, audioDevice: self.sharedAudioDevice)
+                    let ongoingContext = OngoingCallContext(account: self.context.account, callSessionManager: self.callSessionManager, callId: id, internalId: self.internalId, proxyServer: proxyServer, initialNetworkType: self.currentNetworkType, updatedNetworkType: self.updatedNetworkType, serializedData: self.serializedData, dataSaving: dataSaving, key: key, isOutgoing: sessionState.isOutgoing, video: self.videoCapturer, connections: updatedConnections, maxLayer: maxLayer, version: version, customParameters: customParameters, allowP2P: allowsP2P, enableTCP: self.enableTCP, enableStunMarking: self.enableStunMarking, audioSessionActive: self.audioSessionActive.get(), logName: logName, preferredVideoCodec: self.preferredVideoCodec, audioDevice: self.sharedAudioDevice)
                     self.ongoingContext = ongoingContext
                     ongoingContext.setIsMuted(self.isMutedValue)
                     if let requestedVideoAspect = self.requestedVideoAspect {
@@ -555,17 +582,6 @@ public final class PresentationCallImpl: PresentationCall {
                                 strongSelf.updateSessionState(sessionState: sessionState, callContextState: contextState, reception: strongSelf.reception, audioSessionControl: strongSelf.audioSessionControl)
                             } else {
                                 strongSelf.callContextState = contextState
-                            }
-                        }
-                    })
-                    
-                    self.receptionDisposable = (ongoingContext.reception
-                    |> deliverOnMainQueue).start(next: { [weak self] reception in
-                        if let strongSelf = self {
-                            if let sessionState = strongSelf.sessionState {
-                                strongSelf.updateSessionState(sessionState: sessionState, callContextState: strongSelf.callContextState, reception: reception, audioSessionControl: strongSelf.audioSessionControl)
-                            } else {
-                                strongSelf.reception = reception
                             }
                         }
                     })
@@ -896,7 +912,13 @@ public final class PresentationCallImpl: PresentationCall {
     }
     
     func video(isIncoming: Bool) -> Signal<OngoingGroupCallContext.VideoFrameData, NoError>? {
-        return self.ongoingContext?.video(isIncoming: isIncoming)
+        if isIncoming {
+            return self.ongoingContext?.video(isIncoming: isIncoming)
+        } else if let videoCapturer = self.videoCapturer {
+            return videoCapturer.video()
+        } else {
+            return nil
+        }
     }
     
     public func makeIncomingVideoView(completion: @escaping (PresentationCallVideoView?) -> Void) {

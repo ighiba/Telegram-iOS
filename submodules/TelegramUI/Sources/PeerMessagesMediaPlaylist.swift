@@ -63,7 +63,7 @@ final class MessageMediaPlaylistItem: SharedMediaPlaylistItem {
     lazy var playbackData: SharedMediaPlaybackData? = {
         if let file = extractFileMedia(self.message) {
             let fileReference = FileMediaReference.message(message: MessageReference(self.message), media: file)
-            let source = SharedMediaPlaybackDataSource.telegramFile(reference: fileReference, isCopyProtected: self.message.isCopyProtected())
+            let source = SharedMediaPlaybackDataSource.telegramFile(reference: fileReference, isCopyProtected: self.message.isCopyProtected(), isViewOnce: self.message.minAutoremoveOrClearTimeout == viewOnceTimeout)
             for attribute in file.attributes {
                 switch attribute {
                     case let .Audio(isVoice, _, _, _, _):
@@ -173,19 +173,27 @@ private func aroundMessagesFromMessages(_ messages: [Message], centralIndex: Mes
 }
 
 private func aroundMessagesFromView(view: MessageHistoryView, centralIndex: MessageIndex) -> [Message] {
-    guard let index = view.entries.firstIndex(where: { $0.index.id == centralIndex.id }) else {
+    let filteredEntries = view.entries.filter { entry in
+        if entry.message.minAutoremoveOrClearTimeout == viewOnceTimeout {
+            return false
+        } else {
+            return true
+        }
+    }
+    
+    guard let index = filteredEntries.firstIndex(where: { $0.index.id == centralIndex.id }) else {
         return []
     }
     var result: [Message] = []
     if index != 0 {
         for i in (0 ..< index).reversed() {
-            result.append(view.entries[i].message)
+            result.append(filteredEntries[i].message)
             break
         }
     }
-    if index != view.entries.count - 1 {
-        for i in index + 1 ..< view.entries.count {
-            result.append(view.entries[i].message)
+    if index != filteredEntries.count - 1 {
+        for i in index + 1 ..< filteredEntries.count {
+            result.append(filteredEntries[i].message)
             break
         }
     }
@@ -234,7 +242,15 @@ private func navigatedMessageFromMessages(_ messages: [Message], anchorIndex: Me
 private func navigatedMessageFromView(_ view: MessageHistoryView, anchorIndex: MessageIndex, position: NavigatedMessageFromViewPosition, reversed: Bool) -> (message: Message, around: [Message], exact: Bool)? {
     var index = 0
     
-    for entry in view.entries {
+    let filteredEntries = view.entries.filter { entry in
+        if entry.message.minAutoremoveOrClearTimeout == viewOnceTimeout {
+            return false
+        } else {
+            return true
+        }
+    }
+    
+    for entry in filteredEntries {
         if entry.index.id == anchorIndex.id {
             let currentGroupKey = entry.message.groupingKey
             
@@ -243,63 +259,63 @@ private func navigatedMessageFromView(_ view: MessageHistoryView, anchorIndex: M
                     return (entry.message, aroundMessagesFromView(view: view, centralIndex: entry.index), true)
                 case .later:
                     if !reversed, let currentGroupKey {
-                        if index - 1 > 0, view.entries[index - 1].message.groupingKey == currentGroupKey {
-                            let message = view.entries[index - 1].message
-                            return (message, aroundMessagesFromView(view: view, centralIndex: view.entries[index - 1].index), true)
+                        if index - 1 > 0, filteredEntries[index - 1].message.groupingKey == currentGroupKey {
+                            let message = filteredEntries[index - 1].message
+                            return (message, aroundMessagesFromView(view: view, centralIndex: filteredEntries[index - 1].index), true)
                         } else {
-                            for i in index ..< view.entries.count {
-                                if view.entries[i].message.groupingKey != currentGroupKey {
-                                    let message = view.entries[i].message
-                                    return (message, aroundMessagesFromView(view: view, centralIndex: view.entries[i].index), true)
+                            for i in index ..< filteredEntries.count {
+                                if filteredEntries[i].message.groupingKey != currentGroupKey {
+                                    let message = filteredEntries[i].message
+                                    return (message, aroundMessagesFromView(view: view, centralIndex: filteredEntries[i].index), true)
                                 }
                             }
                         }
-                    } else if index + 1 < view.entries.count {
-                        let message = view.entries[index + 1].message
-                        return (message, aroundMessagesFromView(view: view, centralIndex: view.entries[index + 1].index), true)
+                    } else if index + 1 < filteredEntries.count {
+                        let message = filteredEntries[index + 1].message
+                        return (message, aroundMessagesFromView(view: view, centralIndex: filteredEntries[index + 1].index), true)
                     } else {
                         return nil
                     }
                 case .earlier:
                     if !reversed, let currentGroupKey {
-                        if index + 1 < view.entries.count, view.entries[index + 1].message.groupingKey == currentGroupKey {
-                            let message = view.entries[index + 1].message
-                            return (message, aroundMessagesFromView(view: view, centralIndex: view.entries[index + 1].index), true)
+                        if index + 1 < filteredEntries.count, filteredEntries[index + 1].message.groupingKey == currentGroupKey {
+                            let message = filteredEntries[index + 1].message
+                            return (message, aroundMessagesFromView(view: view, centralIndex: filteredEntries[index + 1].index), true)
                         } else {
                             var nextGroupingKey: Int64?
                             for i in (0 ..< index).reversed() {
                                 if let nextGroupingKey {
-                                    if view.entries[i].message.groupingKey != nextGroupingKey {
-                                        let message = view.entries[i + 1].message
-                                        return (message, aroundMessagesFromView(view: view, centralIndex: view.entries[i + 1].index), true)
+                                    if filteredEntries[i].message.groupingKey != nextGroupingKey {
+                                        let message = filteredEntries[i + 1].message
+                                        return (message, aroundMessagesFromView(view: view, centralIndex: filteredEntries[i + 1].index), true)
                                     } else if i == 0 {
-                                        let message = view.entries[i].message
-                                        return (message, aroundMessagesFromView(view: view, centralIndex: view.entries[i].index), true)
+                                        let message = filteredEntries[i].message
+                                        return (message, aroundMessagesFromView(view: view, centralIndex: filteredEntries[i].index), true)
                                     }
-                                } else if view.entries[i].message.groupingKey != currentGroupKey {
-                                    if let groupingKey = view.entries[i].message.groupingKey {
+                                } else if filteredEntries[i].message.groupingKey != currentGroupKey {
+                                    if let groupingKey = filteredEntries[i].message.groupingKey {
                                         nextGroupingKey = groupingKey
                                     } else {
-                                        let message = view.entries[i].message
-                                        return (message, aroundMessagesFromView(view: view, centralIndex: view.entries[i].index), true)
+                                        let message = filteredEntries[i].message
+                                        return (message, aroundMessagesFromView(view: view, centralIndex: filteredEntries[i].index), true)
                                     }
                                 }
                             }
                         }
                     } else if index != 0 {
-                        let message = view.entries[index - 1].message
+                        let message = filteredEntries[index - 1].message
                         if !reversed, let nextGroupingKey = message.groupingKey {
                             for i in (0 ..< index).reversed() {
-                                if view.entries[i].message.groupingKey != nextGroupingKey {
-                                    let message = view.entries[i + 1].message
-                                    return (message, aroundMessagesFromView(view: view, centralIndex: view.entries[i + 1].index), true)
+                                if filteredEntries[i].message.groupingKey != nextGroupingKey {
+                                    let message = filteredEntries[i + 1].message
+                                    return (message, aroundMessagesFromView(view: view, centralIndex: filteredEntries[i + 1].index), true)
                                 } else if i == 0 {
-                                    let message = view.entries[i].message
-                                    return (message, aroundMessagesFromView(view: view, centralIndex: view.entries[i].index), true)
+                                    let message = filteredEntries[i].message
+                                    return (message, aroundMessagesFromView(view: view, centralIndex: filteredEntries[i].index), true)
                                 }
                             }
                         }
-                        return (message, aroundMessagesFromView(view: view, centralIndex: view.entries[index - 1].index), true)
+                        return (message, aroundMessagesFromView(view: view, centralIndex: filteredEntries[index - 1].index), true)
                     } else {
                         return nil
                     }
@@ -307,14 +323,14 @@ private func navigatedMessageFromView(_ view: MessageHistoryView, anchorIndex: M
         }
         index += 1
     }
-    if !view.entries.isEmpty {
+    if !filteredEntries.isEmpty {
         switch position {
             case .later, .exact:
-                let message = view.entries[view.entries.count - 1].message
-                return (message, aroundMessagesFromView(view: view, centralIndex: view.entries[view.entries.count - 1].index), false)
+                let message = filteredEntries[filteredEntries.count - 1].message
+                return (message, aroundMessagesFromView(view: view, centralIndex: filteredEntries[filteredEntries.count - 1].index), false)
             case .earlier:
-                let message = view.entries[0].message
-                return (message, aroundMessagesFromView(view: view, centralIndex: view.entries[0].index), false)
+                let message = filteredEntries[0].message
+                return (message, aroundMessagesFromView(view: view, centralIndex: filteredEntries[0].index), false)
         }
     } else {
         return nil
@@ -517,7 +533,7 @@ final class PeerMessagesMediaPlaylist: SharedMediaPlaylist {
                     }
                 }
                 |> take(1)
-                |> deliverOnMainQueue).start(next: { [weak self] _ in
+                |> deliverOnMainQueue).startStrict(next: { [weak self] _ in
                     self?.currentItemDisappeared?()
                 }))
             } else {
@@ -533,8 +549,10 @@ final class PeerMessagesMediaPlaylist: SharedMediaPlaylist {
         let namespaces: MessageIdNamespaces
         if Namespaces.Message.allScheduled.contains(anchor.id.namespace) {
             namespaces = .just(Namespaces.Message.allScheduled)
+        } else if Namespaces.Message.allQuickReply.contains(anchor.id.namespace) {
+            namespaces = .just(Namespaces.Message.allQuickReply)
         } else {
-            namespaces = .not(Namespaces.Message.allScheduled)
+            namespaces = .not(Namespaces.Message.allNonRegular)
         }
         
         switch anchor {
@@ -548,7 +566,7 @@ final class PeerMessagesMediaPlaylist: SharedMediaPlaylist {
                                 return .single(nil)
                             }
                             
-                            return self.context.account.postbox.aroundMessageHistoryViewForLocation(self.context.chatLocationInput(for: chatLocation, contextHolder: self.chatLocationContextHolder ?? Atomic<ChatLocationContextHolder?>(value: nil)), anchor: .index(message.index), ignoreMessagesInTimestampRange: nil, count: 10, fixedCombinedReadStates: nil, topTaggedMessageIdNamespaces: [], tagMask: tagMask, appendMessagesFromTheSameGroup: false, namespaces: namespaces, orderStatistics: [])
+                            return self.context.account.postbox.aroundMessageHistoryViewForLocation(self.context.chatLocationInput(for: chatLocation, contextHolder: self.chatLocationContextHolder ?? Atomic<ChatLocationContextHolder?>(value: nil)), anchor: .index(message.index), ignoreMessagesInTimestampRange: nil, count: 10, fixedCombinedReadStates: nil, topTaggedMessageIdNamespaces: [], tag: .tag(tagMask), appendMessagesFromTheSameGroup: false, namespaces: namespaces, orderStatistics: [])
                             |> mapToSignal { view -> Signal<(Message, [Message])?, NoError> in
                                 if let (message, aroundMessages, _) = navigatedMessageFromView(view.0, anchorIndex: message.index, position: .exact, reversed: reversed) {
                                     return .single((message, aroundMessages))
@@ -559,7 +577,7 @@ final class PeerMessagesMediaPlaylist: SharedMediaPlaylist {
                         }
                         |> take(1)
                         |> deliverOnMainQueue
-                        self.navigationDisposable.set(historySignal.start(next: { [weak self] messageAndAroundMessages in
+                        self.navigationDisposable.set(historySignal.startStrict(next: { [weak self] messageAndAroundMessages in
                             if let strongSelf = self {
                                 assert(strongSelf.loadingItem)
                                 
@@ -578,7 +596,7 @@ final class PeerMessagesMediaPlaylist: SharedMediaPlaylist {
                     case let .custom(messages, at, _):
                         self.navigationDisposable.set((messages
                         |> take(1)
-                        |> deliverOnMainQueue).start(next: { [weak self] messages in
+                        |> deliverOnMainQueue).startStrict(next: { [weak self] messages in
                             if let strongSelf = self {
                                 assert(strongSelf.loadingItem)
                                 
@@ -602,7 +620,7 @@ final class PeerMessagesMediaPlaylist: SharedMediaPlaylist {
                     default:
                         self.navigationDisposable.set((self.context.account.postbox.messageAtId(messageId)
                         |> take(1)
-                        |> deliverOnMainQueue).start(next: { [weak self] message in
+                        |> deliverOnMainQueue).startStrict(next: { [weak self] message in
                             if let strongSelf = self {
                                 assert(strongSelf.loadingItem)
                                 
@@ -660,7 +678,7 @@ final class PeerMessagesMediaPlaylist: SharedMediaPlaylist {
                             guard let inputIndex = inputIndex else {
                                 return .single(nil)
                             }
-                            return self.context.account.postbox.aroundMessageHistoryViewForLocation(self.context.chatLocationInput(for: chatLocation, contextHolder: self.chatLocationContextHolder ?? Atomic<ChatLocationContextHolder?>(value: nil)), anchor: .index(inputIndex), ignoreMessagesInTimestampRange: nil, count: 10, fixedCombinedReadStates: nil, topTaggedMessageIdNamespaces: [], tagMask: tagMask, appendMessagesFromTheSameGroup: false, namespaces: namespaces, orderStatistics: [])
+                            return self.context.account.postbox.aroundMessageHistoryViewForLocation(self.context.chatLocationInput(for: chatLocation, contextHolder: self.chatLocationContextHolder ?? Atomic<ChatLocationContextHolder?>(value: nil)), anchor: .index(inputIndex), ignoreMessagesInTimestampRange: nil, count: 10, fixedCombinedReadStates: nil, topTaggedMessageIdNamespaces: [], tag: .tag(tagMask), appendMessagesFromTheSameGroup: false, namespaces: namespaces, orderStatistics: [])
                             |> mapToSignal { view -> Signal<(Message, [Message])?, NoError> in
                                 let position: NavigatedMessageFromViewPosition
                                 switch navigation {
@@ -690,7 +708,7 @@ final class PeerMessagesMediaPlaylist: SharedMediaPlaylist {
                                     } else {
                                         viewIndex = .lowerBound
                                     }
-                                    return self.context.account.postbox.aroundMessageHistoryViewForLocation(self.context.chatLocationInput(for: chatLocation, contextHolder: self.chatLocationContextHolder ?? Atomic<ChatLocationContextHolder?>(value: nil)), anchor: viewIndex, ignoreMessagesInTimestampRange: nil, count: 10, fixedCombinedReadStates: nil, topTaggedMessageIdNamespaces: [], tagMask: tagMask, appendMessagesFromTheSameGroup: false, namespaces: namespaces, orderStatistics: [])
+                                    return self.context.account.postbox.aroundMessageHistoryViewForLocation(self.context.chatLocationInput(for: chatLocation, contextHolder: self.chatLocationContextHolder ?? Atomic<ChatLocationContextHolder?>(value: nil)), anchor: viewIndex, ignoreMessagesInTimestampRange: nil, count: 10, fixedCombinedReadStates: nil, topTaggedMessageIdNamespaces: [], tag: .tag(tagMask), appendMessagesFromTheSameGroup: false, namespaces: namespaces, orderStatistics: [])
                                     |> mapToSignal { view -> Signal<(Message, [Message])?, NoError> in
                                         let position: NavigatedMessageFromViewPosition
                                         switch navigation {
@@ -712,7 +730,7 @@ final class PeerMessagesMediaPlaylist: SharedMediaPlaylist {
                         }
                         |> take(1)
                         |> deliverOnMainQueue
-                        self.navigationDisposable.set(historySignal.start(next: { [weak self] messageAndAroundMessages in
+                        self.navigationDisposable.set(historySignal.startStrict(next: { [weak self] messageAndAroundMessages in
                             if let strongSelf = self {
                                 assert(strongSelf.loadingItem)
                                 
@@ -734,7 +752,7 @@ final class PeerMessagesMediaPlaylist: SharedMediaPlaylist {
                     case .singleMessage:
                         self.navigationDisposable.set((self.context.account.postbox.messageAtId(index.id)
                         |> take(1)
-                        |> deliverOnMainQueue).start(next: { [weak self] message in
+                        |> deliverOnMainQueue).startStrict(next: { [weak self] message in
                             if let strongSelf = self {
                                 assert(strongSelf.loadingItem)
                                 
@@ -816,7 +834,7 @@ final class PeerMessagesMediaPlaylist: SharedMediaPlaylist {
                         }
                         |> take(1)
                         |> deliverOnMainQueue
-                        self.navigationDisposable.set(historySignal.start(next: { [weak self] messageAndAroundMessages, previousMessagesCount, shouldLoadMore in
+                        self.navigationDisposable.set(historySignal.startStrict(next: { [weak self] messageAndAroundMessages, previousMessagesCount, shouldLoadMore in
                             if let strongSelf = self {
                                 assert(strongSelf.loadingItem)
                                 
@@ -828,7 +846,7 @@ final class PeerMessagesMediaPlaylist: SharedMediaPlaylist {
                                     loadMore?()
                                     
                                     strongSelf.loadMoreDisposable.set((messages
-                                    |> deliverOnMainQueue).start(next: { messages, totalCount, hasMore in
+                                    |> deliverOnMainQueue).startStrict(next: { messages, totalCount, hasMore in
                                         guard let strongSelf = self else {
                                             return
                                         }
@@ -869,7 +887,7 @@ final class PeerMessagesMediaPlaylist: SharedMediaPlaylist {
                 default:
                     break
             }
-            let _ = self.context.engine.messages.markMessageContentAsConsumedInteractively(messageId: item.message.id).start()
+            let _ = self.context.engine.messages.markMessageContentAsConsumedInteractively(messageId: item.message.id).startStandalone()
         }
     }
 }

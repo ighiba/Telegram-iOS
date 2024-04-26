@@ -30,42 +30,69 @@ enum CameraMode: Equatable {
     case video
 }
 
-private struct CameraState: Equatable {
+struct CameraState: Equatable {
     enum Recording: Equatable {
         case none
         case holding
         case handsFree
     }
+    enum FlashTint: Equatable {
+        case white
+        case yellow
+        case blue
+        
+        var color: UIColor {
+            switch self {
+            case .white:
+                return .white
+            case .yellow:
+                return UIColor(rgb: 0xffed8c)
+            case .blue:
+                return UIColor(rgb: 0x8cdfff)
+            }
+        }
+    }
+    
     let mode: CameraMode
     let position: Camera.Position
     let flashMode: Camera.FlashMode
     let flashModeDidChange: Bool
+    let flashTint: FlashTint
+    let flashTintSize: CGFloat
     let recording: Recording
     let duration: Double
     let isDualCameraEnabled: Bool
     
     func updatedMode(_ mode: CameraMode) -> CameraState {
-        return CameraState(mode: mode, position: self.position, flashMode: self.flashMode, flashModeDidChange: self.flashModeDidChange, recording: self.recording, duration: self.duration, isDualCameraEnabled: self.isDualCameraEnabled)
+        return CameraState(mode: mode, position: self.position, flashMode: self.flashMode, flashModeDidChange: self.flashModeDidChange, flashTint: self.flashTint, flashTintSize: self.flashTintSize, recording: self.recording, duration: self.duration, isDualCameraEnabled: self.isDualCameraEnabled)
     }
     
     func updatedPosition(_ position: Camera.Position) -> CameraState {
-        return CameraState(mode: self.mode, position: position, flashMode: self.flashMode, flashModeDidChange: self.flashModeDidChange, recording: self.recording, duration: self.duration, isDualCameraEnabled: self.isDualCameraEnabled)
+        return CameraState(mode: self.mode, position: position, flashMode: self.flashMode, flashModeDidChange: self.flashModeDidChange, flashTint: self.flashTint, flashTintSize: self.flashTintSize, recording: self.recording, duration: self.duration, isDualCameraEnabled: self.isDualCameraEnabled)
     }
     
     func updatedFlashMode(_ flashMode: Camera.FlashMode) -> CameraState {
-        return CameraState(mode: self.mode, position: self.position, flashMode: flashMode, flashModeDidChange: self.flashMode != flashMode, recording: self.recording, duration: self.duration, isDualCameraEnabled: self.isDualCameraEnabled)
+        return CameraState(mode: self.mode, position: self.position, flashMode: flashMode, flashModeDidChange: self.flashMode != flashMode, flashTint: self.flashTint, flashTintSize: self.flashTintSize, recording: self.recording, duration: self.duration, isDualCameraEnabled: self.isDualCameraEnabled)
+    }
+    
+    func updatedFlashTint(_ flashTint: FlashTint) -> CameraState {
+        return CameraState(mode: self.mode, position: self.position, flashMode: self.flashMode, flashModeDidChange: self.flashModeDidChange, flashTint: flashTint, flashTintSize: self.flashTintSize, recording: self.recording, duration: self.duration, isDualCameraEnabled: self.isDualCameraEnabled)
+    }
+    
+    func updatedFlashTintSize(_ size: CGFloat) -> CameraState {
+        return CameraState(mode: self.mode, position: self.position, flashMode: self.flashMode, flashModeDidChange: self.flashModeDidChange, flashTint: self.flashTint, flashTintSize: size, recording: self.recording, duration: self.duration, isDualCameraEnabled: self.isDualCameraEnabled)
     }
     
     func updatedRecording(_ recording: Recording) -> CameraState {
-        return CameraState(mode: self.mode, position: self.position, flashMode: self.flashMode, flashModeDidChange: self.flashModeDidChange, recording: recording, duration: self.duration, isDualCameraEnabled: self.isDualCameraEnabled)
+        return CameraState(mode: self.mode, position: self.position, flashMode: self.flashMode, flashModeDidChange: self.flashModeDidChange, flashTint: self.flashTint, flashTintSize: self.flashTintSize, recording: recording, duration: self.duration, isDualCameraEnabled: self.isDualCameraEnabled)
     }
     
     func updatedDuration(_ duration: Double) -> CameraState {
-        return CameraState(mode: self.mode, position: self.position, flashMode: self.flashMode, flashModeDidChange: self.flashModeDidChange, recording: self.recording, duration: duration, isDualCameraEnabled: self.isDualCameraEnabled)
+        return CameraState(mode: self.mode, position: self.position, flashMode: self.flashMode, flashModeDidChange: self.flashModeDidChange, flashTint: self.flashTint, flashTintSize: self.flashTintSize, recording: self.recording, duration: duration, isDualCameraEnabled: self.isDualCameraEnabled)
     }
     
     func updatedIsDualCameraEnabled(_ isDualCameraEnabled: Bool) -> CameraState {
-        return CameraState(mode: self.mode, position: self.position, flashMode: self.flashMode, flashModeDidChange: self.flashModeDidChange, recording: self.recording, duration: self.duration, isDualCameraEnabled: isDualCameraEnabled)
+        return CameraState(mode: self.mode, position: self.position, flashMode: self.flashMode, flashModeDidChange: self.flashModeDidChange, flashTint: self.flashTint, flashTintSize: self.flashTintSize, recording: self.recording, duration: self.duration, isDualCameraEnabled: isDualCameraEnabled)
     }
 }
 
@@ -162,6 +189,7 @@ private final class CameraScreenComponent: CombinedComponent {
         enum ImageKey: Hashable {
             case cancel
             case flip
+            case flashImage
         }
         private var cachedImages: [ImageKey: UIImage] = [:]
         func image(_ key: ImageKey) -> UIImage {
@@ -171,9 +199,21 @@ private final class CameraScreenComponent: CombinedComponent {
                 var image: UIImage
                 switch key {
                 case .cancel:
-                    image = UIImage(bundleImageName: "Camera/CloseIcon")!
+                    image = UIImage(bundleImageName: "Camera/CloseIcon")!.withRenderingMode(.alwaysTemplate)
                 case .flip:
-                    image = UIImage(bundleImageName: "Camera/FlipIcon")!
+                    image = UIImage(bundleImageName: "Camera/FlipIcon")!.withRenderingMode(.alwaysTemplate)
+                case .flashImage:
+                    image = generateImage(CGSize(width: 393.0, height: 852.0), rotatedContext: { size, context in
+                        context.clear(CGRect(origin: .zero, size: size))
+                        
+                        var locations: [CGFloat] = [0.0, 0.2, 0.6, 1.0]
+                        let colors: [CGColor] = [UIColor(rgb: 0xffffff, alpha: 0.25).cgColor, UIColor(rgb: 0xffffff, alpha: 0.25).cgColor, UIColor(rgb: 0xffffff, alpha: 1.0).cgColor, UIColor(rgb: 0xffffff, alpha: 1.0).cgColor]
+                        let colorSpace = CGColorSpaceCreateDeviceRGB()
+                        let gradient = CGGradient(colorsSpace: colorSpace, colors: colors as CFArray, locations: &locations)!
+                        
+                        let center = CGPoint(x: size.width / 2.0, y: size.height / 2.0 - 10.0)
+                        context.drawRadialGradient(gradient, startCenter: center, startRadius: 0.0, endCenter: center, endRadius: size.width, options: .drawsAfterEndLocation)
+                    })!.withRenderingMode(.alwaysTemplate)
                 }
                 cachedImages[key] = image
                 return image
@@ -200,6 +240,9 @@ private final class CameraScreenComponent: CombinedComponent {
         var cameraState: CameraState?
         var swipeHint: CaptureControlsComponent.SwipeHint = .none
         var isTransitioning = false
+        
+        var displayingFlashTint = false
+        var previousFlashMode: Camera.FlashMode?
         
         private let hapticFeedback = HapticFeedback()
         
@@ -280,6 +323,8 @@ private final class CameraScreenComponent: CombinedComponent {
             }
             
             self.volumeButtonsListener = VolumeButtonsListener(
+                sharedContext: self.context.sharedContext,
+                isCameraSpecific: true,
                 shouldBeActive: self.volumeButtonsListenerShouldBeActive.get(),
                 upPressed: { [weak self] in
                     if let self {
@@ -361,25 +406,74 @@ private final class CameraScreenComponent: CombinedComponent {
         }
         
         func updateCameraMode(_ mode: CameraMode) {
-            guard let controller = self.getController(), let _ = controller.camera else {
+            guard let controller = self.getController(), let camera = controller.camera else {
                 return
             }
+            
             controller.updateCameraState({ $0.updatedMode(mode) }, transition: .spring(duration: 0.3))
+            
+            var flashOn = controller.cameraState.flashMode == .on
+            if case .video = mode, case .auto = controller.cameraState.flashMode {
+                camera.setFlashMode(.on)
+                flashOn = true
+            }
+            
+            self.updateScreenBrightness(flashOn: flashOn)
         }
-        
+                
         func toggleFlashMode() {
             guard let controller = self.getController(), let camera = controller.camera else {
                 return
             }
+            var flashOn = false
             switch controller.cameraState.flashMode {
             case .off:
+                flashOn = true
                 camera.setFlashMode(.on)
             case .on:
-                camera.setFlashMode(.auto)
+                if controller.cameraState.mode == .video {
+                    camera.setFlashMode(.off)
+                } else {
+                    camera.setFlashMode(.auto)
+                }
             default:
                 camera.setFlashMode(.off)
             }
             self.hapticFeedback.impact(.light)
+            
+            self.updateScreenBrightness(flashOn: flashOn)
+        }
+        
+        func updateFlashTint(_ tint: CameraState.FlashTint?) {
+            guard let controller = self.getController(), let camera = controller.camera else {
+                return
+            }
+            if let tint {
+                controller.updateCameraState({ $0.updatedFlashTint(tint) }, transition: .easeInOut(duration: 0.2))
+            } else {
+                camera.setFlashMode(.off)
+                self.updateScreenBrightness(flashOn: false)
+            }
+        }
+        
+        func updateFlashTintSize(_ size: CGFloat) {
+            guard let controller = self.getController() else {
+                return
+            }
+            
+            controller.updateCameraState({ $0.updatedFlashTintSize(size) }, transition: .immediate)
+        }
+        
+        func presentFlashTint() {
+            guard let controller = self.getController(), let camera = controller.camera else {
+                return
+            }
+            camera.setFlashMode(.on)
+            
+            self.displayingFlashTint = true
+            self.updated(transition: .immediate)
+            
+            self.updateScreenBrightness(flashOn: true)
         }
         
         private var lastFlipTimestamp: Double?
@@ -435,7 +529,7 @@ private final class CameraScreenComponent: CombinedComponent {
             self.updated(transition: .easeInOut(duration: 0.2))
         }
         
-        private var isTakingPhoto = false
+        var isTakingPhoto = false
         func takePhoto() {
             guard let controller = self.getController(), let camera = controller.camera else {
                 return
@@ -447,20 +541,103 @@ private final class CameraScreenComponent: CombinedComponent {
             
             controller.node.dismissAllTooltips()
             
-            let takePhoto = camera.takePhoto()
-            |> mapToSignal { value -> Signal<CameraScreen.Result, NoError> in
-                switch value {
-                case .began:
-                    return .single(.pendingImage)
-                case let .finished(image, additionalImage, _):
-                    return .single(.image(CameraScreen.Result.Image(image: image, additionalImage: additionalImage, additionalImagePosition: .topRight)))
-                case .failed:
-                    return .complete()
+            let takePhoto = {
+                let takePhoto = camera.takePhoto()
+                |> mapToSignal { value -> Signal<CameraScreen.Result, NoError> in
+                    switch value {
+                    case .began:
+                        return .single(.pendingImage)
+                    case let .finished(image, additionalImage, _):
+                        return .single(.image(CameraScreen.Result.Image(image: image, additionalImage: additionalImage, additionalImagePosition: .topRight)))
+                    case .failed:
+                        return .complete()
+                    }
+                }
+                self.completion.invoke(takePhoto)
+            }
+            
+            let isFrontCamera = controller.cameraState.position == .front || controller.cameraState.isDualCameraEnabled
+            let isFlashOn = controller.cameraState.flashMode == .on
+            
+            if isFrontCamera && isFlashOn {
+                let previousBrightness = UIScreen.main.brightness
+                UIScreen.main.brightness = 1.0
+                
+                let flashController = CameraFrontFlashOverlayController(color: controller.cameraState.flashTint.color)
+                controller.presentInGlobalOverlay(flashController)
+
+                Queue.mainQueue().after(0.1, {
+                    takePhoto()
+                    
+                    Queue.mainQueue().after(0.5, {
+                        self.isTakingPhoto = false
+                        
+                        self.brightnessArguments = (CACurrentMediaTime(), 0.25, UIScreen.main.brightness, previousBrightness)
+                        self.animateBrightnessChange()
+                        flashController.dismissAnimated()
+                    })
+                })
+            } else {
+                takePhoto()
+                Queue.mainQueue().after(1.0) {
+                    self.isTakingPhoto = false
                 }
             }
-            self.completion.invoke(takePhoto)
-            Queue.mainQueue().after(1.0) {
-                self.isTakingPhoto = false
+        }
+        
+        private var initialBrightness: CGFloat?
+        private var brightnessArguments: (Double, Double, CGFloat, CGFloat)?
+        private var brightnessAnimator: ConstantDisplayLinkAnimator?
+        
+        func updateScreenBrightness(flashOn: Bool?) {
+            guard let controller = self.getController() else {
+                return
+            }
+            let isFrontCamera = controller.cameraState.position == .front
+            let isVideo = controller.cameraState.mode == .video
+            let isFlashOn = flashOn ?? (controller.cameraState.flashMode == .on)
+            
+            if isFrontCamera && isVideo && isFlashOn {
+                if self.initialBrightness == nil {
+                    self.initialBrightness = UIScreen.main.brightness
+                    self.brightnessArguments = (CACurrentMediaTime(), 0.2, UIScreen.main.brightness, 1.0)
+                    self.animateBrightnessChange()
+                }
+            } else {
+                if let initialBrightness = self.initialBrightness {
+                    self.initialBrightness = nil
+                    self.brightnessArguments = (CACurrentMediaTime(), 0.2, UIScreen.main.brightness, initialBrightness)
+                    self.animateBrightnessChange()
+                }
+            }
+        }
+        
+        private func animateBrightnessChange() {
+            if self.brightnessAnimator == nil {
+                self.brightnessAnimator = ConstantDisplayLinkAnimator(update: { [weak self] in
+                    self?.animateBrightnessChange()
+                })
+                self.brightnessAnimator?.isPaused = true
+            }
+            
+            if let (startTime, duration, initial, target) = self.brightnessArguments {
+                self.brightnessAnimator?.isPaused = false
+                
+                let t = CGFloat(max(0.0, min(1.0, (CACurrentMediaTime() - startTime) / duration)))
+                let value = initial + (target - initial) * t
+                
+                UIScreen.main.brightness = value
+                
+                if t >= 1.0 {
+                    self.brightnessArguments = nil
+                    self.brightnessAnimator?.isPaused = true
+                    self.brightnessAnimator?.invalidate()
+                    self.brightnessAnimator = nil
+                }
+            } else {
+                self.brightnessAnimator?.isPaused = true
+                self.brightnessAnimator?.invalidate()
+                self.brightnessAnimator = nil
             }
         }
         
@@ -474,17 +651,21 @@ private final class CameraScreenComponent: CombinedComponent {
             
             controller.node.dismissAllTooltips()
             
-            self.resultDisposable.set((camera.startRecording()
-            |> deliverOnMainQueue).start(next: { [weak self] duration in
-                if let self, let controller = self.getController() {
-                    controller.updateCameraState({ $0.updatedDuration(duration) }, transition: .easeInOut(duration: 0.1))
-                    if duration > 59.0 {
-                        self.stopVideoRecording()
+            let startRecording = {
+                self.resultDisposable.set((camera.startRecording()
+                |> deliverOnMainQueue).start(next: { [weak self] recordingData in
+                    if let self, let controller = self.getController() {
+                        controller.updateCameraState({ $0.updatedDuration(recordingData.duration) }, transition: .easeInOut(duration: 0.1))
+                        if recordingData.duration > 59.0 {
+                            self.stopVideoRecording()
+                        }
                     }
-                }
-            }))
+                }))
+            }
             
             controller.updateCameraState({ $0.updatedRecording(pressing ? .holding : .handsFree).updatedDuration(0.0) }, transition: .spring(duration: 0.4))
+            
+            startRecording()
         }
         
         func stopVideoRecording() {
@@ -495,7 +676,19 @@ private final class CameraScreenComponent: CombinedComponent {
             self.resultDisposable.set((camera.stopRecording()
             |> deliverOnMainQueue).start(next: { [weak self] result in
                 if let self, case let .finished(mainResult, additionalResult, duration, positionChangeTimestamps, _) = result {
-                    self.completion.invoke(.single(.video(CameraScreen.Result.Video(videoPath: mainResult.0, coverImage: mainResult.1, mirror: mainResult.2, additionalVideoPath: additionalResult?.0, additionalCoverImage: additionalResult?.1, dimensions: PixelDimensions(mainResult.3), duration: duration, positionChangeTimestamps: positionChangeTimestamps, additionalVideoPosition: .topRight))))
+                    self.completion.invoke(.single(
+                        .video(CameraScreen.Result.Video(
+                            videoPath: mainResult.path,
+                            coverImage: mainResult.thumbnail,
+                            mirror: mainResult.isMirrored,
+                            additionalVideoPath: additionalResult?.path,
+                            additionalCoverImage: additionalResult?.thumbnail,
+                            dimensions: PixelDimensions(mainResult.dimensions),
+                            duration: duration,
+                            positionChangeTimestamps: positionChangeTimestamps,
+                            additionalVideoPosition: .topRight
+                        ))
+                    ))
                 }
             }))
             self.isTransitioning = true
@@ -505,6 +698,12 @@ private final class CameraScreenComponent: CombinedComponent {
             })
             
             controller.updateCameraState({ $0.updatedRecording(.none).updatedDuration(0.0) }, transition: .spring(duration: 0.4))
+            
+            if case .front = controller.cameraState.position, let initialBrightness = self.initialBrightness {
+                self.initialBrightness = nil
+                self.brightnessArguments = (CACurrentMediaTime(), 0.2, UIScreen.main.brightness, initialBrightness)
+                self.animateBrightnessChange()
+            }
         }
         
         func lockVideoRecording() {
@@ -528,6 +727,7 @@ private final class CameraScreenComponent: CombinedComponent {
     
     static var body: Body {
         let placeholder = Child(PlaceholderComponent.self)
+        let frontFlash = Child(Image.self)
         let cancelButton = Child(CameraButton.self)
         let captureControls = Child(CaptureControlsComponent.self)
         let zoomControl = Child(ZoomComponent.self)
@@ -536,6 +736,7 @@ private final class CameraScreenComponent: CombinedComponent {
         let dualButton = Child(CameraButton.self)
         let modeControl = Child(ModeComponent.self)
         let hintLabel = Child(HintLabelComponent.self)
+        let flashTintControl = Child(FlashTintControlComponent.self)
         
         let timeBackground = Child(RoundedRectangle.self)
         let timeLabel = Child(MultilineTextComponent.self)
@@ -549,6 +750,13 @@ private final class CameraScreenComponent: CombinedComponent {
             
             state.cameraState = component.cameraState
             state.volumeButtonsListenerActive = component.hasAppeared && component.isVisible
+            
+            let isSticker: Bool
+            if let controller = controller() as? CameraScreen, case .sticker = controller.mode {
+                isSticker = true
+            } else {
+                isSticker = false
+            }
             
             let isTablet: Bool
             if case .regular = environment.metrics.widthClass {
@@ -627,6 +835,26 @@ private final class CameraScreenComponent: CombinedComponent {
 //                )
             }
             
+            let displayFrontFlash = component.cameraState.recording != .none || component.cameraState.mode == .video || state.displayingFlashTint
+            var controlsTintColor: UIColor = .white
+            if case .front = component.cameraState.position, case .on = component.cameraState.flashMode, displayFrontFlash {
+                let frontFlash = frontFlash.update(
+                    component: Image(image: state.image(.flashImage), tintColor: component.cameraState.flashTint.color),
+                    availableSize: availableSize,
+                    transition: .easeInOut(duration: 0.2)
+                )
+                context.add(frontFlash
+                    .position(CGPoint(x: context.availableSize.width / 2.0, y: context.availableSize.height / 2.0))
+                    .scale(1.5 - component.cameraState.flashTintSize * 0.5)
+                    .appear(.default(alpha: true))
+                    .disappear(.default(alpha: true))
+                )
+                
+                if !state.isTakingPhoto {
+                    controlsTintColor = .black
+                }
+            }
+            
             let shutterState: ShutterButtonState
             if state.isTransitioning {
                 shutterState = .transition
@@ -658,8 +886,10 @@ private final class CameraScreenComponent: CombinedComponent {
             let captureControls = captureControls.update(
                 component: CaptureControlsComponent(
                     isTablet: isTablet,
+                    isSticker: isSticker,
                     hasAppeared: component.hasAppeared && hasAllRequiredAccess,
                     hasAccess: hasAllRequiredAccess,
+                    tintColor: controlsTintColor,
                     shutterState: shutterState,
                     lastGalleryAsset: state.lastGalleryAsset,
                     tag: captureControlsTag,
@@ -737,6 +967,7 @@ private final class CameraScreenComponent: CombinedComponent {
                 .position(captureControlsPosition)
             )
             
+            var flashButtonPosition: CGPoint?
             let topControlInset: CGFloat = 20.0
             if case .none = component.cameraState.recording, !state.isTransitioning {
                 let cancelButton = cancelButton.update(
@@ -746,6 +977,7 @@ private final class CameraScreenComponent: CombinedComponent {
                             component: AnyComponent(
                                 Image(
                                     image: state.image(.cancel),
+                                    tintColor: controlsTintColor,
                                     size: CGSize(width: 40.0, height: 40.0)
                                 )
                             )
@@ -771,7 +1003,11 @@ private final class CameraScreenComponent: CombinedComponent {
                     let flashIconName: String
                     switch component.cameraState.flashMode {
                     case .off:
-                        flashIconName = "flash_off"
+                        if let previousFlashMode = state.previousFlashMode, previousFlashMode == .on {
+                            flashIconName = "flash_onToOff"
+                        } else {
+                            flashIconName = "flash_off"
+                        }
                     case .on:
                         flashIconName = "flash_on"
                     case .auto:
@@ -779,6 +1015,7 @@ private final class CameraScreenComponent: CombinedComponent {
                     @unknown default:
                         flashIconName = "flash_off"
                     }
+                    state.previousFlashMode = component.cameraState.flashMode
                     
                     flashContentComponent = AnyComponentWithIdentity(
                         id: "animatedIcon",
@@ -790,7 +1027,7 @@ private final class CameraScreenComponent: CombinedComponent {
                                     range: nil,
                                     waitForCompletion: false
                                 ),
-                                colors: [:],
+                                colors: ["__allcolors__": controlsTintColor],
                                 size: CGSize(width: 40.0, height: 40.0)
                             )
                         )
@@ -801,7 +1038,7 @@ private final class CameraScreenComponent: CombinedComponent {
                         component: AnyComponent(
                             BundleIconComponent(
                                 name: "Camera/FlashOffIcon",
-                                tintColor: nil
+                                tintColor: controlsTintColor
                             )
                         )
                     )
@@ -815,24 +1052,35 @@ private final class CameraScreenComponent: CombinedComponent {
                                 if let state {
                                     state.toggleFlashMode()
                                 }
+                            },
+                            longTapAction: { [weak state] in
+                                if let state {
+                                    state.presentFlashTint()
+                                }
                             }
                         ).tagged(flashButtonTag),
                         availableSize: CGSize(width: 40.0, height: 40.0),
                         transition: .immediate
                     )
+
+                    let position = CGPoint(x: isTablet ? availableSize.width - smallPanelWidth / 2.0 : availableSize.width - topControlInset - flashButton.size.width / 2.0 - 5.0, y: max(environment.statusBarHeight + 5.0, environment.safeInsets.top + topControlInset) + flashButton.size.height / 2.0)
+                    flashButtonPosition = position
                     context.add(flashButton
-                        .position(CGPoint(x: isTablet ? availableSize.width - smallPanelWidth / 2.0 : availableSize.width - topControlInset - flashButton.size.width / 2.0 - 5.0, y: max(environment.statusBarHeight + 5.0, environment.safeInsets.top + topControlInset) + flashButton.size.height / 2.0))
+                        .position(position)
                         .appear(.default(scale: true))
                         .disappear(.default(scale: true))
                     )
                     
-                    if !isTablet && Camera.isDualCameraSupported {
+                    if !isSticker && !isTablet && Camera.isDualCameraSupported(forRoundVideo: false) {
                         let dualButton = dualButton.update(
                             component: CameraButton(
                                 content: AnyComponentWithIdentity(
                                     id: "dual",
                                     component: AnyComponent(
-                                        DualIconComponent(isSelected: component.cameraState.isDualCameraEnabled)
+                                        DualIconComponent(
+                                            isSelected: component.cameraState.isDualCameraEnabled,
+                                            tintColor: controlsTintColor
+                                        )
                                     )
                                 ),
                                 action: { [weak state] in
@@ -861,7 +1109,8 @@ private final class CameraScreenComponent: CombinedComponent {
                             component: AnyComponent(
                                 FlipButtonContentComponent(
                                     action: animateFlipAction,
-                                    maskFrame: .zero
+                                    maskFrame: .zero,
+                                    tintColor: controlsTintColor
                                 )
                             )
                         ),
@@ -894,9 +1143,9 @@ private final class CameraScreenComponent: CombinedComponent {
                 let durationString =  String(format: "%02d:%02d", (duration / 60) % 60, duration % 60)
                 let timeLabel = timeLabel.update(
                     component: MultilineTextComponent(
-                        text: .plain(NSAttributedString(string: durationString, font: Font.with(size: 21.0, design: .camera), textColor: .white)),
+                        text: .plain(NSAttributedString(string: durationString, font: Font.with(size: 21.0, design: .camera), textColor: controlsTintColor)),
                         horizontalAlignment: .center,
-                        textShadowColor: UIColor(rgb: 0x000000, alpha: 0.2)
+                        textShadowColor: controlsTintColor == .black ? .clear : UIColor(rgb: 0x000000, alpha: 0.2)
                     ),
                     availableSize: context.availableSize,
                     transition: context.transition
@@ -944,7 +1193,10 @@ private final class CameraScreenComponent: CombinedComponent {
                     }
                     if let hintText {
                         let hintLabel = hintLabel.update(
-                            component: HintLabelComponent(text: hintText),
+                            component: HintLabelComponent(
+                                text: hintText,
+                                tintColor: controlsTintColor
+                            ),
                             availableSize: availableSize,
                             transition: .immediate
                         )
@@ -957,7 +1209,7 @@ private final class CameraScreenComponent: CombinedComponent {
                 }
             }
             
-            if case .none = component.cameraState.recording, !state.isTransitioning && hasAllRequiredAccess {
+            if !isSticker, case .none = component.cameraState.recording, !state.isTransitioning && hasAllRequiredAccess {
                 let availableModeControlSize: CGSize
                 if isTablet {
                     availableModeControlSize = CGSize(width: panelWidth, height: 120.0)
@@ -968,6 +1220,7 @@ private final class CameraScreenComponent: CombinedComponent {
                     component: ModeComponent(
                         isTablet: isTablet,
                         strings: environment.strings,
+                        tintColor: controlsTintColor,
                         availableModes: [.photo, .video],
                         currentMode: component.cameraState.mode,
                         updatedMode: { [weak state] mode in
@@ -993,6 +1246,33 @@ private final class CameraScreenComponent: CombinedComponent {
                     .disappear(.default(alpha: true))
                 )
             }
+            
+            if let flashButtonPosition, state.displayingFlashTint {
+                let flashTintControl = flashTintControl.update(
+                    component: FlashTintControlComponent(
+                        position: flashButtonPosition.offsetBy(dx: 0.0, dy: 27.0),
+                        tint: component.cameraState.flashTint,
+                        size: component.cameraState.flashTintSize,
+                        update: { [weak state] tint in
+                            state?.updateFlashTint(tint)
+                        },
+                        updateSize: { [weak state] size in
+                            state?.updateFlashTintSize(size)
+                        },
+                        dismiss: { [weak state] in
+                            state?.displayingFlashTint = false
+                            state?.updated(transition: .easeInOut(duration: 0.2))
+                        }
+                    ),
+                    availableSize: availableSize,
+                    transition: context.transition
+                )
+                context.add(flashTintControl
+                    .position(CGPoint(x: availableSize.width / 2.0, y: availableSize.height / 2.0))
+                    .disappear(.default(alpha: true))
+                )
+            }
+            
             return availableSize
         }
     }
@@ -1043,9 +1323,8 @@ private class BlurView: UIVisualEffectView {
 
 public class CameraScreen: ViewController {
     public enum Mode {
-        case generic
         case story
-        case instantVideo
+        case sticker
     }
     
     public enum PIPPosition: Int32 {
@@ -1124,7 +1403,7 @@ public class CameraScreen: ViewController {
         }
     }
 
-    fileprivate final class Node: ViewControllerTracingNode, UIGestureRecognizerDelegate {
+    fileprivate final class Node: ViewControllerTracingNode, ASGestureRecognizerDelegate {
         private weak var controller: CameraScreen?
         private let context: AccountContext
         fileprivate var camera: Camera?
@@ -1138,6 +1417,7 @@ public class CameraScreen: ViewController {
         
         private let mainPreviewContainerView: UIView
         fileprivate var mainPreviewView: CameraSimplePreviewView
+        private let mainPreviewAnimationWrapperView: UIView
         
         private let additionalPreviewContainerView: UIView
         fileprivate var additionalPreviewView: CameraSimplePreviewView
@@ -1177,7 +1457,7 @@ public class CameraScreen: ViewController {
         private var validLayout: ContainerViewLayout?
         
         fileprivate var didAppear: () -> Void = {}
-        
+                
         private let completion = ActionSlot<Signal<CameraScreen.Result, NoError>>()
         
         var cameraState: CameraState {
@@ -1249,7 +1529,7 @@ public class CameraScreen: ViewController {
             self.previewBlurView = BlurView()
             self.previewBlurView.isUserInteractionEnabled = false
             
-            var isDualCameraEnabled = Camera.isDualCameraSupported
+            var isDualCameraEnabled = Camera.isDualCameraSupported(forRoundVideo: false)
             if isDualCameraEnabled {
                 if let isDualCameraEnabledValue = UserDefaults.standard.object(forKey: "TelegramStoryCameraIsDualEnabled") as? NSNumber {
                     isDualCameraEnabled = isDualCameraEnabledValue.boolValue
@@ -1271,6 +1551,10 @@ public class CameraScreen: ViewController {
             self.mainPreviewContainerView.clipsToBounds = true
             self.mainPreviewView = CameraSimplePreviewView(frame: .zero, main: true)
             
+            self.mainPreviewAnimationWrapperView = UIView()
+            self.mainPreviewAnimationWrapperView.clipsToBounds = true
+            self.mainPreviewAnimationWrapperView.isUserInteractionEnabled = false
+            
             self.additionalPreviewContainerView = UIView()
             self.additionalPreviewContainerView.clipsToBounds = true
             self.additionalPreviewView = CameraSimplePreviewView(frame: .zero, main: false)
@@ -1287,6 +1571,8 @@ public class CameraScreen: ViewController {
                 position: cameraFrontPosition ? .front : .back,
                 flashMode: .off,
                 flashModeDidChange: false,
+                flashTint: .white,
+                flashTintSize: 1.0,
                 recording: .none,
                 duration: 0.0,
                 isDualCameraEnabled: isDualCameraEnabled
@@ -1323,6 +1609,7 @@ public class CameraScreen: ViewController {
             self.view.addSubview(self.transitionCornersView)
             
             self.mainPreviewContainerView.addSubview(self.mainPreviewView)
+            self.mainPreviewContainerView.addSubview(self.mainPreviewAnimationWrapperView)
             self.additionalPreviewContainerView.addSubview(self.additionalPreviewView)
                         
             self.completion.connect { [weak self] result in
@@ -1341,7 +1628,6 @@ public class CameraScreen: ViewController {
                             if case .pendingImage = value {
                                 Queue.mainQueue().async {
                                     self.mainPreviewView.isEnabled = false
-                                    
                                     self.additionalPreviewView.isEnabled = false
                                 }
                             } else {
@@ -1371,7 +1657,7 @@ public class CameraScreen: ViewController {
                         self.additionalPreviewView.isPreviewing
                     )
                     |> filter { $0 && $1 }
-                    |> take(1)).start(next: { [weak self] _, _ in
+                    |> take(1)).startStandalone(next: { [weak self] _, _ in
                         self?.mainPreviewView.removePlaceholder(delay: 0.35)
                         self?.additionalPreviewView.removePlaceholder(delay: 0.35)
                     })
@@ -1379,7 +1665,7 @@ public class CameraScreen: ViewController {
                     let _ = (self.mainPreviewView.isPreviewing
                     |> filter { $0 }
                     |> take(1)
-                    |> deliverOnMainQueue).start(next: { [weak self] _ in
+                    |> deliverOnMainQueue).startStandalone(next: { [weak self] _ in
                         self?.mainPreviewView.removePlaceholder(delay: 0.35)
                     })
                 }
@@ -1422,6 +1708,7 @@ public class CameraScreen: ViewController {
             self.authorizationStatusDisposables.dispose()
         }
         
+        private var panGestureRecognizer: UIPanGestureRecognizer?
         private var pipPanGestureRecognizer: UIPanGestureRecognizer?
         override func didLoad() {
             super.didLoad()
@@ -1433,8 +1720,9 @@ public class CameraScreen: ViewController {
             self.previewContainerView.addGestureRecognizer(pinchGestureRecognizer)
             
             let panGestureRecognizer = UIPanGestureRecognizer(target: self, action: #selector(self.handlePan(_:)))
-            panGestureRecognizer.delegate = self
+            panGestureRecognizer.delegate = self.wrappedGestureRecognizerDelegate
             panGestureRecognizer.maximumNumberOfTouches = 1
+            self.panGestureRecognizer = panGestureRecognizer
             self.previewContainerView.addGestureRecognizer(panGestureRecognizer)
             
             let tapGestureRecognizer = UITapGestureRecognizer(target: self, action: #selector(self.handleTap(_:)))
@@ -1445,7 +1733,7 @@ public class CameraScreen: ViewController {
             self.previewContainerView.addGestureRecognizer(doubleGestureRecognizer)
             
             let pipPanGestureRecognizer = UIPanGestureRecognizer(target: self, action: #selector(self.handlePipPan(_:)))
-            pipPanGestureRecognizer.delegate = self
+            pipPanGestureRecognizer.delegate = self.wrappedGestureRecognizerDelegate
             self.previewContainerView.addGestureRecognizer(pipPanGestureRecognizer)
             self.pipPanGestureRecognizer = pipPanGestureRecognizer
         }
@@ -1464,24 +1752,33 @@ public class CameraScreen: ViewController {
             })
         }
         
+        fileprivate var captureStartTimestamp: Double?
         private func setupCamera() {
-            guard self.camera == nil else {
+            guard self.camera == nil, let controller = self.controller else {
                 return
             }
             
-            let camera = Camera(
-                configuration: Camera.Configuration(
-                    preset: .hd1920x1080,
-                    position: self.cameraState.position,
-                    isDualEnabled: self.cameraState.isDualCameraEnabled,
-                    audio: true,
-                    photo: true,
-                    metadata: false,
-                    preferredFps: 60.0
-                ),
-                previewView: self.mainPreviewView,
-                secondaryPreviewView: self.additionalPreviewView
-            )
+            var isNew = false
+            let camera: Camera
+            if let cameraHolder = controller.holder {
+                camera = cameraHolder.camera
+                self.mainPreviewView = cameraHolder.previewView
+                self.mainPreviewAnimationWrapperView.addSubview(self.mainPreviewView)
+            } else {
+                camera = Camera(
+                    configuration: Camera.Configuration(
+                        preset: .hd1920x1080,
+                        position: self.cameraState.position,
+                        isDualEnabled: self.cameraState.isDualCameraEnabled,
+                        audio: true,
+                        photo: true,
+                        metadata: false
+                    ),
+                    previewView: self.mainPreviewView,
+                    secondaryPreviewView: self.additionalPreviewView
+                )
+                isNew = true
+            }
             
             self.cameraStateDisposable = combineLatest(
                 queue: Queue.mainQueue(),
@@ -1572,11 +1869,14 @@ public class CameraScreen: ViewController {
             })
             
             camera.focus(at: CGPoint(x: 0.5, y: 0.5), autoFocus: true)
-            camera.startCapture()
+            if isNew {
+                camera.startCapture()
+            }
+            self.captureStartTimestamp = CACurrentMediaTime()
             
             self.camera = camera
             
-            if self.hasAppeared {
+            if isNew && self.hasAppeared {
                 self.maybePresentTooltips()
             }
         }
@@ -1598,6 +1898,8 @@ public class CameraScreen: ViewController {
                     return false
                 }
                 return self.additionalPreviewContainerView.frame.contains(location)
+            } else if gestureRecognizer === self.panGestureRecognizer {
+                return true
             }
             return self.hasAppeared
         }
@@ -1628,23 +1930,60 @@ public class CameraScreen: ViewController {
             case .changed:
                 if case .none = self.cameraState.recording {
                     if case .compact = layout.metrics.widthClass {
-                        if translation.x < -10.0 || self.isDismissing {
-                            self.isDismissing = true
-                            let transitionFraction = 1.0 - max(0.0, translation.x * -1.0) / self.frame.width
-                            controller.updateTransitionProgress(transitionFraction, transition: .immediate)
-                        } else if translation.y < -10.0 && abs(translation.y) > abs(translation.x) {
-                            controller.presentGallery(fromGesture: true)
-                            gestureRecognizer.isEnabled = false
-                            gestureRecognizer.isEnabled = true
+                        switch controller.mode {
+                        case .story:
+                            if (translation.x < -10.0 || self.isDismissing) && self.hasAppeared {
+                                self.isDismissing = true
+                                let transitionFraction = 1.0 - max(0.0, translation.x * -1.0) / self.frame.width
+                                controller.updateTransitionProgress(transitionFraction, transition: .immediate)
+                            } else if translation.y < -10.0 && abs(translation.y) > abs(translation.x) {
+                                controller.presentGallery(fromGesture: true)
+                                gestureRecognizer.isEnabled = false
+                                gestureRecognizer.isEnabled = true
+                            }
+                        case .sticker:
+                            if (abs(translation.y) > 10.0 || self.isDismissing) && self.hasAppeared {
+                                self.containerView.layer.sublayerTransform = CATransform3DMakeTranslation(0.0, translation.y, 0.0)
+                                if !self.isDismissing {
+                                    controller.statusBar.updateStatusBarStyle(.Ignore, animated: true)
+                                    self.isDismissing = true
+                                    ContainedViewLayoutTransition.animated(duration: 0.25, curve: .easeInOut).updateAlpha(layer: self.backgroundView.layer, alpha: 0.0)
+                                }
+                            }
                         }
                     }
                 }
             case .ended, .cancelled:
-                let velocity = gestureRecognizer.velocity(in: self.view)
-                let transitionFraction = 1.0 - max(0.0, translation.x * -1.0) / self.frame.width
-                controller.completeWithTransitionProgress(transitionFraction, velocity: abs(velocity.x), dismissing: true)
-                
-                self.isDismissing = false
+                if self.isDismissing {
+                    switch controller.mode {
+                    case .story:
+                        let velocity = gestureRecognizer.velocity(in: self.view)
+                        let transitionFraction = 1.0 - max(0.0, translation.x * -1.0) / self.frame.width
+                        controller.completeWithTransitionProgress(transitionFraction, velocity: abs(velocity.x), dismissing: true)
+                        
+                        self.isDismissing = false
+                    case .sticker:
+                        let velocity = gestureRecognizer.velocity(in: self.view)
+                        let transitionFraction = translation.y / self.frame.height
+                        if abs(transitionFraction) > 0.3 || abs(velocity.y) > 1000.0 {
+                            self.containerView.layer.sublayerTransform = CATransform3DIdentity
+                            self.mainPreviewAnimationWrapperView.center = self.previewContainerView.center.offsetBy(dx: 0.0, dy: translation.y)
+                            
+                            if let view = self.componentHost.view {
+                                view.center = view.center.offsetBy(dx: 0.0, dy: translation.y)
+                            }
+                            
+                            controller.requestDismiss(animated: true, interactive: true)
+                        } else {
+                            ContainedViewLayoutTransition.animated(duration: 0.25, curve: .easeInOut).updateAlpha(layer: self.backgroundView.layer, alpha: 1.0)
+                            controller.statusBar.updateStatusBarStyle(.White, animated: true)
+                            
+                            ContainedViewLayoutTransition.animated(duration: 0.3, curve: .spring).updateSublayerTransformOffset(layer: self.containerView.layer, offset: .zero)
+                        }
+                        
+                        self.isDismissing = false
+                    }
+                }
             default:
                 break
             }
@@ -1711,6 +2050,8 @@ public class CameraScreen: ViewController {
             self.requestUpdateLayout(hasAppeared: self.hasAppeared, transition: .immediate)
             CATransaction.commit()
             
+            self.animatingDualCameraPositionSwitch = true
+            
             self.additionalPreviewContainerView.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.2)
             self.additionalPreviewContainerView.layer.animateScale(from: 0.01, to: 1.0, duration: duration, timingFunction: timingFunction)
                         
@@ -1737,7 +2078,6 @@ public class CameraScreen: ViewController {
                 timingFunction: timingFunction
             )
             
-            self.animatingDualCameraPositionSwitch = true
             self.mainPreviewContainerView.layer.animateBounds(
                 from: CGRect(origin: CGPoint(x: 0.0, y: floorToScreenPixels((self.mainPreviewContainerView.bounds.height - self.mainPreviewContainerView.bounds.width) / 2.0)), size: CGSize(width: self.mainPreviewContainerView.bounds.width, height: self.mainPreviewContainerView.bounds.width)),
                 to: self.mainPreviewContainerView.bounds,
@@ -1750,45 +2090,84 @@ public class CameraScreen: ViewController {
             )
         }
         
+        var animatedIn = false
         func animateIn() {
+            guard let controller = self.controller else {
+                return
+            }
             self.transitionDimView.alpha = 0.0
             self.backgroundView.alpha = 0.0
             UIView.animate(withDuration: 0.4, animations: {
                 self.backgroundView.alpha = 1.0
             })
             
-            if let layout = self.validLayout, case .regular = layout.metrics.widthClass {
-                self.controller?.statusBar.updateStatusBarStyle(.Hide, animated: true)
+            if let layout = self.validLayout {
+                if layout.metrics.isTablet {
+                    controller.statusBar.updateStatusBarStyle(.Hide, animated: true)
+                } else {
+                    controller.statusBar.updateStatusBarStyle(.White, animated: true)
+                }
             }
             
             if let transitionIn = self.controller?.transitionIn, let sourceView = transitionIn.sourceView {
                 let sourceLocalFrame = sourceView.convert(transitionIn.sourceRect, to: self.view)
-
-                let sourceScale = sourceLocalFrame.width / self.previewContainerView.frame.width
-                self.previewContainerView.layer.animatePosition(from: sourceLocalFrame.center, to: self.previewContainerView.center, duration: 0.3, timingFunction: kCAMediaTimingFunctionSpring, completion: { _ in
-                    self.requestUpdateLayout(hasAppeared: true, transition: .immediate)
-                })
-                self.previewContainerView.layer.animateScale(from: sourceScale, to: 1.0, duration: 0.3, timingFunction: kCAMediaTimingFunctionSpring)
-                
-                let minSide = min(self.previewContainerView.bounds.width, self.previewContainerView.bounds.height)
-                self.previewContainerView.layer.animateBounds(from: CGRect(origin: CGPoint(x: (self.previewContainerView.bounds.width - minSide) / 2.0, y: (self.previewContainerView.bounds.height - minSide) / 2.0), size: CGSize(width: minSide, height: minSide)), to: self.previewContainerView.bounds, duration: 0.3, timingFunction: kCAMediaTimingFunctionSpring)
-                self.previewContainerView.layer.animate(
-                    from: minSide / 2.0 as NSNumber,
-                    to: self.previewContainerView.layer.cornerRadius as NSNumber,
-                    keyPath: "cornerRadius",
-                    timingFunction: kCAMediaTimingFunctionSpring,
-                    duration: 0.3
-                )
+                if case .story = controller.mode {
+                    let sourceScale = sourceLocalFrame.width / self.previewContainerView.frame.width
+                    
+                    self.previewContainerView.layer.animatePosition(from: sourceLocalFrame.center, to: self.previewContainerView.center, duration: 0.3, timingFunction: kCAMediaTimingFunctionSpring, completion: { _ in
+                        self.requestUpdateLayout(hasAppeared: true, transition: .immediate)
+                    })
+                    self.previewContainerView.layer.animateScale(from: sourceScale, to: 1.0, duration: 0.3, timingFunction: kCAMediaTimingFunctionSpring)
+                    
+                    let minSide = min(self.previewContainerView.bounds.width, self.previewContainerView.bounds.height)
+                    self.previewContainerView.layer.animateBounds(from: CGRect(origin: CGPoint(x: (self.previewContainerView.bounds.width - minSide) / 2.0, y: (self.previewContainerView.bounds.height - minSide) / 2.0), size: CGSize(width: minSide, height: minSide)), to: self.previewContainerView.bounds, duration: 0.3, timingFunction: kCAMediaTimingFunctionSpring)
+                    self.previewContainerView.layer.animate(
+                        from: minSide / 2.0 as NSNumber,
+                        to: self.previewContainerView.layer.cornerRadius as NSNumber,
+                        keyPath: "cornerRadius",
+                        timingFunction: kCAMediaTimingFunctionSpring,
+                        duration: 0.3
+                    )
+                } else {
+                    self.mainPreviewAnimationWrapperView.bounds = self.mainPreviewView.bounds
+                    self.mainPreviewAnimationWrapperView.center = CGPoint(x: self.previewContainerView.frame.width / 2.0, y: self.previewContainerView.frame.height / 2.0)
+                    
+                    self.mainPreviewView.layer.position = CGPoint(x: self.previewContainerView.frame.width / 2.0, y: self.previewContainerView.frame.height / 2.0)
+                    
+                    let sourceInnerFrame = sourceView.convert(transitionIn.sourceRect, to: self.previewContainerView)
+                    let sourceCenter = sourceInnerFrame.center
+                    self.mainPreviewAnimationWrapperView.layer.animatePosition(from: sourceCenter, to: self.mainPreviewAnimationWrapperView.center, duration: 0.3, timingFunction: kCAMediaTimingFunctionSpring, completion: { _ in
+                        self.requestUpdateLayout(hasAppeared: true, transition: .immediate)
+                    })
+                    
+                    var sourceBounds = self.mainPreviewView.bounds
+                    if let holder = controller.holder {
+                        sourceBounds = CGRect(origin: .zero, size: holder.parentView.frame.size.aspectFitted(sourceBounds.size))
+                    }
+                    self.mainPreviewAnimationWrapperView.layer.animateBounds(from: sourceBounds, to: self.mainPreviewView.bounds, duration: 0.3, timingFunction: kCAMediaTimingFunctionSpring)
+                    
+                    let sourceScale = sourceInnerFrame.height / self.previewContainerView.frame.height
+                    self.mainPreviewView.transform = CGAffineTransform.identity
+                    self.mainPreviewAnimationWrapperView.layer.animateScale(from: sourceScale, to: 1.0, duration: 0.3, timingFunction: kCAMediaTimingFunctionSpring, completion: { _ in
+                        self.mainPreviewContainerView.addSubview(self.mainPreviewView)
+                        Queue.mainQueue().justDispatch {
+                            self.animatedIn = true
+                        }
+                    })
+                }
                 
                 if let view = self.componentHost.view {
                     view.layer.animatePosition(from: sourceLocalFrame.center, to: view.center, duration: 0.3, timingFunction: kCAMediaTimingFunctionSpring)
                     view.layer.animateScale(from: 0.1, to: 1.0, duration: 0.3, timingFunction: kCAMediaTimingFunctionSpring)
+                    view.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.2)
                 }
             }
         }
 
         func animateOut(completion: @escaping () -> Void) {
-            self.camera?.stopCapture(invalidate: true)
+            guard let controller = self.controller else {
+                return
+            }
                                     
             UIView.animate(withDuration: 0.25, animations: {
                 self.backgroundView.alpha = 0.0
@@ -1796,34 +2175,60 @@ public class CameraScreen: ViewController {
             
             if let transitionOut = self.controller?.transitionOut(false), let destinationView = transitionOut.destinationView {
                 let destinationLocalFrame = destinationView.convert(transitionOut.destinationRect, to: self.view)
-                
                 let targetScale = destinationLocalFrame.width / self.previewContainerView.frame.width
-                self.previewContainerView.layer.animatePosition(from: self.previewContainerView.center, to: destinationLocalFrame.center, duration: 0.3, timingFunction: kCAMediaTimingFunctionSpring, removeOnCompletion: false, completion: { _ in
-                    completion()
-                })
-                self.previewContainerView.layer.animateScale(from: 1.0, to: targetScale, duration: 0.3, timingFunction: kCAMediaTimingFunctionSpring, removeOnCompletion: false)
                 
-                let minSide = min(self.previewContainerView.bounds.width, self.previewContainerView.bounds.height)
-                self.previewContainerView.layer.animateBounds(from: self.previewContainerView.bounds, to: CGRect(origin: CGPoint(x: (self.previewContainerView.bounds.width - minSide) / 2.0, y: (self.previewContainerView.bounds.height - minSide) / 2.0), size: CGSize(width: minSide, height: minSide)), duration: 0.3, timingFunction: kCAMediaTimingFunctionSpring, removeOnCompletion: false)
-                self.previewContainerView.layer.animate(
-                    from: self.previewContainerView.layer.cornerRadius as NSNumber,
-                    to: minSide / 2.0 as NSNumber,
-                    keyPath: "cornerRadius",
-                    timingFunction: kCAMediaTimingFunctionSpring,
-                    duration: 0.3,
-                    removeOnCompletion: false
-                )
+                if case .story = controller.mode {
+                    self.previewContainerView.layer.animatePosition(from: self.previewContainerView.center, to: destinationLocalFrame.center, duration: 0.3, timingFunction: kCAMediaTimingFunctionSpring, removeOnCompletion: false, completion: { _ in
+                        completion()
+                    })
+                    self.previewContainerView.layer.animateScale(from: 1.0, to: targetScale, duration: 0.3, timingFunction: kCAMediaTimingFunctionSpring, removeOnCompletion: false)
+                    
+                    let minSide = min(self.previewContainerView.bounds.width, self.previewContainerView.bounds.height)
+                    self.previewContainerView.layer.animateBounds(from: self.previewContainerView.bounds, to: CGRect(origin: CGPoint(x: (self.previewContainerView.bounds.width - minSide) / 2.0, y: (self.previewContainerView.bounds.height - minSide) / 2.0), size: CGSize(width: minSide, height: minSide)), duration: 0.3, timingFunction: kCAMediaTimingFunctionSpring, removeOnCompletion: false)
+                    self.previewContainerView.layer.animate(
+                        from: self.previewContainerView.layer.cornerRadius as NSNumber,
+                        to: minSide / 2.0 as NSNumber,
+                        keyPath: "cornerRadius",
+                        timingFunction: kCAMediaTimingFunctionSpring,
+                        duration: 0.3,
+                        removeOnCompletion: false
+                    )
+                } else {
+                    self.mainPreviewAnimationWrapperView.addSubview(self.mainPreviewView)
+                    self.animatedIn = false
+                    
+                    let destinationInnerFrame = destinationView.convert(transitionOut.destinationRect, to: self.previewContainerView)
+                    let initialCenter = self.mainPreviewView.layer.position
+                   
+                    self.mainPreviewAnimationWrapperView.center = destinationInnerFrame.center
+                    self.mainPreviewAnimationWrapperView.layer.animatePosition(from: initialCenter, to: self.mainPreviewAnimationWrapperView.center, duration: 0.3, timingFunction: kCAMediaTimingFunctionSpring, removeOnCompletion: false, completion: { _ in
+                        completion()
+                    })
+                    
+                    var targetBounds = self.mainPreviewView.bounds
+                    if let holder = controller.holder {
+                        targetBounds = CGRect(origin: .zero, size: holder.parentView.frame.size.aspectFitted(targetBounds.size))
+                    }
+                    self.mainPreviewView.center = self.mainPreviewView.center.offsetBy(dx: (targetBounds.width - self.mainPreviewView.bounds.width) / 2.0, dy: 0.0)
+                    self.mainPreviewAnimationWrapperView.layer.animateBounds(from: self.mainPreviewView.bounds, to: targetBounds, duration: 0.3, timingFunction: kCAMediaTimingFunctionSpring, removeOnCompletion: false)
+                    
+                    let targetScale = destinationInnerFrame.height / self.previewContainerView.frame.height
+                    self.mainPreviewAnimationWrapperView.layer.animateScale(from: 1.0, to: targetScale, duration: 0.3, timingFunction: kCAMediaTimingFunctionSpring, removeOnCompletion: false)
+                }
                 
                 if let view = self.componentHost.view {
                     view.layer.animatePosition(from: view.center, to: destinationLocalFrame.center, duration: 0.3, timingFunction: kCAMediaTimingFunctionSpring)
                     view.layer.animateScale(from: 1.0, to: targetScale, duration: 0.3, timingFunction: kCAMediaTimingFunctionSpring, removeOnCompletion: false)
+                    view.layer.animateScale(from: 1.0, to: 0.0, duration: 0.2, removeOnCompletion: false)
                 }
             } else {
                 completion()
             }
 
             self.componentHost.view?.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.15, removeOnCompletion: false)
-            self.previewContainerView.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.35, removeOnCompletion: false)
+            if case .story = controller.mode {
+                self.previewContainerView.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.35, removeOnCompletion: false)
+            }
         }
         
         func animateOutToEditor() {
@@ -2069,18 +2474,13 @@ public class CameraScreen: ViewController {
 
         fileprivate var hasAppeared = false
         func containerLayoutUpdated(layout: ContainerViewLayout, forceUpdate: Bool = false, hasAppeared: Bool = false, transition: Transition) {
-            guard let _ = self.controller else {
+            guard let controller = self.controller else {
                 return
             }
             let isFirstTime = self.validLayout == nil
             self.validLayout = layout
             
-            let isTablet: Bool
-            if case .regular = layout.metrics.widthClass {
-                isTablet = true
-            } else {
-                isTablet = false
-            }
+            let isTablet = layout.metrics.isTablet
             
             var topInset: CGFloat = (layout.statusBarHeight ?? 0.0) + 5.0
             let previewSize: CGSize
@@ -2116,6 +2516,7 @@ public class CameraScreen: ViewController {
                     bottom: bottomInset,
                     right: layout.safeInsets.right
                 ),
+                additionalInsets: layout.additionalInsets,
                 inputHeight: layout.inputHeight ?? 0.0,
                 metrics: layout.metrics,
                 deviceMetrics: layout.deviceMetrics,
@@ -2189,6 +2590,13 @@ public class CameraScreen: ViewController {
                 let componentFrame = CGRect(origin: .zero, size: componentSize)
                 transition.setFrame(view: componentView, frame: componentFrame)
             }
+
+            if let view = self.componentHost.findTaggedView(tag: cancelButtonTag), view.layer.shadowOpacity.isZero {
+                view.layer.shadowOffset = CGSize(width: 0.0, height: 0.0)
+                view.layer.shadowRadius = 3.0
+                view.layer.shadowColor = UIColor.black.cgColor
+                view.layer.shadowOpacity = 0.25
+            }
             
             if let view = self.componentHost.findTaggedView(tag: flashButtonTag), view.layer.shadowOpacity.isZero {
                 view.layer.shadowOffset = CGSize(width: 0.0, height: 0.0)
@@ -2259,11 +2667,13 @@ public class CameraScreen: ViewController {
     
             let additionalPreviewFrame = CGRect(origin: CGPoint(x: origin.x - circleSide / 2.0, y: origin.y - circleSide / 2.0), size: CGSize(width: circleSide, height: circleSide))
             
-            transition.setPosition(view: self.additionalPreviewContainerView, position: additionalPreviewFrame.center)
-            transition.setBounds(view: self.additionalPreviewContainerView, bounds: CGRect(origin: .zero, size: additionalPreviewFrame.size))
-            self.additionalPreviewContainerView.layer.cornerRadius = additionalPreviewFrame.width / 2.0
+            if !self.animatingDualCameraPositionSwitch {
+                transition.setPosition(view: self.additionalPreviewContainerView, position: additionalPreviewFrame.center)
+                transition.setBounds(view: self.additionalPreviewContainerView, bounds: CGRect(origin: .zero, size: additionalPreviewFrame.size))
+                self.additionalPreviewContainerView.layer.cornerRadius = additionalPreviewFrame.width / 2.0
+                transition.setScale(view: self.additionalPreviewContainerView, scale: isDualCameraEnabled ? 1.0 : 0.1)
+            }
             
-            transition.setScale(view: self.additionalPreviewContainerView, scale: isDualCameraEnabled ? 1.0 : 0.1)
             transition.setAlpha(view: self.additionalPreviewContainerView, alpha: isDualCameraEnabled ? 1.0 : 0.0)
             
             if dualCamUpdated && isDualCameraEnabled {
@@ -2292,13 +2702,24 @@ public class CameraScreen: ViewController {
             let additionalPreviewInnerFrame = CGRect(origin: CGPoint(x: floorToScreenPixels((circleSide - additionalPreviewInnerSize.width) / 2.0), y: floorToScreenPixels((circleSide - additionalPreviewInnerSize.height) / 2.0)), size: additionalPreviewInnerSize)
             
             if mainPreviewView.superview != self.mainPreviewContainerView {
-                self.mainPreviewContainerView.insertSubview(mainPreviewView, at: 0)
+                if case .sticker = controller.mode, !self.animatedIn {
+                    
+                } else {
+                    self.mainPreviewContainerView.insertSubview(mainPreviewView, at: 0)
+                }
             }
             if additionalPreviewView.superview != self.additionalPreviewContainerView {
                 self.additionalPreviewContainerView.insertSubview(additionalPreviewView, at: 0)
             }
             
-            mainPreviewView.frame = mainPreviewInnerFrame
+            if case .sticker = controller.mode {
+                if self.animatedIn {
+                    mainPreviewView.frame = mainPreviewInnerFrame
+                }
+            } else {
+                mainPreviewView.frame = mainPreviewInnerFrame
+            }
+            
             additionalPreviewView.frame = additionalPreviewInnerFrame
                               
             self.previewFrameLeftDimView.isHidden = !isTablet
@@ -2324,8 +2745,14 @@ public class CameraScreen: ViewController {
             transition.setPosition(view: self.transitionCornersView, position: CGPoint(x: layout.size.width + screenCornerRadius / 2.0, y: layout.size.height / 2.0))
             transition.setBounds(view: self.transitionCornersView, bounds: CGRect(origin: .zero, size: CGSize(width: screenCornerRadius, height: layout.size.height)))
             
-            if isTablet && isFirstTime {
+            if (controller.mode == .sticker || isTablet) && isFirstTime {
                 self.animateIn()
+            }
+            
+            if self.cameraState.flashMode == .on && (self.cameraState.recording != .none || self.cameraState.mode == .video) {
+                controller.statusBarStyle = .Black
+            } else {
+                controller.statusBarStyle = .White
             }
         }
     }
@@ -2360,6 +2787,7 @@ public class CameraScreen: ViewController {
     }
     fileprivate let completion: (Signal<CameraScreen.Result, NoError>, ResultTransition?, @escaping () -> Void) -> Void
     public var transitionedIn: () -> Void = {}
+    public var transitionedOut: () -> Void = {}
     
     private var audioSessionDisposable: Disposable?
     
@@ -2377,6 +2805,8 @@ public class CameraScreen: ViewController {
     fileprivate var cameraState: CameraState {
         return self.node.cameraState
     }
+    
+    public var isEmbedded = false
     
     fileprivate func updateCameraState(_ f: (CameraState) -> CameraState, transition: Transition) {
         self.node.cameraState = f(self.node.cameraState)
@@ -2407,7 +2837,9 @@ public class CameraScreen: ViewController {
         
         self.requestAudioSession()
         
-        self.postingAvailabilityPromise.set(self.context.engine.messages.checkStoriesUploadAvailability())
+        if case .story = mode {
+            self.postingAvailabilityPromise.set(self.context.engine.messages.checkStoriesUploadAvailability(target: .myStories))
+        }
     }
 
     required public init(coder: NSCoder) {
@@ -2473,6 +2905,7 @@ public class CameraScreen: ViewController {
                         })
                     })
                     replaceImpl?(controller)
+                    return true
                 })
                 replaceImpl = { [weak controller] c in
                     controller?.replace(with: c)
@@ -2485,7 +2918,7 @@ public class CameraScreen: ViewController {
     }
     
     private func requestAudioSession() {
-        self.audioSessionDisposable = self.context.sharedContext.mediaManager.audioSession.push(audioSessionType: .recordWithOthers, activate: { _ in
+        self.audioSessionDisposable = self.context.sharedContext.mediaManager.audioSession.push(audioSessionType: .record(speaker: false, video: true, withOthers: true), activate: { _ in
             if #available(iOS 13.0, *) {
                 try? AVAudioSession.sharedInstance().setAllowHapticsAndSystemSoundsDuringRecording(true)
             }
@@ -2514,8 +2947,19 @@ public class CameraScreen: ViewController {
             guard let self, !self.didStopCameraCapture else {
                 return
             }
-            self.didStopCameraCapture = true
-            self.node.pauseCameraCapture()
+            let currentTimestamp = CACurrentMediaTime()
+            if let startTimestamp = self.node.captureStartTimestamp {
+                let difference = currentTimestamp - startTimestamp
+                if difference < 2.0 {
+                    Queue.mainQueue().after(2.0 - difference) {
+                        self.didStopCameraCapture = true
+                        self.node.pauseCameraCapture()
+                    }
+                } else {
+                    self.didStopCameraCapture = true
+                    self.node.pauseCameraCapture()
+                }
+            }
         }
         
         let resumeCameraCapture = { [weak self] in
@@ -2612,23 +3056,29 @@ public class CameraScreen: ViewController {
             self.hapticFeedback.impact(.light)
         }
         
-        self.node.camera?.stopCapture(invalidate: true)
+        if case .story = self.mode {
+            self.node.camera?.stopCapture(invalidate: true)
+        }
+        
         self.isDismissed = true
         if animated {
-            if let layout = self.validLayout, case .regular = layout.metrics.widthClass {
-                self.statusBar.updateStatusBarStyle(.Ignore, animated: true)
+            self.ignoreStatusBar = true
+            if let layout = self.validLayout, layout.metrics.isTablet || self.mode == .sticker {
                 self.node.animateOut(completion: {
                     self.dismiss(animated: false)
+                    self.transitionedOut()
                 })
             } else {
-                self.statusBar.updateStatusBarStyle(.Ignore, animated: true)
                 if !interactive {
-                    if let navigationController = self.navigationController as? NavigationController {
-                        navigationController.updateRootContainerTransitionOffset(self.node.frame.width, transition: .immediate)
+                    if case .story = self.mode {
+                        if let navigationController = self.navigationController as? NavigationController {
+                            navigationController.updateRootContainerTransitionOffset(self.node.frame.width, transition: .immediate)
+                        }
                     }
                 }
                 self.updateTransitionProgress(0.0, transition: .animated(duration: 0.4, curve: .spring), completion: { [weak self] in
                     self?.dismiss(animated: false)
+                    self?.transitionedOut()
                 })
             }
         } else {
@@ -2637,7 +3087,7 @@ public class CameraScreen: ViewController {
     }
         
     public func updateTransitionProgress(_ transitionFraction: CGFloat, transition: ContainedViewLayoutTransition, completion: @escaping () -> Void = {}) {
-        if let layout = self.validLayout, case .regular = layout.metrics.widthClass {
+        if let layout = self.validLayout, layout.metrics.isTablet {
             return
         }
         
@@ -2676,40 +3126,73 @@ public class CameraScreen: ViewController {
             return true
         })
                 
-        if let navigationController = self.navigationController as? NavigationController {
-            let offsetX = floorToScreenPixels(transitionFraction * self.node.frame.width)
-            navigationController.updateRootContainerTransitionOffset(offsetX, transition: transition)
+        if case .story = self.mode {
+            if let navigationController = self.navigationController as? NavigationController {
+                let offsetX = floorToScreenPixels(transitionFraction * self.node.frame.width)
+                navigationController.updateRootContainerTransitionOffset(offsetX, transition: transition)
+            }
         }
     }
     
+    private var statusBarStyle: StatusBarStyle = .White {
+        didSet {
+            if self.statusBarStyle != oldValue {
+                self.updateStatusBarAppearance()
+            }
+        }
+    }
+    private var ignoreStatusBar = false {
+        didSet {
+            if self.ignoreStatusBar != oldValue {
+                self.updateStatusBarAppearance()
+            }
+        }
+    }
+    
+    private func updateStatusBarAppearance() {
+        let effectiveStatusBarStyle: StatusBarStyle
+        if !self.ignoreStatusBar {
+            effectiveStatusBarStyle = self.statusBarStyle
+        } else {
+            effectiveStatusBarStyle = .Ignore
+        }
+        self.statusBar.updateStatusBarStyle(effectiveStatusBarStyle, animated: true)
+    }
+    
     public func completeWithTransitionProgress(_ transitionFraction: CGFloat, velocity: CGFloat, dismissing: Bool) {
-        if let layout = self.validLayout, case .regular = layout.metrics.widthClass {
+        if let layout = self.validLayout, layout.metrics.isTablet {
             return
         }
         if dismissing {
             if transitionFraction < 0.7 || velocity < -1000.0 {
-                self.statusBar.updateStatusBarStyle(.Ignore, animated: true)
+                self.ignoreStatusBar = true
                 self.requestDismiss(animated: true, interactive: true)
             } else {
-                self.statusBar.updateStatusBarStyle(.White, animated: true)
+                self.ignoreStatusBar = false
                 self.updateTransitionProgress(1.0, transition: .animated(duration: 0.4, curve: .spring), completion: { [weak self] in
                     if let self, let navigationController = self.navigationController as? NavigationController {
-                        navigationController.updateRootContainerTransitionOffset(0.0, transition: .immediate)
+                        if case .story = self.mode {
+                            navigationController.updateRootContainerTransitionOffset(0.0, transition: .immediate)
+                        }
                     }
                 })
             }
         } else {
             if transitionFraction > 0.33 || velocity > 1000.0 {
-                self.statusBar.updateStatusBarStyle(.White, animated: true)
+                self.ignoreStatusBar = false
+                self.updateStatusBarAppearance()
                 self.updateTransitionProgress(1.0, transition: .animated(duration: 0.4, curve: .spring), completion: { [weak self] in
                     if let self, let navigationController = self.navigationController as? NavigationController {
-                        navigationController.updateRootContainerTransitionOffset(0.0, transition: .immediate)
+                        if case .story = self.mode {
+                            navigationController.updateRootContainerTransitionOffset(0.0, transition: .immediate)
+                        }
                         self.node.requestUpdateLayout(hasAppeared: true, transition: .immediate)
                         self.transitionedIn()
                     }
                 })
             } else {
-                self.statusBar.updateStatusBarStyle(.Ignore, animated: true)
+                self.ignoreStatusBar = true
+                self.updateStatusBarAppearance()
                 self.requestDismiss(animated: true, interactive: true)
             }
         }
@@ -2737,15 +3220,21 @@ private final class DualIconComponent: Component {
     typealias EnvironmentType = Empty
     
     let isSelected: Bool
+    let tintColor: UIColor
     
     init(
-        isSelected: Bool
+        isSelected: Bool,
+        tintColor: UIColor
     ) {
         self.isSelected = isSelected
+        self.tintColor = tintColor
     }
     
     static func ==(lhs: DualIconComponent, rhs: DualIconComponent) -> Bool {
         if lhs.isSelected != rhs.isSelected {
+            return false
+        }
+        if lhs.tintColor != rhs.tintColor {
             return false
         }
         return true
@@ -2766,7 +3255,7 @@ private final class DualIconComponent: Component {
                 if let image = UIImage(bundleImageName: "Camera/DualIcon"), let cgImage = image.cgImage {
                     context.draw(cgImage, in: CGRect(origin: CGPoint(x: floorToScreenPixels((size.width - image.size.width) / 2.0), y: floorToScreenPixels((size.height - image.size.height) / 2.0) - 1.0), size: image.size))
                 }
-            })
+            })?.withRenderingMode(.alwaysTemplate)
             
             let selectedImage = generateImage(CGSize(width: 36.0, height: 36.0), rotatedContext: { size, context in
                 context.clear(CGRect(origin: .zero, size: size))
@@ -2778,7 +3267,7 @@ private final class DualIconComponent: Component {
                     context.clip(to: CGRect(origin: CGPoint(x: floorToScreenPixels((size.width - image.size.width) / 2.0), y: floorToScreenPixels((size.height - image.size.height) / 2.0) - 1.0), size: image.size), mask: cgImage)
                     context.fill(CGRect(origin: .zero, size: size))
                 }
-            })
+            })?.withRenderingMode(.alwaysTemplate)
             
             self.iconView.image = image
             self.iconView.highlightedImage = selectedImage
@@ -2802,6 +3291,8 @@ private final class DualIconComponent: Component {
             let size = CGSize(width: 36.0, height: 36.0)
             self.iconView.frame = CGRect(origin: .zero, size: size)
             self.iconView.isHighlighted = component.isSelected
+            
+            self.iconView.tintColor = component.tintColor
             
             return size
         }

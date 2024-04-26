@@ -506,9 +506,33 @@ public enum AdminedPublicChannelsScope {
     case all
     case forLocation
     case forVoiceChat
+    case forPersonalProfile
 }
 
-func _internal_adminedPublicChannels(account: Account, scope: AdminedPublicChannelsScope = .all) -> Signal<[Peer], NoError> {
+public final class TelegramAdminedPublicChannel: Equatable {
+    public let peer: EnginePeer
+    public let subscriberCount: Int?
+    
+    public init(peer: EnginePeer, subscriberCount: Int?) {
+        self.peer = peer
+        self.subscriberCount = subscriberCount
+    }
+    
+    public static func ==(lhs: TelegramAdminedPublicChannel, rhs: TelegramAdminedPublicChannel) -> Bool {
+        if lhs === rhs {
+            return true
+        }
+        if lhs.peer != rhs.peer {
+            return false
+        }
+        if lhs.subscriberCount != rhs.subscriberCount {
+            return false
+        }
+        return true
+    }
+}
+
+func _internal_adminedPublicChannels(account: Account, scope: AdminedPublicChannelsScope = .all) -> Signal<[TelegramAdminedPublicChannel], NoError> {
     var flags: Int32 = 0
     switch scope {
     case .all:
@@ -517,31 +541,121 @@ func _internal_adminedPublicChannels(account: Account, scope: AdminedPublicChann
         flags |= (1 << 0)
     case .forVoiceChat:
         flags |= (1 << 2)
+    case .forPersonalProfile:
+        flags |= (1 << 2)
     }
     
     let accountPeerId = account.peerId
     
     return account.network.request(Api.functions.channels.getAdminedPublicChannels(flags: flags))
     |> retryRequest
-    |> mapToSignal { result -> Signal<[Peer], NoError> in
-        return account.postbox.transaction { transaction -> [Peer] in
+    |> mapToSignal { result -> Signal<[TelegramAdminedPublicChannel], NoError> in
+        return account.postbox.transaction { transaction -> [TelegramAdminedPublicChannel] in
             let chats: [Api.Chat]
+            var subscriberCounts: [PeerId: Int] = [:]
             let parsedPeers: AccumulatedPeers
             switch result {
             case let .chats(apiChats):
                 chats = apiChats
+                for chat in apiChats {
+                    if case let .channel(_, _, _, _, _, _, _, _, _, _, _, _, participantsCount, _, _, _, _, _, _) = chat {
+                        subscriberCounts[chat.peerId] = participantsCount.flatMap(Int.init)
+                    }
+                }
             case let .chatsSlice(_, apiChats):
                 chats = apiChats
             }
             parsedPeers = AccumulatedPeers(transaction: transaction, chats: chats, users: [])
             updatePeers(transaction: transaction, accountPeerId: accountPeerId, peers: parsedPeers)
-            var peers: [Peer] = []
+            var peers: [TelegramAdminedPublicChannel] = []
             for chat in chats {
                 if let peer = transaction.getPeer(chat.peerId) {
-                    peers.append(peer)
+                    peers.append(TelegramAdminedPublicChannel(
+                        peer: EnginePeer(peer),
+                        subscriberCount: subscriberCounts[peer.id]
+                    ))
                 }
             }
             return peers
+        }
+    }
+}
+
+final class CachedStorySendAsPeers: Codable {
+    public let peerIds: [PeerId]
+    
+    public init(peerIds: [PeerId]) {
+        self.peerIds = peerIds
+    }
+    
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: StringCodingKey.self)
+
+        self.peerIds = try container.decode([Int64].self, forKey: "l").map(PeerId.init)
+    }
+    
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: StringCodingKey.self)
+
+        try container.encode(self.peerIds.map { $0.toInt64() }, forKey: "l")
+    }
+}
+
+func _internal_channelsForStories(account: Account) -> Signal<[Peer], NoError> {
+    let accountPeerId = account.peerId
+    return account.postbox.transaction { transaction -> [Peer]? in
+        if let entry = transaction.retrieveItemCacheEntry(id: ItemCacheEntryId(collectionId: Namespaces.CachedItemCollection.storySendAsPeerIds, key: ValueBoxKey(length: 0)))?.get(CachedStorySendAsPeers.self) {
+            return entry.peerIds.compactMap(transaction.getPeer)
+        } else {
+            return nil
+        }
+    }
+    |> mapToSignal { cachedPeers in
+        let remote: Signal<[Peer], NoError> = account.network.request(Api.functions.stories.getChatsToSend())
+        |> retryRequest
+        |> mapToSignal { result -> Signal<[Peer], NoError> in
+            return account.postbox.transaction { transaction -> [Peer] in
+                let chats: [Api.Chat]
+                let parsedPeers: AccumulatedPeers
+                switch result {
+                case let .chats(apiChats):
+                    chats = apiChats
+                case let .chatsSlice(_, apiChats):
+                    chats = apiChats
+                }
+                parsedPeers = AccumulatedPeers(transaction: transaction, chats: chats, users: [])
+                updatePeers(transaction: transaction, accountPeerId: accountPeerId, peers: parsedPeers)
+                var peers: [Peer] = []
+                for chat in chats {
+                    if let peer = transaction.getPeer(chat.peerId) {
+                        peers.append(peer)
+                        
+                        if case let .channel(_, _, _, _, _, _, _, _, _, _, _, _, participantsCount, _, _, _, _, _, _) = chat, let participantsCount = participantsCount {
+                            transaction.updatePeerCachedData(peerIds: Set([peer.id]), update: { _, current in
+                                var current = current as? CachedChannelData ?? CachedChannelData()
+                                var participantsSummary = current.participantsSummary
+                                
+                                participantsSummary.memberCount = participantsCount
+                                
+                                current = current.withUpdatedParticipantsSummary(participantsSummary)
+                                return current
+                            })
+                        }
+                    }
+                }
+                
+                if let entry = CodableEntry(CachedStorySendAsPeers(peerIds: peers.map(\.id))) {
+                    transaction.putItemCacheEntry(id: ItemCacheEntryId(collectionId: Namespaces.CachedItemCollection.storySendAsPeerIds, key: ValueBoxKey(length: 0)), entry: entry)
+                }
+                
+                return peers
+            }
+        }
+        
+        if let cachedPeers = cachedPeers {
+            return .single(cachedPeers) |> then(remote)
+        } else {
+            return remote
         }
     }
 }

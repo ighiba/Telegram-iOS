@@ -516,7 +516,7 @@ private final class PictureInPictureContentImpl: NSObject, PictureInPictureConte
                         strongSelf.pictureInPictureController?.invalidatePlaybackState()
                     }
                 }
-            })
+            }).strict()
         }
 
         deinit {
@@ -938,7 +938,7 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
             } else {
                 strongSelf.footerContentNode.setFramePreviewImage(image: nil)
             }
-        })
+        }).strict()
         
         self.alternativeDismiss = { [weak self] in
             guard let strongSelf = self, strongSelf.hasPictureInPicture else {
@@ -973,7 +973,7 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
             if let strongSelf = self {
                 strongSelf.updateControlsVisibility(false)
             }
-        })
+        }).strict()
     }
     
     deinit {
@@ -1184,7 +1184,7 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
             
             var hintSeekable = false
             if let contentInfo = item.contentInfo, case let .message(message) = contentInfo {
-                if Namespaces.Message.allScheduled.contains(message.id.namespace) {
+                if Namespaces.Message.allNonRegular.contains(message.id.namespace) {
                     disablePictureInPicture = true
                 } else {
                     let throttledSignal = videoNode.status
@@ -1344,7 +1344,9 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
                                     strongSelf.isPlayingPromise.set(false)
                                     strongSelf.isPlaying = false
                                     if strongSelf.isCentral == true {
-                                        strongSelf.updateControlsVisibility(true)
+                                        if !item.isSecret {
+                                            strongSelf.updateControlsVisibility(true)
+                                        }
                                     }
                                 }
                         }
@@ -1481,7 +1483,9 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
                         if strongSelf.actionAtEnd == .stop && strongSelf.isCentral == true {
                             strongSelf.isPlayingPromise.set(false)
                             strongSelf.isPlaying = false
-                            strongSelf.updateControlsVisibility(true)
+                            if !item.isSecret {
+                                strongSelf.updateControlsVisibility(true)
+                            }
                         }
                     }
                 }
@@ -1686,6 +1690,12 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
                 self.hideStatusNodeUntilCentrality = false
                 self.statusButtonNode.isHidden = self.hideStatusNodeUntilCentrality || self.statusNodeShouldBeHidden
                 videoNode.playOnceWithSound(playAndRecord: false, seek: seek, actionAtEnd: self.actionAtEnd)
+                
+                Queue.mainQueue().after(1.0, {
+                    if let item = self.item, item.isSecret, !self.isPlaying {
+                        videoNode.playOnceWithSound(playAndRecord: false, seek: .start, actionAtEnd: self.actionAtEnd)
+                    }
+                })
             }
         }
     }
@@ -2120,7 +2130,7 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
                 
                 switch contentInfo {
                     case let .message(message):
-                        let gallery = GalleryController(context: context, source: .peerMessagesAtId(messageId: message.id, chatLocation: .peer(id: message.id.peerId), chatLocationContextHolder: Atomic<ChatLocationContextHolder?>(value: nil)), playbackRate: playbackRate, replaceRootController: { controller, ready in
+                        let gallery = GalleryController(context: context, source: .peerMessagesAtId(messageId: message.id, chatLocation: .peer(id: message.id.peerId), customTag: nil, chatLocationContextHolder: Atomic<ChatLocationContextHolder?>(value: nil)), playbackRate: playbackRate, replaceRootController: { controller, ready in
                             if let baseNavigationController = baseNavigationController {
                                 baseNavigationController.replaceTopController(controller, animated: false, ready: ready)
                             }
@@ -2244,7 +2254,7 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
 
                     switch contentInfo {
                     case let .message(message):
-                        let gallery = GalleryController(context: context, source: .peerMessagesAtId(messageId: message.id, chatLocation: .peer(id: message.id.peerId), chatLocationContextHolder: Atomic<ChatLocationContextHolder?>(value: nil)), playbackRate: playbackRate, replaceRootController: { [weak baseNavigationController] controller, ready in
+                        let gallery = GalleryController(context: context, source: .peerMessagesAtId(messageId: message.id, chatLocation: .peer(id: message.id.peerId), customTag: nil, chatLocationContextHolder: Atomic<ChatLocationContextHolder?>(value: nil)), playbackRate: playbackRate, replaceRootController: { [weak baseNavigationController] controller, ready in
                             if let baseNavigationController = baseNavigationController {
                                 baseNavigationController.replaceTopController(controller, animated: false, ready: ready)
                             }
@@ -2305,7 +2315,7 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
 
                     switch contentInfo {
                         case let .message(message):
-                            let gallery = GalleryController(context: context, source: .peerMessagesAtId(messageId: message.id, chatLocation: .peer(id: message.id.peerId), chatLocationContextHolder: Atomic<ChatLocationContextHolder?>(value: nil)), playbackRate: playbackRate, replaceRootController: { controller, ready in
+                            let gallery = GalleryController(context: context, source: .peerMessagesAtId(messageId: message.id, chatLocation: .peer(id: message.id.peerId), customTag: nil, chatLocationContextHolder: Atomic<ChatLocationContextHolder?>(value: nil)), playbackRate: playbackRate, replaceRootController: { controller, ready in
                                 if let baseNavigationController = baseNavigationController {
                                     baseNavigationController.replaceTopController(controller, animated: false, ready: ready)
                                 }
@@ -2432,7 +2442,7 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
         let items: Signal<[ContextMenuItem], NoError> = self.contextMenuMainItems(dismiss: {
             dismissImpl?()
         })
-        let contextController = ContextController(account: self.context.account, presentationData: self.presentationData.withUpdated(theme: defaultDarkColorPresentationTheme), source: .reference(HeaderContextReferenceContentSource(controller: controller, sourceNode: self.moreBarButton.referenceNode)), items: items |> map { ContextController.Items(content: .list($0)) }, gesture: gesture)
+        let contextController = ContextController(presentationData: self.presentationData.withUpdated(theme: defaultDarkColorPresentationTheme), source: .reference(HeaderContextReferenceContentSource(controller: controller, sourceNode: self.moreBarButton.referenceNode)), items: items |> map { ContextController.Items(content: .list($0)) }, gesture: gesture)
         self.isShowingContextMenuPromise.set(true)
         controller.presentInGlobalOverlay(contextController)
         dismissImpl = { [weak contextController] in
@@ -2495,7 +2505,7 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
                     return
                 }
 
-                c.setItems(strongSelf.contextMenuSpeedItems(dismiss: dismiss) |> map { ContextController.Items(content: .list($0)) }, minHeight: nil)
+                c.setItems(strongSelf.contextMenuSpeedItems(dismiss: dismiss) |> map { ContextController.Items(content: .list($0)) }, minHeight: nil, animated: true)
             })))
             
             items.append(.separator)
@@ -2512,7 +2522,7 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
                         if let navigationController = strongSelf.baseNavigationController() {
                             strongSelf.beginCustomDismiss(true)
                             
-                            context.sharedContext.navigateToChatController(NavigateToChatControllerParams(navigationController: navigationController, context: context, chatLocation: .peer(peer), subject: .message(id: .id(message.id), highlight: true, timecode: nil)))
+                            context.sharedContext.navigateToChatController(NavigateToChatControllerParams(navigationController: navigationController, context: context, chatLocation: .peer(peer), subject: .message(id: .id(message.id), highlight: ChatControllerSubject.MessageHighlight(quote: nil), timecode: nil)))
                             
                             Queue.mainQueue().after(0.3) {
                                 strongSelf.completeCustomDismiss()
@@ -2624,7 +2634,7 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
                     c.dismiss(completion: nil)
                     return
                 }
-                c.setItems(strongSelf.contextMenuMainItems(dismiss: dismiss) |> map { ContextController.Items(content: .list($0)) }, minHeight: nil)
+                c.setItems(strongSelf.contextMenuMainItems(dismiss: dismiss) |> map { ContextController.Items(content: .list($0)) }, minHeight: nil, animated: true)
             })))
 
             let sliderValuePromise = ValuePromise<Double?>(nil)
@@ -2769,6 +2779,11 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
         }
 
         self.playbackRatePromise.set(self.playbackRate ?? 1.0)
+    }
+    
+    public func seekToStart() {
+        self.videoNode?.seek(0.0)
+        self.videoNode?.play()
     }
     
     override var keyShortcuts: [KeyShortcut] {

@@ -191,10 +191,22 @@ private final class MultipartUploadManager {
         }
     }
     
+    deinit {
+        let uploadingParts = self.uploadingParts
+        let dataDisposable = self.dataDisposable
+        
+        self.queue.async {
+            for (_, (_, disposable)) in uploadingParts {
+                disposable.dispose()
+            }
+            dataDisposable.dispose()
+        }
+    }
+    
     func start() {
         self.queue.async {
             self.dataDisposable.set((self.dataSignal
-            |> deliverOn(self.queue)).start(next: { [weak self] data in
+            |> deliverOn(self.queue)).startStrict(next: { [weak self] data in
                 if let strongSelf = self {
                     strongSelf.resourceData = data
                     strongSelf.checkState()
@@ -276,11 +288,11 @@ private final class MultipartUploadManager {
                         self.headerPartState = .uploading
                         let part = self.uploadPart(UploadPart(fileId: self.fileId, index: partIndex, data: partData, bigTotalParts: currentBigTotalParts, bigPart: self.bigParts))
                         |> deliverOn(self.queue)
-                        self.uploadingParts[0] = (partSize, part.start(error: { [weak self] _ in
+                        self.uploadingParts[0] = (partSize, part.startStrict(error: { [weak self] _ in
                             self?.completed(nil)
                         }, completed: { [weak self] in
                             if let strongSelf = self {
-                                let _ = strongSelf.uploadingParts.removeValue(forKey: 0)
+                                strongSelf.uploadingParts.removeValue(forKey: 0)?.1.dispose()
                                 strongSelf.headerPartState = .ready
                                 strongSelf.checkState()
                             }
@@ -350,11 +362,11 @@ private final class MultipartUploadManager {
                                     break
                             }
                         }
-                        self.uploadingParts[nextOffset] = (partSize, part.start(error: { [weak self] _ in
+                        self.uploadingParts[nextOffset] = (partSize, part.startStrict(error: { [weak self] _ in
                             self?.completed(nil)
                         }, completed: { [weak self] in
                             if let strongSelf = self {
-                                let _ = strongSelf.uploadingParts.removeValue(forKey: nextOffset)
+                                strongSelf.uploadingParts.removeValue(forKey: nextOffset)?.1.dispose()
                                 strongSelf.uploadedParts[partOffset] = partSize
                                 if partIndex == 0 {
                                     strongSelf.headerPartState = .ready
@@ -458,12 +470,21 @@ func multipartUpload(network: Network, postbox: Postbox, source: MultipartUpload
                     fetchedResource = .complete()
             }
             
+            let onFloodWaitError: (String) -> Void = { [weak network] error in
+                guard let network else {
+                    return
+                }
+                if error.hasPrefix("FLOOD_PREMIUM_WAIT") {
+                    network.addNetworkSpeedLimitedEvent(event: .upload)
+                }
+            }
+            
             let manager = MultipartUploadManager(headerSize: headerSize, data: dataSignal, encryptionKey: encryptionKey, hintFileSize: hintFileSize, hintFileIsLarge: hintFileIsLarge, forceNoBigParts: forceNoBigParts, useLargerParts: useLargerParts, increaseParallelParts: increaseParallelParts, uploadPart: { part in
                 switch uploadInterface {
                 case let .download(download):
-                    return download.uploadPart(fileId: part.fileId, index: part.index, data: part.data, asBigPart: part.bigPart, bigTotalParts: part.bigTotalParts, useCompression: useCompression)
+                    return download.uploadPart(fileId: part.fileId, index: part.index, data: part.data, asBigPart: part.bigPart, bigTotalParts: part.bigTotalParts, useCompression: useCompression, onFloodWaitError: onFloodWaitError)
                 case let .multiplexed(multiplexed, datacenterId, consumerId):
-                    return Download.uploadPart(multiplexedManager: multiplexed, datacenterId: datacenterId, consumerId: consumerId, tag: nil, fileId: part.fileId, index: part.index, data: part.data, asBigPart: part.bigPart, bigTotalParts: part.bigTotalParts, useCompression: useCompression)
+                    return Download.uploadPart(multiplexedManager: multiplexed, datacenterId: datacenterId, consumerId: consumerId, tag: nil, fileId: part.fileId, index: part.index, data: part.data, asBigPart: part.bigPart, bigTotalParts: part.bigTotalParts, useCompression: useCompression, onFloodWaitError: onFloodWaitError)
                 }
             }, progress: { progress in
                 subscriber.putNext(.progress(progress))

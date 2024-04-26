@@ -154,7 +154,7 @@ final class SharedMediaPlayer {
                 switch playbackItem {
                 case let .audio(player):
                     let audioLevelPipe = self.audioLevelPipe
-                    self.audioLevelDisposable.set((player.audioLevelEvents.start(next: { [weak audioLevelPipe] value in
+                    self.audioLevelDisposable.set((player.audioLevelEvents.startStrict(next: { [weak audioLevelPipe] value in
                         audioLevelPipe?.putNext(value)
                     })))
                 default:
@@ -203,7 +203,7 @@ final class SharedMediaPlayer {
         }
         
         self.stateDisposable = (playlist.state
-        |> deliverOnMainQueue).start(next: { [weak self] state in
+        |> deliverOnMainQueue).startStrict(next: { [weak self] state in
             if let strongSelf = self {
                 let previousPlaybackItem = strongSelf.playbackItem
                 strongSelf.updatePrefetchItems(item: state.item, previousItem: state.previousItem, nextItem: state.nextItem, ordering: state.order)
@@ -229,13 +229,13 @@ final class SharedMediaPlayer {
                         switch playbackData.type {
                             case .voice, .music:
                                 switch playbackData.source {
-                                    case let .telegramFile(fileReference, _):
+                                    case let .telegramFile(fileReference, _, _):
                                     strongSelf.playbackItem = .audio(MediaPlayer(audioSessionManager: strongSelf.audioSession, postbox: strongSelf.account.postbox, userLocation: .other,  userContentType: .audio, resourceReference: fileReference.resourceReference(fileReference.media.resource), streamable: playbackData.type == .music ? .conservative : .none, video: false, preferSoftwareDecoding: false, enableSound: true, baseRate: rateValue, fetchAutomatically: true, playAndRecord: controlPlaybackWithProximity, isAudioVideoMessage: playbackData.type == .voice))
                                 }
                             case .instantVideo:
                                 if let mediaManager = strongSelf.mediaManager, let item = item as? MessageMediaPlaylistItem {
                                     switch playbackData.source {
-                                        case let .telegramFile(fileReference, _):
+                                        case let .telegramFile(fileReference, _, _):
                                             let videoNode = OverlayInstantVideoNode(postbox: strongSelf.account.postbox, audioSession: strongSelf.audioSession, manager: mediaManager.universalVideoManager, content: NativeVideoContent(id: .message(item.message.stableId, fileReference.media.fileId), userLocation: .peer(item.message.id.peerId), fileReference: fileReference, enableSound: false, baseRate: rateValue, isAudioVideoMessage: true, captureProtected: item.message.isCopyProtected(), storeAfterDownload: nil), close: { [weak mediaManager] in
                                                 mediaManager?.setPlaylist(nil, type: .voice, control: .playback(.pause))
                                             })
@@ -341,7 +341,7 @@ final class SharedMediaPlayer {
                             }
                         }
                         |> take(1)
-                        |> deliverOnMainQueue).start(next: { next in
+                        |> deliverOnMainQueue).startStrict(next: { next in
                             if let strongSelf = self {
                                 strongSelf.playlist.onItemPlaybackStarted(item)
                             }
@@ -363,7 +363,7 @@ final class SharedMediaPlayer {
         })
         
         self.playbackStateValueDisposable = (self.playbackState
-        |> deliverOnMainQueue).start(next: { [weak self] value in
+        |> deliverOnMainQueue).startStrict(next: { [weak self] value in
             self?._playbackStateValue = value
         })
         
@@ -392,6 +392,7 @@ final class SharedMediaPlayer {
         self.inForegroundDisposable?.dispose()
         self.playbackStateValueDisposable?.dispose()
         self.prefetchDisposable.dispose()
+        self.audioLevelDisposable.dispose()
         
         if let proximityManagerIndex = self.proximityManagerIndex {
             DeviceProximityManager.shared().remove(proximityManagerIndex)
@@ -492,7 +493,7 @@ final class SharedMediaPlayer {
                 let fetchedCurrentSignal: Signal<Never, NoError>
                 let fetchedNextSignal: Signal<Never, NoError>
                 switch current {
-                    case let .telegramFile(file, _):
+                    case let .telegramFile(file, _, _):
                         fetchedCurrentSignal = self.account.postbox.mediaBox.resourceData(file.media.resource)
                         |> mapToSignal { data -> Signal<Void, NoError> in
                             if data.complete {
@@ -505,14 +506,14 @@ final class SharedMediaPlayer {
                         |> ignoreValues
                 }
                 switch next {
-                    case let .telegramFile(file, _):
+                    case let .telegramFile(file, _, _):
                         fetchedNextSignal = fetchedMediaResource(mediaBox: self.account.postbox.mediaBox, userLocation: .other, userContentType: .audio, reference: file.resourceReference(file.media.resource))
                         |> ignoreValues
                         |> `catch` { _ -> Signal<Never, NoError> in
                             return .complete()
                         }
                 }
-                self.prefetchDisposable.set((fetchedCurrentSignal |> then(fetchedNextSignal)).start())
+                self.prefetchDisposable.set((fetchedCurrentSignal |> then(fetchedNextSignal)).startStrict())
             } else {
                 self.prefetchDisposable.set(nil)
             }

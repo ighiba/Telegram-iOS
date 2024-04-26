@@ -2062,7 +2062,6 @@ final class StorageUsageScreenComponent: Component {
                             let items = ContextController.Items(content: .list(itemList))
                             
                             let controller = ContextController(
-                                account: component.context.account,
                                 presentationData: presentationData,
                                 source: .extracted(StorageUsageListContextExtractedContentSource(contentView: sourceView)), items: .single(items), recognizer: nil, gesture: gesture)
                             
@@ -2277,7 +2276,7 @@ final class StorageUsageScreenComponent: Component {
             }
             
             let presentationData = component.context.sharedContext.currentPresentationData.with { $0 }
-            controller.present(UndoOverlayController(presentationData: presentationData, content: .succeed(text: presentationData.strings.ClearCache_Success("\(dataSizeString(size, formatting: DataSizeStringFormatting(presentationData: presentationData)))", stringForDeviceType()).string), elevatedLayout: false, action: { _ in return false }), in: .current)
+            controller.present(UndoOverlayController(presentationData: presentationData, content: .succeed(text: presentationData.strings.ClearCache_Success("\(dataSizeString(size, formatting: DataSizeStringFormatting(presentationData: presentationData)))", stringForDeviceType()).string, timeout: nil, customUndoText: nil), elevatedLayout: false, action: { _ in return false }), in: .current)
         }
         
         private func reloadStats(firstTime: Bool, completion: @escaping () -> Void) {
@@ -2509,6 +2508,7 @@ final class StorageUsageScreenComponent: Component {
             let _ = (chatMediaListPreviewControllerData(
                 context: component.context,
                 chatLocation: .peer(id: message.id.peerId),
+                chatFilterTag: nil,
                 chatLocationContextHolder: nil,
                 message: message,
                 standalone: true,
@@ -2564,14 +2564,14 @@ final class StorageUsageScreenComponent: Component {
                         
                         var chatLocation: NavigateToChatControllerParams.Location = .peer(peer)
                         if case let .channel(channel) = peer, channel.flags.contains(.isForum), let threadId = message.threadId {
-                            chatLocation = .replyThread(ChatReplyThreadMessage(messageId: MessageId(peerId: peer.id, namespace: Namespaces.Message.Cloud, id: Int32(clamping: threadId)), channelMessageId: nil, isChannelPost: false, isForumPost: true, maxMessage: nil, maxReadIncomingMessageId: nil, maxReadOutgoingMessageId: nil, unreadCount: 0, initialFilledHoles: IndexSet(), initialAnchor: .automatic, isNotAvailable: false))
+                            chatLocation = .replyThread(ChatReplyThreadMessage(peerId: peer.id, threadId: threadId, channelMessageId: nil, isChannelPost: false, isForumPost: true, maxMessage: nil, maxReadIncomingMessageId: nil, maxReadOutgoingMessageId: nil, unreadCount: 0, initialFilledHoles: IndexSet(), initialAnchor: .automatic, isNotAvailable: false))
                         }
                         
                         component.context.sharedContext.navigateToChatController(NavigateToChatControllerParams(
                             navigationController: navigationController,
                             context: component.context,
                             chatLocation: chatLocation,
-                            subject: .message(id: .id(message.id), highlight: true, timecode: nil),
+                            subject: .message(id: .id(message.id), highlight: ChatControllerSubject.MessageHighlight(quote: nil), timecode: nil),
                             keepStack: .always
                         ))
                     })
@@ -2594,7 +2594,6 @@ final class StorageUsageScreenComponent: Component {
                 case let .gallery(gallery):
                     gallery.setHintWillBePresentedInPreviewingContext(true)
                     let contextController = ContextController(
-                        account: component.context.account,
                         presentationData: presentationData,
                         source: .controller(StorageUsageListContextGalleryContentSourceImpl(
                             controller: gallery,
@@ -2668,14 +2667,14 @@ final class StorageUsageScreenComponent: Component {
                         
                         var chatLocation: NavigateToChatControllerParams.Location = .peer(peer)
                         if case let .channel(channel) = peer, channel.flags.contains(.isForum), let threadId = message.threadId {
-                            chatLocation = .replyThread(ChatReplyThreadMessage(messageId: MessageId(peerId: peer.id, namespace: Namespaces.Message.Cloud, id: Int32(clamping: threadId)), channelMessageId: nil, isChannelPost: false, isForumPost: true, maxMessage: nil, maxReadIncomingMessageId: nil, maxReadOutgoingMessageId: nil, unreadCount: 0, initialFilledHoles: IndexSet(), initialAnchor: .automatic, isNotAvailable: false))
+                            chatLocation = .replyThread(ChatReplyThreadMessage(peerId: peer.id, threadId: threadId, channelMessageId: nil, isChannelPost: false, isForumPost: true, maxMessage: nil, maxReadIncomingMessageId: nil, maxReadOutgoingMessageId: nil, unreadCount: 0, initialFilledHoles: IndexSet(), initialAnchor: .automatic, isNotAvailable: false))
                         }
                         
                         component.context.sharedContext.navigateToChatController(NavigateToChatControllerParams(
                             navigationController: navigationController,
                             context: component.context,
                             chatLocation: chatLocation,
-                            subject: .message(id: .id(message.id), highlight: true, timecode: nil),
+                            subject: .message(id: .id(message.id), highlight: ChatControllerSubject.MessageHighlight(quote: nil), timecode: nil),
                             keepStack: .always
                         ))
                     })
@@ -2698,7 +2697,6 @@ final class StorageUsageScreenComponent: Component {
             let items = ContextController.Items(content: .list(itemList))
             
             let controller = ContextController(
-                account: component.context.account,
                 presentationData: presentationData,
                 source: .extracted(StorageUsageListContextExtractedContentSource(contentView: sourceView)), items: .single(items), recognizer: nil, gesture: gesture)
             
@@ -2727,6 +2725,7 @@ final class StorageUsageScreenComponent: Component {
             let _ = component.context.sharedContext.openChatMessage(OpenChatMessageParams(
                 context: component.context,
                 chatLocation: .peer(id: message.id.peerId),
+                chatFilterTag: nil,
                 chatLocationContextHolder: nil,
                 message: galleryMessage,
                 standalone: true,
@@ -3244,12 +3243,15 @@ final class StorageUsageScreenComponent: Component {
                     }
                 }
                 
+                if case .separator = subItems.last {
+                    subItems.removeLast()
+                }
+                
                 if let sourceLabelView = sourceView.labelView {
                     let items: Signal<ContextController.Items, NoError> = .single(ContextController.Items(content: .list(subItems)))
                     let source: ContextContentSource = .reference(StorageUsageContextReferenceContentSource(sourceView: sourceLabelView))
                     
                     let contextController = ContextController(
-                        account: context.account,
                         presentationData: presentationData,
                         source: source,
                         items: items,

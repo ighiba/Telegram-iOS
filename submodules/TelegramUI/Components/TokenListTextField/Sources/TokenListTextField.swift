@@ -21,6 +21,7 @@ public final class TokenListTextField: Component {
         public enum Content: Equatable {
             case peer(EnginePeer)
             case category(UIImage?)
+            case emoji(String)
             
             public static func ==(lhs: Content, rhs: Content) -> Bool {
                 switch lhs {
@@ -32,6 +33,12 @@ public final class TokenListTextField: Component {
                     }
                 case let .category(lhsImage):
                     if case let .category(rhsImage) = rhs, lhsImage === rhsImage {
+                        return true
+                    } else {
+                        return false
+                    }
+                case let .emoji(lhsEmoji):
+                    if case let .emoji(rhsEmoji) = rhs, lhsEmoji == rhsEmoji {
                         return true
                     } else {
                         return false
@@ -81,6 +88,7 @@ public final class TokenListTextField: Component {
     public let tokens: [Token]
     public let sideInset: CGFloat
     public let deleteToken: (AnyHashable) -> Void
+    public let isFocusedUpdated: (Bool) -> Void
     
     public init(
         externalState: ExternalState,
@@ -89,7 +97,8 @@ public final class TokenListTextField: Component {
         placeholder: String,
         tokens: [Token],
         sideInset: CGFloat,
-        deleteToken: @escaping (AnyHashable) -> Void
+        deleteToken: @escaping (AnyHashable) -> Void,
+        isFocusedUpdated: @escaping (Bool) -> Void = { _ in }
     ) {
         self.externalState = externalState
         self.context = context
@@ -98,6 +107,7 @@ public final class TokenListTextField: Component {
         self.tokens = tokens
         self.sideInset = sideInset
         self.deleteToken = deleteToken
+        self.isFocusedUpdated = isFocusedUpdated
     }
 
     public static func ==(lhs: TokenListTextField, rhs: TokenListTextField) -> Bool {
@@ -184,6 +194,7 @@ public final class TokenListTextField: Component {
                     guard let self else {
                         return
                     }
+                    self.component?.isFocusedUpdated(self.tokenListNode?.isFocused ?? false)
                     self.componentState?.updated(transition: Transition(animation: .curve(duration: 0.35, curve: .spring)))
                 }
                 
@@ -217,6 +228,8 @@ public final class TokenListTextField: Component {
                     mappedSubject = .peer(peer)
                 case let .category(image):
                     mappedSubject = .category(image)
+                case let .emoji(emoji):
+                    mappedSubject = .emoji(emoji)
                 }
                 
                 return EditableTokenListToken(

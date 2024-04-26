@@ -13,6 +13,8 @@ import EntityKeyboard
 import AnimationCache
 import MultiAnimationRenderer
 import AnimationUI
+import ComponentFlow
+import LottieComponent
 
 public protocol ContextControllerActionsStackItemNode: ASDisplayNode {
     var wantsFullWidth: Bool { get }
@@ -33,6 +35,30 @@ public protocol ContextControllerActionsStackItemNode: ASDisplayNode {
     func increaseHighlightedIndex()
 }
 
+public struct ContextControllerReactionItems {
+    public var context: AccountContext
+    public var reactionItems: [ReactionContextItem]
+    public var selectedReactionItems: Set<MessageReaction.Reaction>
+    public var reactionsTitle: String?
+    public var reactionsLocked: Bool
+    public var animationCache: AnimationCache
+    public var alwaysAllowPremiumReactions: Bool
+    public var allPresetReactionsAreAvailable: Bool
+    public var getEmojiContent: ((AnimationCache, MultiAnimationRenderer) -> Signal<EmojiPagerContentComponent, NoError>)?
+    
+    public init(context: AccountContext, reactionItems: [ReactionContextItem], selectedReactionItems: Set<MessageReaction.Reaction>, reactionsTitle: String?, reactionsLocked: Bool, animationCache: AnimationCache, alwaysAllowPremiumReactions: Bool, allPresetReactionsAreAvailable: Bool, getEmojiContent: ((AnimationCache, MultiAnimationRenderer) -> Signal<EmojiPagerContentComponent, NoError>)?) {
+        self.context = context
+        self.reactionItems = reactionItems
+        self.selectedReactionItems = selectedReactionItems
+        self.reactionsTitle = reactionsTitle
+        self.reactionsLocked = reactionsLocked
+        self.animationCache = animationCache
+        self.alwaysAllowPremiumReactions = alwaysAllowPremiumReactions
+        self.allPresetReactionsAreAvailable = allPresetReactionsAreAvailable
+        self.getEmojiContent = getEmojiContent
+    }
+}
+
 public protocol ContextControllerActionsStackItem: AnyObject {
     func node(
         getController: @escaping () -> ContextControllerProtocol?,
@@ -41,12 +67,14 @@ public protocol ContextControllerActionsStackItem: AnyObject {
         requestUpdateApparentHeight: @escaping (ContainedViewLayoutTransition) -> Void
     ) -> ContextControllerActionsStackItemNode
     
+    var id: AnyHashable? { get }
     var tip: ContextController.Tip? { get }
     var tipSignal: Signal<ContextController.Tip?, NoError>? { get }
-    var reactionItems: (context: AccountContext, reactionItems: [ReactionContextItem], selectedReactionItems: Set<MessageReaction.Reaction>, animationCache: AnimationCache, getEmojiContent: ((AnimationCache, MultiAnimationRenderer) -> Signal<EmojiPagerContentComponent, NoError>)?)? { get }
+    var reactionItems: ContextControllerReactionItems? { get }
+    var dismissed: (() -> Void)? { get }
 }
 
-protocol ContextControllerActionsListItemNode: ASDisplayNode {
+public protocol ContextControllerActionsListItemNode: ASDisplayNode {
     func update(presentationData: PresentationData, constrainedSize: CGSize) -> (minSize: CGSize, apply: (_ size: CGSize, _ transition: ContainedViewLayoutTransition) -> Void)
     
     func canBeHighlighted() -> Bool
@@ -54,11 +82,11 @@ protocol ContextControllerActionsListItemNode: ASDisplayNode {
     func performAction()
 }
 
-private final class ContextControllerActionsListActionItemNode: HighlightTrackingButtonNode, ContextControllerActionsListItemNode {
+public final class ContextControllerActionsListActionItemNode: HighlightTrackingButtonNode, ContextControllerActionsListItemNode {
     private let getController: () -> ContextControllerProtocol?
     private let requestDismiss: (ContextMenuActionResult) -> Void
     private let requestUpdateAction: (AnyHashable, ContextMenuActionItem) -> Void
-    private let item: ContextMenuActionItem
+    private var item: ContextMenuActionItem
     
     private let highlightBackgroundNode: ASDisplayNode
     private let titleLabelNode: ImmediateTextNode
@@ -68,11 +96,14 @@ private final class ContextControllerActionsListActionItemNode: HighlightTrackin
     private var badgeIconNode: ASImageNode?
     private var animationNode: AnimationNode?
     
+    private var currentAnimatedIconContent: ContextMenuActionItem.IconAnimation?
+    private var animatedIcon: ComponentView<Empty>?
+    
     private var currentBadge: (badge: ContextMenuActionBadge, image: UIImage)?
     
     private var iconDisposable: Disposable?
     
-    init(
+    public init(
         getController: @escaping () -> ContextControllerProtocol?,
         requestDismiss: @escaping (ContextMenuActionResult) -> Void,
         requestUpdateAction: @escaping (AnyHashable, ContextMenuActionItem) -> Void,
@@ -137,7 +168,7 @@ private final class ContextControllerActionsListActionItemNode: HighlightTrackin
         self.iconDisposable?.dispose()
     }
     
-    override func didLoad() {
+    public override func didLoad() {
         super.didLoad()
         
         self.view.isExclusiveTouch = true
@@ -165,19 +196,19 @@ private final class ContextControllerActionsListActionItemNode: HighlightTrackin
         ))
     }
     
-    func canBeHighlighted() -> Bool {
+    public func canBeHighlighted() -> Bool {
         return self.item.action != nil
     }
     
-    func updateIsHighlighted(isHighlighted: Bool) {
+    public func updateIsHighlighted(isHighlighted: Bool) {
         self.highlightBackgroundNode.alpha = isHighlighted ? 1.0 : 0.0
     }
     
-    func performAction() {
+    public func performAction() {
         self.pressed()
     }
     
-    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+    public override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         if self.titleLabelNode.tapAttributeAction != nil {
             if let result = self.titleLabelNode.hitTest(self.view.convert(point, to: self.titleLabelNode.view), with: event) {
                 return result
@@ -187,7 +218,12 @@ private final class ContextControllerActionsListActionItemNode: HighlightTrackin
         return super.hitTest(point, with: event)
     }
     
-    func update(presentationData: PresentationData, constrainedSize: CGSize) -> (minSize: CGSize, apply: (_ size: CGSize, _ transition: ContainedViewLayoutTransition) -> Void) {
+    func setItem(item: ContextMenuActionItem) {
+        self.item = item
+        self.accessibilityLabel = item.text
+    }
+    
+    public func update(presentationData: PresentationData, constrainedSize: CGSize) -> (minSize: CGSize, apply: (_ size: CGSize, _ transition: ContainedViewLayoutTransition) -> Void) {
         let sideInset: CGFloat = 16.0
         let verticalInset: CGFloat = 11.0
         let titleSubtitleSpacing: CGFloat = 1.0
@@ -284,7 +320,7 @@ private final class ContextControllerActionsListActionItemNode: HighlightTrackin
             )
         }
         
-        let iconSize: CGSize?
+        var iconSize: CGSize?
         if let iconSource = self.item.iconSource {
             iconSize = iconSource.size
             self.iconNode.cornerRadius = iconSource.cornerRadius
@@ -296,7 +332,7 @@ private final class ContextControllerActionsListActionItemNode: HighlightTrackin
                         return
                     }
                     strongSelf.iconNode.image = image
-                })
+                }).strict()
             }
         } else if let image = self.iconNode.image {
             iconSize = image.size
@@ -312,6 +348,34 @@ private final class ContextControllerActionsListActionItemNode: HighlightTrackin
             let iconImage = self.item.icon(presentationData.theme)
             self.iconNode.image = iconImage
             iconSize = iconImage?.size
+        }
+        
+        if let iconAnimation = self.item.iconAnimation {
+            let animatedIcon: ComponentView<Empty>
+            if let current = self.animatedIcon {
+                animatedIcon = current
+            } else {
+                animatedIcon = ComponentView()
+                self.animatedIcon = animatedIcon
+            }
+            
+            let animatedIconSize = CGSize(width: 24.0, height: 24.0)
+            let _ = animatedIcon.update(
+                transition: .immediate,
+                component: AnyComponent(LottieComponent(
+                    content: LottieComponent.AppBundleContent(name: iconAnimation.name),
+                    color: titleColor,
+                    startingPosition: iconAnimation.loop ? .begin : .end,
+                    loop: iconAnimation.loop
+                )),
+                environment: {},
+                containerSize: animatedIconSize
+            )
+            
+            iconSize = animatedIconSize
+        } else if let animatedIcon = self.animatedIcon {
+            self.animatedIcon = nil
+            animatedIcon.view?.removeFromSuperview()
         }
         
         let additionalIcon = self.item.additionalLeftIcon?(presentationData.theme)
@@ -422,6 +486,11 @@ private final class ContextControllerActionsListActionItemNode: HighlightTrackin
         } else {
             minSize.width += sideInset
         }
+        if self.item.additionalLeftIcon != nil {
+            minSize.width += 24.0
+            minSize.width += iconSideInset
+            minSize.width += iconSpacing
+        }
         if let forcedHeight {
             minSize.height = forcedHeight
         } else {
@@ -469,6 +538,21 @@ private final class ContextControllerActionsListActionItemNode: HighlightTrackin
                 transition.updateFrame(node: self.iconNode, frame: iconFrame, beginWithCurrentState: true)
                 if let animationNode = self.animationNode {
                     transition.updateFrame(node: animationNode, frame: iconFrame, beginWithCurrentState: true)
+                }
+                if let animatedIconView = self.animatedIcon?.view {
+                    if animatedIconView.superview == nil {
+                        self.view.addSubview(animatedIconView)
+                        animatedIconView.frame = iconFrame
+                    } else {
+                        transition.updateFrame(view: animatedIconView, frame: iconFrame, beginWithCurrentState: true)
+                        if let currentAnimatedIconContent = self.currentAnimatedIconContent, currentAnimatedIconContent != self.item.iconAnimation {
+                            if let animatedIconView = animatedIconView as? LottieComponent.View {
+                                animatedIconView.playOnce()
+                            }
+                        }
+                    }
+                    
+                    self.currentAnimatedIconContent = self.item.iconAnimation
                 }
             }
             
@@ -565,10 +649,10 @@ private final class ContextControllerActionsListCustomItemNode: ASDisplayNode, C
                 getController: self.getController,
                 actionSelected: { result in
                     switch result {
-                    case .dismissWithoutContent/* where ContextMenuActionResult.safeStreamRecordingDismissWithoutContent == .dismissWithoutContent*/:
+                    case .dismissWithoutContent:
                         self.requestDismiss(result)
-                        
-                    default: break
+                    default:
+                        break
                     }
                 }
             )
@@ -586,7 +670,7 @@ private final class ContextControllerActionsListCustomItemNode: ASDisplayNode, C
 }
 
 final class ContextControllerActionsListStackItem: ContextControllerActionsStackItem {
-    private final class Node: ASDisplayNode, ContextControllerActionsStackItemNode {
+    final class Node: ASDisplayNode, ContextControllerActionsStackItemNode {
         private final class Item {
             let node: ContextControllerActionsListItemNode
             let separatorNode: ASDisplayNode?
@@ -598,11 +682,15 @@ final class ContextControllerActionsListStackItem: ContextControllerActionsStack
         }
         
         private let requestUpdate: (ContainedViewLayoutTransition) -> Void
+        private let getController: () -> ContextControllerProtocol?
+        private let requestDismiss: (ContextMenuActionResult) -> Void
         private var items: [ContextMenuItem]
         private var itemNodes: [Item]
         
         private var hapticFeedback: HapticFeedback?
         private var highlightedItemNode: Item?
+        
+        private var invalidatedItemNodes: Bool = false
         
         var wantsFullWidth: Bool {
             return false
@@ -615,6 +703,8 @@ final class ContextControllerActionsListStackItem: ContextControllerActionsStack
             items: [ContextMenuItem]
         ) {
             self.requestUpdate = requestUpdate
+            self.getController = getController
+            self.requestDismiss = requestDismiss
             self.items = items
             
             var requestUpdateAction: ((AnyHashable, ContextMenuActionItem) -> Void)?
@@ -661,41 +751,62 @@ final class ContextControllerActionsListStackItem: ContextControllerActionsStack
             }
             
             requestUpdateAction = { [weak self] id, action in
-                guard let strongSelf = self else {
+                guard let self else {
                     return
                 }
-                loop: for i in 0 ..< strongSelf.items.count {
-                    switch strongSelf.items[i] {
-                    case let .action(currentAction):
-                        if currentAction.id == id {
-                            let previousNode = strongSelf.itemNodes[i]
-                            previousNode.node.removeFromSupernode()
-                            previousNode.separatorNode?.removeFromSupernode()
-                            
-                            let addedNode = Item(
-                                node: ContextControllerActionsListActionItemNode(
-                                    getController: getController,
-                                    requestDismiss: requestDismiss,
-                                    requestUpdateAction: { id, action in
-                                        requestUpdateAction?(id, action)
-                                    },
-                                    item: action
-                                ),
-                                separatorNode: ASDisplayNode()
-                            )
-                            strongSelf.itemNodes[i] = addedNode
-                            if let separatorNode = addedNode.separatorNode {
-                                strongSelf.insertSubnode(separatorNode, at: 0)
-                            }
-                            strongSelf.addSubnode(addedNode.node)
-                            
-                            strongSelf.requestUpdate(.immediate)
-                            
-                            break loop
-                        }
-                    default:
-                        break
+                self.requestUpdateAction(id: id, action: action)
+            }
+        }
+        
+        func updateItems(items: [ContextMenuItem]) {
+            self.items = items
+            for i in 0 ..< items.count {
+                if self.itemNodes.count < i {
+                    break
+                }
+                if case let .action(action) = items[i] {
+                    if let itemNode = self.itemNodes[i].node as? ContextControllerActionsListActionItemNode {
+                        itemNode.setItem(item: action)
                     }
+                }
+            }
+        }
+        
+        private func requestUpdateAction(id: AnyHashable, action: ContextMenuActionItem) {
+            loop: for i in 0 ..< self.items.count {
+                switch self.items[i] {
+                case let .action(currentAction):
+                    if currentAction.id == id {
+                        let previousNode = self.itemNodes[i]
+                        previousNode.node.removeFromSupernode()
+                        previousNode.separatorNode?.removeFromSupernode()
+                        
+                        let addedNode = Item(
+                            node: ContextControllerActionsListActionItemNode(
+                                getController: self.getController,
+                                requestDismiss: self.requestDismiss,
+                                requestUpdateAction: { [weak self] id, action in
+                                    guard let self else {
+                                        return
+                                    }
+                                    self.requestUpdateAction(id: id, action: action)
+                                },
+                                item: action
+                            ),
+                            separatorNode: ASDisplayNode()
+                        )
+                        self.itemNodes[i] = addedNode
+                        if let separatorNode = addedNode.separatorNode {
+                            self.insertSubnode(separatorNode, at: 0)
+                        }
+                        self.addSubnode(addedNode.node)
+                        
+                        self.requestUpdate(.immediate)
+                        
+                        break loop
+                    }
+                default:
+                    break
                 }
             }
         }
@@ -721,6 +832,7 @@ final class ContextControllerActionsListStackItem: ContextControllerActionsStack
                 combinedSize.width = max(combinedSize.width, itemNodeLayout.minSize.width)
                 combinedSize.height += itemNodeLayout.minSize.height
             }
+            self.invalidatedItemNodes = false
             combinedSize.width = max(combinedSize.width, standardMinWidth)
             
             var nextItemOrigin = CGPoint()
@@ -821,21 +933,27 @@ final class ContextControllerActionsListStackItem: ContextControllerActionsStack
         }
     }
     
-    private let items: [ContextMenuItem]
-    let reactionItems: (context: AccountContext, reactionItems: [ReactionContextItem], selectedReactionItems: Set<MessageReaction.Reaction>, animationCache: AnimationCache, getEmojiContent: ((AnimationCache, MultiAnimationRenderer) -> Signal<EmojiPagerContentComponent, NoError>)?)?
+    let id: AnyHashable?
+    let items: [ContextMenuItem]
+    let reactionItems: ContextControllerReactionItems?
     let tip: ContextController.Tip?
     let tipSignal: Signal<ContextController.Tip?, NoError>?
+    let dismissed: (() -> Void)?
     
     init(
+        id: AnyHashable?,
         items: [ContextMenuItem],
-        reactionItems: (context: AccountContext, reactionItems: [ReactionContextItem], selectedReactionItems: Set<MessageReaction.Reaction>, animationCache: AnimationCache, getEmojiContent: ((AnimationCache, MultiAnimationRenderer) -> Signal<EmojiPagerContentComponent, NoError>)?)?,
+        reactionItems: ContextControllerReactionItems?,
         tip: ContextController.Tip?,
-        tipSignal: Signal<ContextController.Tip?, NoError>?
+        tipSignal: Signal<ContextController.Tip?, NoError>?,
+        dismissed: (() -> Void)?
     ) {
+        self.id = id
         self.items = items
         self.reactionItems = reactionItems
         self.tip = tip
         self.tipSignal = tipSignal
+        self.dismissed = dismissed
     }
     
     func node(
@@ -913,21 +1031,27 @@ final class ContextControllerActionsCustomStackItem: ContextControllerActionsSta
         }
     }
     
+    let id: AnyHashable?
     private let content: ContextControllerItemsContent
-    let reactionItems: (context: AccountContext, reactionItems: [ReactionContextItem], selectedReactionItems: Set<MessageReaction.Reaction>, animationCache: AnimationCache, getEmojiContent: ((AnimationCache, MultiAnimationRenderer) -> Signal<EmojiPagerContentComponent, NoError>)?)?
+    let reactionItems: ContextControllerReactionItems?
     let tip: ContextController.Tip?
     let tipSignal: Signal<ContextController.Tip?, NoError>?
+    let dismissed: (() -> Void)?
     
     init(
+        id: AnyHashable?,
         content: ContextControllerItemsContent,
-        reactionItems: (context: AccountContext, reactionItems: [ReactionContextItem], selectedReactionItems: Set<MessageReaction.Reaction>, animationCache: AnimationCache, getEmojiContent: ((AnimationCache, MultiAnimationRenderer) -> Signal<EmojiPagerContentComponent, NoError>)?)?,
+        reactionItems: ContextControllerReactionItems?,
         tip: ContextController.Tip?,
-        tipSignal: Signal<ContextController.Tip?, NoError>?
+        tipSignal: Signal<ContextController.Tip?, NoError>?,
+        dismissed: (() -> Void)?
     ) {
+        self.id = id
         self.content = content
         self.reactionItems = reactionItems
         self.tip = tip
         self.tipSignal = tipSignal
+        self.dismissed = dismissed
     }
     
     func node(
@@ -946,17 +1070,27 @@ final class ContextControllerActionsCustomStackItem: ContextControllerActionsSta
 }
 
 func makeContextControllerActionsStackItem(items: ContextController.Items) -> [ContextControllerActionsStackItem] {
-    var reactionItems: (context: AccountContext, reactionItems: [ReactionContextItem], selectedReactionItems: Set<MessageReaction.Reaction>, animationCache: AnimationCache, getEmojiContent: ((AnimationCache, MultiAnimationRenderer) -> Signal<EmojiPagerContentComponent, NoError>)?)?
+    var reactionItems: ContextControllerReactionItems?
     if let context = items.context, let animationCache = items.animationCache, !items.reactionItems.isEmpty {
-        reactionItems = (context, items.reactionItems, items.selectedReactionItems, animationCache, items.getEmojiContent)
+        reactionItems = ContextControllerReactionItems(
+            context: context,
+            reactionItems: items.reactionItems,
+            selectedReactionItems: items.selectedReactionItems,
+            reactionsTitle: items.reactionsTitle,
+            reactionsLocked: items.reactionsLocked,
+            animationCache: animationCache,
+            alwaysAllowPremiumReactions: items.alwaysAllowPremiumReactions,
+            allPresetReactionsAreAvailable: items.allPresetReactionsAreAvailable,
+            getEmojiContent: items.getEmojiContent
+        )
     }
     switch items.content {
     case let .list(listItems):
-        return [ContextControllerActionsListStackItem(items: listItems, reactionItems: reactionItems, tip: items.tip, tipSignal: items.tipSignal)]
+        return [ContextControllerActionsListStackItem(id: items.id, items: listItems, reactionItems: reactionItems, tip: items.tip, tipSignal: items.tipSignal, dismissed: items.dismissed)]
     case let .twoLists(listItems1, listItems2):
-        return [ContextControllerActionsListStackItem(items: listItems1, reactionItems: nil, tip: nil, tipSignal: nil), ContextControllerActionsListStackItem(items: listItems2, reactionItems: nil, tip: nil, tipSignal: nil)]
+        return [ContextControllerActionsListStackItem(id: items.id, items: listItems1, reactionItems: nil, tip: nil, tipSignal: nil, dismissed: items.dismissed), ContextControllerActionsListStackItem(id: nil, items: listItems2, reactionItems: nil, tip: nil, tipSignal: nil, dismissed: nil)]
     case let .custom(customContent):
-        return [ContextControllerActionsCustomStackItem(content: customContent, reactionItems: reactionItems, tip: items.tip, tipSignal: items.tipSignal)]
+        return [ContextControllerActionsCustomStackItem(id: items.id, content: customContent, reactionItems: reactionItems, tip: items.tip, tipSignal: items.tipSignal, dismissed: items.dismissed)]
     }
 }
 
@@ -967,7 +1101,7 @@ final class ContextControllerActionsStackNode: ASDisplayNode {
         case additional
     }
     
-    final class NavigationContainer: ASDisplayNode, UIGestureRecognizerDelegate {
+    final class NavigationContainer: ASDisplayNode, ASGestureRecognizerDelegate {
         let backgroundNode: NavigationBackgroundNode
         let parentShadowNode: ASImageNode
         
@@ -1002,7 +1136,7 @@ final class ContextControllerActionsStackNode: ASDisplayNode {
                 let _ = strongSelf
                 return [.right]
             })
-            panRecognizer.delegate = self
+            panRecognizer.delegate = self.wrappedGestureRecognizerDelegate
             self.view.addGestureRecognizer(panRecognizer)
             self.panRecognizer = panRecognizer
         }
@@ -1066,12 +1200,14 @@ final class ContextControllerActionsStackNode: ASDisplayNode {
     final class ItemContainer: ASDisplayNode {
         let getController: () -> ContextControllerProtocol?
         let requestUpdate: (ContainedViewLayoutTransition) -> Void
+        let item: ContextControllerActionsStackItem
         let node: ContextControllerActionsStackItemNode
         let dimNode: ASDisplayNode
         var tip: ContextController.Tip?
         let tipSignal: Signal<ContextController.Tip?, NoError>?
         var tipNode: InnerTextSelectionTipContainerNode?
-        let reactionItems: (context: AccountContext, reactionItems: [ReactionContextItem], selectedReactionItems: Set<MessageReaction.Reaction>, animationCache: AnimationCache, getEmojiContent: ((AnimationCache, MultiAnimationRenderer) -> Signal<EmojiPagerContentComponent, NoError>)?)?
+        let reactionItems: ContextControllerReactionItems?
+        let itemDismissed: (() -> Void)?
         var storedScrollingState: CGFloat?
         let positionLock: CGFloat?
         
@@ -1085,11 +1221,13 @@ final class ContextControllerActionsStackNode: ASDisplayNode {
             item: ContextControllerActionsStackItem,
             tip: ContextController.Tip?,
             tipSignal: Signal<ContextController.Tip?, NoError>?,
-            reactionItems: (context: AccountContext, reactionItems: [ReactionContextItem], selectedReactionItems: Set<MessageReaction.Reaction>, animationCache: AnimationCache, getEmojiContent: ((AnimationCache, MultiAnimationRenderer) -> Signal<EmojiPagerContentComponent, NoError>)?)?,
+            reactionItems: ContextControllerReactionItems?,
+            itemDismissed: (() -> Void)?,
             positionLock: CGFloat?
         ) {
             self.getController = getController
             self.requestUpdate = requestUpdate
+            self.item = item
             self.node = item.node(
                 getController: getController,
                 requestDismiss: requestDismiss,
@@ -1102,6 +1240,7 @@ final class ContextControllerActionsStackNode: ASDisplayNode {
             self.dimNode.alpha = 0.0
             
             self.reactionItems = reactionItems
+            self.itemDismissed = itemDismissed
             self.positionLock = positionLock
             
             self.tip = tip
@@ -1122,7 +1261,7 @@ final class ContextControllerActionsStackNode: ASDisplayNode {
                     }
                     strongSelf.tip = tip
                     requestUpdate(.immediate)
-                })
+                }).strict()
             }
         }
         
@@ -1233,7 +1372,7 @@ final class ContextControllerActionsStackNode: ASDisplayNode {
     
     private var selectionPanGesture: UIPanGestureRecognizer?
     
-    var topReactionItems: (context: AccountContext, reactionItems: [ReactionContextItem], selectedReactionItems: Set<MessageReaction.Reaction>, animationCache: AnimationCache, getEmojiContent: ((AnimationCache, MultiAnimationRenderer) -> Signal<EmojiPagerContentComponent, NoError>)?)? {
+    var topReactionItems: ContextControllerReactionItems? {
         return self.itemContainers.last?.reactionItems
     }
     
@@ -1295,9 +1434,51 @@ final class ContextControllerActionsStackNode: ASDisplayNode {
         }
     }
     
-    func replace(item: ContextControllerActionsStackItem, animated: Bool) {
+    func replace(item: ContextControllerActionsStackItem, animated: Bool?) {
+        if let item = item as? ContextControllerActionsListStackItem, let topContainer = self.itemContainers.first, let topItem = topContainer.item as? ContextControllerActionsListStackItem, let topId = topItem.id, let id = item.id, topId == id, item.items.count == topItem.items.count {
+            if let topNode = topContainer.node as? ContextControllerActionsListStackItem.Node {
+                var matches = true
+                for i in 0 ..< item.items.count {
+                    switch item.items[i] {
+                    case .action:
+                        if case .action = topItem.items[i] {
+                        } else {
+                            matches = false
+                        }
+                    case .custom:
+                        if case .custom = topItem.items[i] {
+                        } else {
+                            matches = false
+                        }
+                    case .separator:
+                        if case .separator = topItem.items[i] {
+                        } else {
+                            matches = false
+                        }
+                    }
+                }
+                
+                if matches {
+                    topNode.updateItems(items: item.items)
+                    self.requestUpdate(.animated(duration: 0.3, curve: .spring))
+                    return
+                }
+            }
+        }
+        
+        var resolvedAnimated = false
+        if let animated {
+            resolvedAnimated = animated
+        } else {
+            if let id = item.id, let lastId = self.itemContainers.last?.item.id {
+                if id != lastId {
+                    resolvedAnimated = true
+                }
+            }
+        }
+        
         for itemContainer in self.itemContainers {
-            if animated {
+            if resolvedAnimated {
                 self.dismissingItemContainers.append((itemContainer, false))
             } else {
                 itemContainer.tipNode?.removeFromSupernode()
@@ -1307,7 +1488,7 @@ final class ContextControllerActionsStackNode: ASDisplayNode {
         self.itemContainers.removeAll()
         self.navigationContainer.isNavigationEnabled = self.itemContainers.count > 1
         
-        self.push(item: item, currentScrollingState: nil, positionLock: nil, animated: animated)
+        self.push(item: item, currentScrollingState: nil, positionLock: nil, animated: resolvedAnimated)
     }
     
     func push(item: ContextControllerActionsStackItem, currentScrollingState: CGFloat?, positionLock: CGFloat?, animated: Bool) {
@@ -1328,6 +1509,7 @@ final class ContextControllerActionsStackNode: ASDisplayNode {
             tip: item.tip,
             tipSignal: item.tipSignal,
             reactionItems: item.reactionItems,
+            itemDismissed: item.dismissed,
             positionLock: positionLock
         )
         self.itemContainers.append(itemContainer)
@@ -1336,7 +1518,7 @@ final class ContextControllerActionsStackNode: ASDisplayNode {
         
         let transition: ContainedViewLayoutTransition
         if animated {
-            transition = .animated(duration:  self.itemContainers.count == 1 ? 0.3 : 0.45, curve: .spring)
+            transition = .animated(duration: self.itemContainers.count == 1 ? 0.3 : 0.45, curve: .spring)
         } else {
             transition = .immediate
         }
@@ -1354,6 +1536,8 @@ final class ContextControllerActionsStackNode: ASDisplayNode {
             let itemContainer = self.itemContainers[self.itemContainers.count - 1]
             self.itemContainers.remove(at: self.itemContainers.count - 1)
             self.dismissingItemContainers.append((itemContainer, true))
+            
+            itemContainer.itemDismissed?()
         }
         
         self.navigationContainer.isNavigationEnabled = self.itemContainers.count > 1
@@ -1486,7 +1670,12 @@ final class ContextControllerActionsStackNode: ASDisplayNode {
             topItemWidth = lastItemLayout.size.width * (1.0 - transitionFraction) + previousItemLayout.size.width * transitionFraction
         }
         
-        let navigationContainerFrame = CGRect(origin: CGPoint(), size: CGSize(width: topItemWidth, height: max(14 * 2.0, topItemApparentHeight)))
+        let navigationContainerFrame: CGRect
+        if topItemApparentHeight > 0.0 {
+            navigationContainerFrame = CGRect(origin: CGPoint(), size: CGSize(width: topItemWidth, height: max(14 * 2.0, topItemApparentHeight)))
+        } else {
+            navigationContainerFrame = .zero
+        }
         let previousNavigationContainerFrame = self.navigationContainer.frame
         transition.updateFrame(node: self.navigationContainer, frame: navigationContainerFrame, beginWithCurrentState: true)
         self.navigationContainer.update(presentationData: presentationData, presentation: presentation, size: navigationContainerFrame.size, transition: transition)

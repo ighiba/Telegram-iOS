@@ -153,7 +153,7 @@ final class RecentSessionScreen: ViewController {
     }
 }
 
-private class RecentSessionScreenNode: ViewControllerTracingNode, UIScrollViewDelegate {
+private class RecentSessionScreenNode: ViewControllerTracingNode, ASScrollViewDelegate {
     private let context: AccountContext
     private var presentationData: PresentationData
     private weak var controller: RecentSessionScreen?
@@ -459,7 +459,7 @@ private class RecentSessionScreenNode: ViewControllerTracingNode, UIScrollViewDe
         
         self.addSubnode(self.dimNode)
         
-        self.wrappingScrollNode.view.delegate = self
+        self.wrappingScrollNode.view.delegate = self.wrappedScrollViewDelegate
         self.addSubnode(self.wrappingScrollNode)
         
         self.wrappingScrollNode.addSubnode(self.backgroundNode)
@@ -613,7 +613,7 @@ private class RecentSessionScreenNode: ViewControllerTracingNode, UIScrollViewDe
                     strongSelf.controller?.present(UndoOverlayController(presentationData: presentationData, content: .copy(text: presentationData.strings.Conversation_TextCopied), elevatedLayout: false, animateInAsReplacement: false, action: { _ in return false }), in: .window(.root))
                 }
             }))
-            let contextMenuController = ContextMenuController(actions: actions)
+            let contextMenuController = makeContextMenuController(actions: actions)
             self.controller?.present(contextMenuController, in: .window(.root), with: ContextMenuControllerPresentationArguments(sourceNodeAndRect: { [weak self] in
                 if let strongSelf = self {
                     return (node, node.bounds.insetBy(dx: 0.0, dy: -2.0), strongSelf, strongSelf.view.bounds)

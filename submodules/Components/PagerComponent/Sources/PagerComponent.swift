@@ -185,6 +185,11 @@ public final class PagerComponentContentIcon: Equatable {
     }
 }
 
+public final class PagerComponentForceUpdate {
+    public init() {
+    }
+}
+
 public final class PagerComponent<ChildEnvironmentType: Equatable, TopPanelEnvironment: Equatable>: Component {
     public typealias EnvironmentType = ChildEnvironmentType
     
@@ -747,6 +752,8 @@ public final class PagerComponent<ChildEnvironmentType: Equatable, TopPanelEnvir
                 }
                 
                 self.bottomPanelHeight = 0.0
+                
+                contentInsets.bottom = component.contentInsets.bottom
             }
             
             contentInsets.top *= topPanelVisibility
@@ -865,6 +872,10 @@ public final class PagerComponent<ChildEnvironmentType: Equatable, TopPanelEnvir
                             scrollToTop: contentView.scrollToTop
                         )
                         
+                        var forceUpdate = false
+                        if let _ = transition.userData(PagerComponentForceUpdate.self) {
+                            forceUpdate = true
+                        }
                         let _ = contentView.view.update(
                             transition: contentTransition,
                             component: content.component,
@@ -872,6 +883,7 @@ public final class PagerComponent<ChildEnvironmentType: Equatable, TopPanelEnvir
                                 environment[ChildEnvironmentType.self]
                                 pagerChildEnvironment
                             },
+                            forceUpdate: forceUpdate,
                             containerSize: contentFrame.size
                         )
                         

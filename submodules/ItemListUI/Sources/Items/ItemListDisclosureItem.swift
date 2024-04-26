@@ -35,7 +35,14 @@ public enum ItemListDisclosureLabelStyle {
     case multilineDetailText
     case badge(UIColor)
     case color(UIColor)
+    case semitransparentBadge(UIColor)
     case image(image: UIImage, size: CGSize)
+}
+
+public enum ItemListDisclosureItemDetailLabelColor {
+    case generic
+    case constructive
+    case destructive
 }
 
 public class ItemListDisclosureItem: ListViewItem, ItemListItem {
@@ -44,12 +51,16 @@ public class ItemListDisclosureItem: ListViewItem, ItemListItem {
     let context: AccountContext?
     let iconPeer: EnginePeer?
     let title: String
+    let attributedTitle: NSAttributedString?
     let titleColor: ItemListDisclosureItemTitleColor
     let titleFont: ItemListDisclosureItemTitleFont
+    let titleIcon: UIImage?
     let enabled: Bool
     let label: String
+    let attributedLabel: NSAttributedString?
     let labelStyle: ItemListDisclosureLabelStyle
     let additionalDetailLabel: String?
+    let additionalDetailLabelColor: ItemListDisclosureItemDetailLabelColor
     public let sectionId: ItemListSectionId
     let style: ItemListStyle
     let disclosureStyle: ItemListDisclosureStyle
@@ -58,18 +69,22 @@ public class ItemListDisclosureItem: ListViewItem, ItemListItem {
     public let tag: ItemListItemTag?
     public let shimmeringIndex: Int?
     
-    public init(presentationData: ItemListPresentationData, icon: UIImage? = nil, context: AccountContext? = nil, iconPeer: EnginePeer? = nil, title: String, enabled: Bool = true, titleColor: ItemListDisclosureItemTitleColor = .primary, titleFont: ItemListDisclosureItemTitleFont = .regular, label: String, labelStyle: ItemListDisclosureLabelStyle = .text, additionalDetailLabel: String? = nil, sectionId: ItemListSectionId, style: ItemListStyle, disclosureStyle: ItemListDisclosureStyle = .arrow, action: (() -> Void)?, clearHighlightAutomatically: Bool = true, tag: ItemListItemTag? = nil, shimmeringIndex: Int? = nil) {
+    public init(presentationData: ItemListPresentationData, icon: UIImage? = nil, context: AccountContext? = nil, iconPeer: EnginePeer? = nil, title: String, attributedTitle: NSAttributedString? = nil, enabled: Bool = true, titleColor: ItemListDisclosureItemTitleColor = .primary, titleFont: ItemListDisclosureItemTitleFont = .regular, titleIcon: UIImage? = nil, label: String, attributedLabel: NSAttributedString? = nil, labelStyle: ItemListDisclosureLabelStyle = .text, additionalDetailLabel: String? = nil, additionalDetailLabelColor: ItemListDisclosureItemDetailLabelColor = .generic, sectionId: ItemListSectionId, style: ItemListStyle, disclosureStyle: ItemListDisclosureStyle = .arrow, action: (() -> Void)?, clearHighlightAutomatically: Bool = true, tag: ItemListItemTag? = nil, shimmeringIndex: Int? = nil) {
         self.presentationData = presentationData
         self.icon = icon
         self.context = context
         self.iconPeer = iconPeer
         self.title = title
+        self.attributedTitle = attributedTitle
         self.titleColor = titleColor
         self.titleFont = titleFont
+        self.titleIcon = titleIcon
         self.enabled = enabled
         self.labelStyle = labelStyle
         self.label = label
+        self.attributedLabel = attributedLabel
         self.additionalDetailLabel = additionalDetailLabel
+        self.additionalDetailLabelColor = additionalDetailLabelColor
         self.sectionId = sectionId
         self.style = style
         self.disclosureStyle = disclosureStyle
@@ -125,6 +140,7 @@ public class ItemListDisclosureItem: ListViewItem, ItemListItem {
 }
 
 private let badgeFont = Font.regular(15.0)
+private let boldBadgeFont = Font.semibold(14.0)
 
 public class ItemListDisclosureItemNode: ListViewItemNode, ItemListItemNode {
     private let backgroundNode: ASDisplayNode
@@ -136,6 +152,7 @@ public class ItemListDisclosureItemNode: ListViewItemNode, ItemListItemNode {
     var avatarNode: AvatarNode?
     let iconNode: ASImageNode
     let titleNode: TextNode
+    let titleIconNode: ASImageNode
     public let labelNode: TextNode
     var additionalDetailLabelNode: TextNode?
     let arrowNode: ASImageNode
@@ -181,6 +198,10 @@ public class ItemListDisclosureItemNode: ListViewItemNode, ItemListItemNode {
         
         self.titleNode = TextNode()
         self.titleNode.isUserInteractionEnabled = false
+        
+        self.titleIconNode = ASImageNode()
+        self.titleIconNode.displayWithoutProcessing = true
+        self.titleIconNode.displaysAsynchronously = false
         
         self.labelNode = TextNode()
         self.labelNode.isUserInteractionEnabled = false
@@ -256,10 +277,20 @@ public class ItemListDisclosureItemNode: ListViewItemNode, ItemListItemNode {
             var updatedLabelBadgeImage: UIImage?
             var updatedLabelImage: UIImage?
             
+            var badgeDiameter: CGFloat = 20.0
             var badgeColor: UIColor?
+            var badgeColorUpdated = false
             if case let .badge(color) = item.labelStyle {
                 if item.label.count > 0 {
                     badgeColor = color
+                }
+            } else if case let .semitransparentBadge(color) = item.labelStyle {
+                badgeDiameter = 24.0
+                badgeColor = color.withAlphaComponent(0.1)
+                
+                badgeColorUpdated = true
+                if let currentItem = currentItem, case let .semitransparentBadge(previousColor) = currentItem.labelStyle, color.isEqual(previousColor) {
+                    badgeColorUpdated = false
                 }
             }
             if case let .color(color) = item.labelStyle {
@@ -277,7 +308,6 @@ public class ItemListDisclosureItemNode: ListViewItemNode, ItemListItemNode {
                 updatedLabelImage = image
             }
             
-            let badgeDiameter: CGFloat = 20.0
             if currentItem?.presentationData.theme !== item.presentationData.theme {
                 updatedTheme = item.presentationData.theme
                 switch item.disclosureStyle {
@@ -289,7 +319,7 @@ public class ItemListDisclosureItemNode: ListViewItemNode, ItemListItemNode {
                 if let badgeColor = badgeColor {
                     updatedLabelBadgeImage = generateStretchableFilledCircleImage(diameter: badgeDiameter, color: badgeColor)
                 }
-            } else if let badgeColor = badgeColor, !currentHasBadge {
+            } else if let badgeColor = badgeColor, !currentHasBadge || badgeColorUpdated {
                 updatedLabelBadgeImage = generateStretchableFilledCircleImage(diameter: badgeDiameter, color: badgeColor)
             }
             
@@ -313,7 +343,7 @@ public class ItemListDisclosureItemNode: ListViewItemNode, ItemListItemNode {
             
             var additionalTextRightInset: CGFloat = 0.0
             switch item.labelStyle {
-            case .badge:
+            case .badge, .semitransparentBadge:
                 additionalTextRightInset += 44.0
             default:
                 break
@@ -340,7 +370,7 @@ public class ItemListDisclosureItemNode: ListViewItemNode, ItemListItemNode {
                 maxTitleWidth -= 12.0
             }
             
-            let (titleLayout, titleApply) = makeTitleLayout(TextNodeLayoutArguments(attributedString: NSAttributedString(string: item.title, font: titleFont, textColor: titleColor), backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .end, constrainedSize: CGSize(width: maxTitleWidth, height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
+            let (titleLayout, titleApply) = makeTitleLayout(TextNodeLayoutArguments(attributedString: item.attributedTitle ?? NSAttributedString(string: item.title, font: titleFont, textColor: titleColor), backgroundColor: nil, maximumNumberOfLines: item.attributedTitle != nil ? 0 : 1, truncationType: .end, constrainedSize: CGSize(width: maxTitleWidth, height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
             
             let detailFont = Font.regular(floor(item.presentationData.fontSize.itemListBaseFontSize * 15.0 / 17.0))
             
@@ -355,6 +385,9 @@ public class ItemListDisclosureItemNode: ListViewItemNode, ItemListItemNode {
             case .badge:
                 labelBadgeColor = item.presentationData.theme.list.itemCheckColors.foregroundColor
                 labelFont = badgeFont
+            case let .semitransparentBadge(color):
+                labelBadgeColor = color
+                labelFont = boldBadgeFont
             case .detailText, .multilineDetailText:
                 labelBadgeColor = item.presentationData.theme.list.itemSecondaryTextColor
                 labelFont = detailFont
@@ -371,15 +404,24 @@ public class ItemListDisclosureItemNode: ListViewItemNode, ItemListItemNode {
                 multilineLabel = true
             }
             
-            let (labelLayout, labelApply) = makeLabelLayout(TextNodeLayoutArguments(attributedString: NSAttributedString(string: item.label, font: labelFont, textColor: labelBadgeColor), backgroundColor: nil, maximumNumberOfLines: multilineLabel ? 0 : 1, truncationType: .end, constrainedSize: CGSize(width: labelConstrain, height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
+            let (labelLayout, labelApply) = makeLabelLayout(TextNodeLayoutArguments(attributedString: item.attributedLabel ?? NSAttributedString(string: item.label, font: labelFont, textColor: labelBadgeColor), backgroundColor: nil, maximumNumberOfLines: multilineLabel ? 0 : 1, truncationType: .end, constrainedSize: CGSize(width: labelConstrain, height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
             
             var additionalDetailLabelInfo: (TextNodeLayout, () -> TextNode)?
             if let additionalDetailLabel = item.additionalDetailLabel {
                 var detailRightInset: CGFloat = 20.0 + params.rightInset + additionalTextRightInset
                 if labelLayout.size.width != 0 {
-                    detailRightInset += labelLayout.size.width + 12.0
+                    detailRightInset += labelLayout.size.width + 7.0
                 }
-                additionalDetailLabelInfo = makeAdditionalDetailLabelLayout(TextNodeLayoutArguments(attributedString: NSAttributedString(string: additionalDetailLabel, font: detailFont, textColor: item.presentationData.theme.list.itemSecondaryTextColor), backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .end, constrainedSize: CGSize(width: params.width - leftInset - detailRightInset, height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
+                let additionalDetailColor: UIColor
+                switch item.additionalDetailLabelColor {
+                case .generic:
+                    additionalDetailColor = item.presentationData.theme.list.itemSecondaryTextColor
+                case .constructive:
+                    additionalDetailColor = item.presentationData.theme.list.itemDisclosureActions.constructive.fillColor
+                case .destructive:
+                    additionalDetailColor = item.presentationData.theme.list.itemDestructiveColor
+                }
+                additionalDetailLabelInfo = makeAdditionalDetailLabelLayout(TextNodeLayoutArguments(attributedString: NSAttributedString(string: additionalDetailLabel, font: detailFont, textColor: additionalDetailColor), backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .end, constrainedSize: CGSize(width: params.width - leftInset - detailRightInset, height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
             }
             
             let verticalInset: CGFloat
@@ -578,14 +620,19 @@ public class ItemListDisclosureItemNode: ListViewItemNode, ItemListItemNode {
                         strongSelf.labelBadgeNode.removeFromSupernode()
                     }
                     
-                    let badgeWidth = max(badgeDiameter, labelLayout.size.width + 10.0)
+                    var badgeWidth = max(badgeDiameter, labelLayout.size.width + 10.0)
+                    if case .semitransparentBadge = item.labelStyle {
+                        badgeWidth += 2.0
+                    }
                     let badgeFrame = CGRect(origin: CGPoint(x: params.width - rightInset - badgeWidth, y: floor((contentSize.height - badgeDiameter) / 2.0)), size: CGSize(width: badgeWidth, height: badgeDiameter))
                     strongSelf.labelBadgeNode.frame = badgeFrame
                     
                     let labelFrame: CGRect
                     switch item.labelStyle {
                     case .badge:
-                        labelFrame = CGRect(origin: CGPoint(x: params.width - rightInset - badgeWidth + (badgeWidth - labelLayout.size.width) / 2.0, y: badgeFrame.minY + 1), size: labelLayout.size)
+                        labelFrame = CGRect(origin: CGPoint(x: params.width - rightInset - badgeWidth + (badgeWidth - labelLayout.size.width) / 2.0, y: badgeFrame.minY + 1.0), size: labelLayout.size)
+                    case .semitransparentBadge:
+                        labelFrame = CGRect(origin: CGPoint(x: params.width - rightInset - badgeWidth + (badgeWidth - labelLayout.size.width) / 2.0, y: badgeFrame.minY + 1.0 - UIScreenPixel + floorToScreenPixels((badgeDiameter - labelLayout.size.height) / 2.0)), size: labelLayout.size)
                     case .detailText, .multilineDetailText:
                         labelFrame = CGRect(origin: CGPoint(x: leftInset, y: titleFrame.maxY + titleSpacing), size: labelLayout.size)
                     default:
@@ -606,6 +653,19 @@ public class ItemListDisclosureItemNode: ListViewItemNode, ItemListItemNode {
                     } else if let additionalDetailLabelNode = strongSelf.additionalDetailLabelNode {
                         strongSelf.additionalDetailLabelNode = nil
                         additionalDetailLabelNode.removeFromSupernode()
+                    }
+                    
+                    if let titleIcon = item.titleIcon {
+                        if strongSelf.titleIconNode.supernode == nil {
+                            strongSelf.addSubnode(strongSelf.titleIconNode)
+                        }
+                        
+                        strongSelf.titleIconNode.image = titleIcon
+                        strongSelf.titleIconNode.frame = CGRect(origin: CGPoint(x: titleFrame.maxX + 5.0, y: floor((layout.contentSize.height - titleIcon.size.height) / 2.0) - 1.0), size: titleIcon.size)
+                    } else {
+                        if strongSelf.titleIconNode.supernode != nil {
+                            strongSelf.titleIconNode.removeFromSupernode()
+                        }
                     }
  
                     if case .textWithIcon = item.labelStyle {

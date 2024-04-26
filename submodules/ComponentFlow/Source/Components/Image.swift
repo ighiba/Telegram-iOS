@@ -46,10 +46,16 @@ public final class Image: Component {
 
         func update(component: Image, availableSize: CGSize, environment: Environment<Empty>, transition: Transition) -> CGSize {
             self.image = component.image
-            self.tintColor = component.tintColor
             self.contentMode = component.contentMode
 
-            return component.size ?? availableSize
+            transition.setTintColor(view: self, color: component.tintColor ?? .white)
+            
+            switch component.contentMode {
+            case .center:
+                return component.image?.size ?? availableSize
+            default:
+                return component.size ?? availableSize
+            }
         }
     }
 

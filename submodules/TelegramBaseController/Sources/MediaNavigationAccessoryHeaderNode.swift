@@ -140,7 +140,7 @@ private func generateMaskImage(color: UIColor) -> UIImage? {
     })
 }
 
-public final class MediaNavigationAccessoryHeaderNode: ASDisplayNode, UIScrollViewDelegate {
+public final class MediaNavigationAccessoryHeaderNode: ASDisplayNode, ASScrollViewDelegate {
     public static let minimizedHeight: CGFloat = 37.0
     
     private let context: AccountContext
@@ -345,7 +345,7 @@ public final class MediaNavigationAccessoryHeaderNode: ASDisplayNode, UIScrollVi
         
         self.view.disablesInteractiveTransitionGestureRecognizer = true
         self.scrollNode.view.alwaysBounceHorizontal = true
-        self.scrollNode.view.delegate = self
+        self.scrollNode.view.delegate = self.wrappedScrollViewDelegate
         self.scrollNode.view.isPagingEnabled = true
         self.scrollNode.view.showsHorizontalScrollIndicator = false
         self.scrollNode.view.showsVerticalScrollIndicator = false
@@ -596,7 +596,7 @@ public final class MediaNavigationAccessoryHeaderNode: ASDisplayNode, UIScrollVi
         let items = self.contextMenuSpeedItems(scheduleTooltip: { change in
             scheduledTooltip = change
         })
-        let contextController = ContextController(account: self.context.account, presentationData: self.context.sharedContext.currentPresentationData.with { $0 }, source: .reference(HeaderContextReferenceContentSource(controller: controller, sourceNode: self.rateButton.referenceNode, shouldBeDismissed: self.dismissedPromise.get())), items: items, gesture: gesture)
+        let contextController = ContextController(presentationData: self.context.sharedContext.currentPresentationData.with { $0 }, source: .reference(HeaderContextReferenceContentSource(controller: controller, sourceNode: self.rateButton.referenceNode, shouldBeDismissed: self.dismissedPromise.get())), items: items, gesture: gesture)
         contextController.dismissed = { [weak self] in
             if let scheduledTooltip, let self, let rate = self.playbackBaseRate {
                 self.setRate?(rate, scheduledTooltip)

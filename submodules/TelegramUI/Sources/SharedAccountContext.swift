@@ -39,6 +39,30 @@ import AttachmentTextInputPanelNode
 import ChatEntityKeyboardInputNode
 import HashtagSearchUI
 import PeerInfoStoryGridScreen
+import TelegramAccountAuxiliaryMethods
+import PeerSelectionController
+import LegacyMessageInputPanel
+import StatisticsUI
+import ChatHistoryEntry
+import ChatMessageItem
+import ChatMessageItemImpl
+import ChatRecentActionsController
+import PeerInfoScreen
+import ChatQrCodeScreen
+import UndoUI
+import ChatMessageNotificationItem
+import ChatbotSetupScreen
+import BusinessLocationSetupScreen
+import BusinessHoursSetupScreen
+import AutomaticBusinessMessageSetupScreen
+import CollectibleItemInfoScreen
+import StickerPickerScreen
+import MediaEditor
+import MediaEditorScreen
+import BusinessIntroSetupScreen
+import TelegramNotices
+import BotSettingsScreen
+import CameraScreen
 
 private final class AccountUserInterfaceInUseContext {
     let subscribers = Bag<(Bool) -> Void>()
@@ -49,20 +73,23 @@ private final class AccountUserInterfaceInUseContext {
     }
 }
 
+typealias AccountInitialData = (limitsConfiguration: LimitsConfiguration?, contentSettings: ContentSettings?, appConfiguration: AppConfiguration?, availableReplyColors: EngineAvailableColorOptions, availableProfileColors: EngineAvailableColorOptions)
+
 private struct AccountAttributes: Equatable {
     let sortIndex: Int32
     let isTestingEnvironment: Bool
     let backupData: AccountBackupData?
+    let isSupportUser: Bool
 }
 
 private enum AddedAccountResult {
     case upgrading(Float)
-    case ready(AccountRecordId, Account?, Int32, LimitsConfiguration?, ContentSettings?, AppConfiguration?)
+    case ready(AccountRecordId, Account?, Int32, AccountInitialData)
 }
 
 private enum AddedAccountsResult {
     case upgrading(Float)
-    case ready([(AccountRecordId, Account?, Int32, LimitsConfiguration?, ContentSettings?, AppConfiguration?)])
+    case ready([(AccountRecordId, Account?, Int32, AccountInitialData)])
 }
 
 private var testHasInstance = false
@@ -74,6 +101,15 @@ public final class SharedAccountContextImpl: SharedAccountContext {
     public let basePath: String
     public let accountManager: AccountManager<TelegramAccountManagerTypes>
     public let appLockContext: AppLockContext
+    public var notificationController: NotificationContainerController? {
+        didSet {
+            if self.notificationController !== oldValue {
+                if let oldValue {
+                    oldValue.setBlocking(nil)
+                }
+            }
+        }
+    }
     
     private let navigateToChatImpl: (AccountRecordId, PeerId, MessageId?) -> Void
     
@@ -120,8 +156,11 @@ public final class SharedAccountContextImpl: SharedAccountContext {
     private var groupCallDisposable: Disposable?
     
     private var callController: CallController?
+    private var call: PresentationCall?
     public let hasOngoingCall = ValuePromise<Bool>(false)
     private let callState = Promise<PresentationCallState?>(nil)
+    private var awaitingCallConnectionDisposable: Disposable?
+    private var callPeerDisposable: Disposable?
     
     private var groupCallController: VoiceChatController?
     public var currentGroupCallController: ViewController? {
@@ -140,6 +179,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
     
     public let enablePreloads = Promise<Bool>()
     public let hasPreloadBlockingContent = Promise<Bool>(false)
+    public let deviceContactPhoneNumbers = Promise<Set<String>>(Set())
     
     private var accountUserInterfaceInUseContexts: [AccountRecordId: AccountUserInterfaceInUseContext] = [:]
     
@@ -201,7 +241,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
     
     private let energyUsageAutomaticDisposable = MetaDisposable()
     
-    init(mainWindow: Window1?, sharedContainerPath: String, basePath: String, encryptionParameters: ValueBoxEncryptionParameters, accountManager: AccountManager<TelegramAccountManagerTypes>, appLockContext: AppLockContext, applicationBindings: TelegramApplicationBindings, initialPresentationDataAndSettings: InitialPresentationDataAndSettings, networkArguments: NetworkInitializationArguments, hasInAppPurchases: Bool, rootPath: String, legacyBasePath: String?, apsNotificationToken: Signal<Data?, NoError>, voipNotificationToken: Signal<Data?, NoError>, firebaseSecretStream: Signal<[String: String], NoError>, setNotificationCall: @escaping (PresentationCall?) -> Void, navigateToChat: @escaping (AccountRecordId, PeerId, MessageId?) -> Void, displayUpgradeProgress: @escaping (Float?) -> Void = { _ in }, appDelegate: AppDelegate?) {
+    init(mainWindow: Window1?, sharedContainerPath: String, basePath: String, encryptionParameters: ValueBoxEncryptionParameters, accountManager: AccountManager<TelegramAccountManagerTypes>, appLockContext: AppLockContext, notificationController: NotificationContainerController?, applicationBindings: TelegramApplicationBindings, initialPresentationDataAndSettings: InitialPresentationDataAndSettings, networkArguments: NetworkInitializationArguments, hasInAppPurchases: Bool, rootPath: String, legacyBasePath: String?, apsNotificationToken: Signal<Data?, NoError>, voipNotificationToken: Signal<Data?, NoError>, firebaseSecretStream: Signal<[String: String], NoError>, setNotificationCall: @escaping (PresentationCall?) -> Void, navigateToChat: @escaping (AccountRecordId, PeerId, MessageId?) -> Void, displayUpgradeProgress: @escaping (Float?) -> Void = { _ in }, appDelegate: AppDelegate?) {
         assert(Queue.mainQueue().isCurrent())
         
         precondition(!testHasInstance)
@@ -216,6 +256,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         self.navigateToChatImpl = navigateToChat
         self.displayUpgradeProgress = displayUpgradeProgress
         self.appLockContext = appLockContext
+        self.notificationController = notificationController
         self.hasInAppPurchases = hasInAppPurchases
         
         self.accountManager.mediaBox.fetchCachedResourceRepresentation = { (resource, representation) -> Signal<CachedMediaResourceRepresentationResult, NoError> in
@@ -349,6 +390,18 @@ public final class SharedAccountContextImpl: SharedAccountContext {
                 }
                 if themeUpdated {
                     updateLegacyTheme()
+                    
+                    /*if #available(iOS 13.0, *) {
+                        let userInterfaceStyle: UIUserInterfaceStyle
+                        if strongSelf.currentPresentationData.with({ $0 }).theme.overallDarkAppearance {
+                            userInterfaceStyle = .dark
+                        } else {
+                            userInterfaceStyle = .light
+                        }
+                        if let eventView = strongSelf.mainWindow?.hostView.eventView, eventView.overrideUserInterfaceStyle != userInterfaceStyle {
+                            eventView.overrideUserInterfaceStyle = userInterfaceStyle
+                        }
+                    }*/
                 }
                 if themeNameUpdated {
                     strongSelf.presentCrossfadeController()
@@ -465,14 +518,17 @@ public final class SharedAccountContextImpl: SharedAccountContext {
                 })
                 var backupData: AccountBackupData?
                 var sortIndex: Int32 = 0
+                var isSupportUser = false
                 for attribute in record.attributes {
                     if case let .sortOrder(sortOrder) = attribute {
                         sortIndex = sortOrder.order
                     } else if case let .backupData(backupDataValue) = attribute {
                         backupData = backupDataValue.data
+                    } else if case .supportUserInfo = attribute {
+                        isSupportUser = true
                     }
                 }
-                result[record.id] = AccountAttributes(sortIndex: sortIndex, isTestingEnvironment: isTestingEnvironment, backupData: backupData)
+                result[record.id] = AccountAttributes(sortIndex: sortIndex, isTestingEnvironment: isTestingEnvironment, backupData: backupData, isSupportUser: isSupportUser)
             }
             let authRecord: (AccountRecordId, Bool)? = view.currentAuthAccount.flatMap({ authAccount in
                 let isTestingEnvironment = authAccount.attributes.contains(where: { attribute in
@@ -506,7 +562,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             var addedAuthSignal: Signal<UnauthorizedAccount?, NoError> = .single(nil)
             for (id, attributes) in records {
                 if self.activeAccountsValue?.accounts.firstIndex(where: { $0.0 == id}) == nil {
-                    addedSignals.append(accountWithId(accountManager: accountManager, networkArguments: networkArguments, id: id, encryptionParameters: encryptionParameters, supplementary: !applicationBindings.isMainApp, rootPath: rootPath, beginWithTestingEnvironment: attributes.isTestingEnvironment, backupData: attributes.backupData, auxiliaryMethods: makeTelegramAccountAuxiliaryMethods(appDelegate: appDelegate))
+                    addedSignals.append(accountWithId(accountManager: accountManager, networkArguments: networkArguments, id: id, encryptionParameters: encryptionParameters, supplementary: !applicationBindings.isMainApp, isSupportUser: attributes.isSupportUser, rootPath: rootPath, beginWithTestingEnvironment: attributes.isTestingEnvironment, backupData: attributes.backupData, auxiliaryMethods: makeTelegramAccountAuxiliaryMethods(uploadInBackground: appDelegate?.uploadInBackround))
                     |> mapToSignal { result -> Signal<AddedAccountResult, NoError> in
                         switch result {
                             case let .authorized(account):
@@ -514,21 +570,23 @@ public final class SharedAccountContextImpl: SharedAccountContext {
                                 return TelegramEngine(account: account).data.get(
                                     TelegramEngine.EngineData.Item.Configuration.Limits(),
                                     TelegramEngine.EngineData.Item.Configuration.ContentSettings(),
-                                    TelegramEngine.EngineData.Item.Configuration.App()
+                                    TelegramEngine.EngineData.Item.Configuration.App(),
+                                    TelegramEngine.EngineData.Item.Configuration.AvailableColorOptions(scope: .replies),
+                                    TelegramEngine.EngineData.Item.Configuration.AvailableColorOptions(scope: .profile)
                                 )
-                                |> map { limitsConfiguration, contentSettings, appConfiguration -> AddedAccountResult in
-                                    return .ready(id, account, attributes.sortIndex, limitsConfiguration._asLimits(), contentSettings, appConfiguration)
+                                |> map { limitsConfiguration, contentSettings, appConfiguration, availableReplyColors, availableProfileColors -> AddedAccountResult in
+                                    return .ready(id, account, attributes.sortIndex, (limitsConfiguration._asLimits(), contentSettings, appConfiguration, availableReplyColors, availableProfileColors))
                                 }
                             case let .upgrading(progress):
                                 return .single(.upgrading(progress))
                             default:
-                                return .single(.ready(id, nil, attributes.sortIndex, nil, nil, nil))
+                                return .single(.ready(id, nil, attributes.sortIndex, (nil, nil, nil, EngineAvailableColorOptions(hash: 0, options: []), EngineAvailableColorOptions(hash: 0, options: []))))
                         }
                     })
                 }
             }
             if let authRecord = authRecord, authRecord.0 != self.activeAccountsValue?.currentAuth?.id {
-                addedAuthSignal = accountWithId(accountManager: accountManager, networkArguments: networkArguments, id: authRecord.0, encryptionParameters: encryptionParameters, supplementary: !applicationBindings.isMainApp, rootPath: rootPath, beginWithTestingEnvironment: authRecord.1, backupData: nil, auxiliaryMethods: makeTelegramAccountAuxiliaryMethods(appDelegate: appDelegate))
+                addedAuthSignal = accountWithId(accountManager: accountManager, networkArguments: networkArguments, id: authRecord.0, encryptionParameters: encryptionParameters, supplementary: !applicationBindings.isMainApp, isSupportUser: false, rootPath: rootPath, beginWithTestingEnvironment: authRecord.1, backupData: nil, auxiliaryMethods: makeTelegramAccountAuxiliaryMethods(uploadInBackground: appDelegate?.uploadInBackround))
                 |> mapToSignal { result -> Signal<UnauthorizedAccount?, NoError> in
                     switch result {
                         case let .unauthorized(account):
@@ -543,13 +601,13 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             
             let mappedAddedAccounts = combineLatest(queue: .mainQueue(), addedSignals)
             |> map { results -> AddedAccountsResult in
-                var readyAccounts: [(AccountRecordId, Account?, Int32, LimitsConfiguration?, ContentSettings?, AppConfiguration?)] = []
+                var readyAccounts: [(AccountRecordId, Account?, Int32, AccountInitialData)] = []
                 var totalProgress: Float = 0.0
                 var hasItemsWithProgress = false
                 for result in results {
                     switch result {
-                        case let .ready(id, account, sortIndex, limitsConfiguration, contentSettings, appConfiguration):
-                            readyAccounts.append((id, account, sortIndex, limitsConfiguration, contentSettings, appConfiguration))
+                        case let .ready(id, account, sortIndex, initialData):
+                            readyAccounts.append((id, account, sortIndex, initialData))
                             totalProgress += 1.0
                         case let .upgrading(progress):
                             hasItemsWithProgress = true
@@ -567,7 +625,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             |> deliverOnMainQueue).start(next: { mappedAddedAccounts, authAccount in
                 print("SharedAccountContextImpl: accounts processed in \(CFAbsoluteTimeGetCurrent() - startTime)")
                 
-                var addedAccounts: [(AccountRecordId, Account?, Int32, LimitsConfiguration?, ContentSettings?, AppConfiguration?)] = []
+                var addedAccounts: [(AccountRecordId, Account?, Int32, AccountInitialData)] = []
                 switch mappedAddedAccounts {
                     case let .upgrading(progress):
                         self.displayUpgradeProgress(progress)
@@ -606,7 +664,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
                                 assertionFailure()
                             }
 
-                            let context = AccountContextImpl(sharedContext: self, account: account, limitsConfiguration: accountRecord.3 ?? .defaultValue, contentSettings: accountRecord.4 ?? .default, appConfiguration: accountRecord.5 ?? .defaultValue)
+                            let context = AccountContextImpl(sharedContext: self, account: account, limitsConfiguration: accountRecord.3.limitsConfiguration ?? .defaultValue, contentSettings: accountRecord.3.contentSettings ?? .default, appConfiguration: accountRecord.3.appConfiguration ?? .defaultValue, availableReplyColors: accountRecord.3.availableReplyColors, availableProfileColors: accountRecord.3.availableProfileColors)
 
                             self.activeAccountsValue!.accounts.append((account.id, context, accountRecord.2))
                             
@@ -727,26 +785,85 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             
             self.callDisposable = (callManager.currentCallSignal
             |> deliverOnMainQueue).start(next: { [weak self] call in
-                if let strongSelf = self {
-                    if call !== strongSelf.callController?.call {
-                        strongSelf.callController?.dismiss()
-                        strongSelf.callController = nil
-                        strongSelf.hasOngoingCall.set(false)
+                guard let self else {
+                    return
+                }
+                    
+                if call !== self.call {
+                    self.call = call
+                    
+                    self.callController?.dismiss()
+                    self.callController = nil
+                    self.hasOngoingCall.set(false)
+                    
+                    self.notificationController?.setBlocking(nil)
+                    
+                    self.callPeerDisposable?.dispose()
+                    self.callPeerDisposable = nil
+                    
+                    if let call {
+                        self.callState.set(call.state
+                        |> map(Optional.init))
+                        self.hasOngoingCall.set(true)
+                        setNotificationCall(call)
                         
-                        if let call = call {
-                            mainWindow.hostView.containerView.endEditing(true)
-                            let callController = CallController(sharedContext: strongSelf, account: call.context.account, call: call, easyDebugAccess: !GlobalExperimentalSettings.isAppStoreBuild)
-                            strongSelf.callController = callController
-                            strongSelf.mainWindow?.present(callController, on: .calls)
-                            strongSelf.callState.set(call.state
-                            |> map(Optional.init))
-                            strongSelf.hasOngoingCall.set(true)
-                            setNotificationCall(call)
+                        if call.isOutgoing {
+                            self.presentControllerWithCurrentCall()
                         } else {
-                            strongSelf.callState.set(.single(nil))
-                            strongSelf.hasOngoingCall.set(false)
-                            setNotificationCall(nil)
+                            if !call.isIntegratedWithCallKit {
+                                self.callPeerDisposable?.dispose()
+                                self.callPeerDisposable = (call.context.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: call.peerId))
+                                |> deliverOnMainQueue).startStrict(next: { [weak self, weak call] peer in
+                                    guard let self, let call, let peer else {
+                                        return
+                                    }
+                                    if self.call !== call {
+                                        return
+                                    }
+                                    
+                                    let presentationData = self.currentPresentationData.with { $0 }
+                                    self.notificationController?.setBlocking(ChatCallNotificationItem(context: call.context, strings: presentationData.strings, nameDisplayOrder: presentationData.nameDisplayOrder, peer: peer, isVideo: call.isVideo, action: { [weak call] answerAction in
+                                        guard let call else {
+                                            return
+                                        }
+                                        if answerAction {
+                                            call.answer()
+                                        } else {
+                                            call.rejectBusy()
+                                        }
+                                    }))
+                                })
+                            }
+                            
+                            self.awaitingCallConnectionDisposable = (call.state
+                            |> filter { state in
+                                switch state.state {
+                                case .ringing:
+                                    return false
+                                case .terminating, .terminated:
+                                    return false
+                                default:
+                                    return true
+                                }
+                            }
+                            |> take(1)
+                            |> deliverOnMainQueue).start(next: { [weak self] _ in
+                                guard let self else {
+                                    return
+                                }
+                                self.notificationController?.setBlocking(nil)
+                                self.presentControllerWithCurrentCall()
+                                
+                                self.callPeerDisposable?.dispose()
+                                self.callPeerDisposable = nil
+                            })
                         }
+                    } else {
+                        self.callState.set(.single(nil))
+                        self.hasOngoingCall.set(false)
+                        self.awaitingCallConnectionDisposable?.dispose()
+                        self.awaitingCallConnectionDisposable = nil
+                        setNotificationCall(nil)
                     }
                 }
             })
@@ -809,6 +926,29 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             let callSignal: Signal<PresentationCall?, NoError> = .single(nil)
             |> then(
                 callManager.currentCallSignal
+                |> deliverOnMainQueue
+                |> mapToSignal { call -> Signal<PresentationCall?, NoError> in
+                    guard let call else {
+                        return .single(nil)
+                    }
+                    return call.state
+                    |> map { [weak call] state -> PresentationCall? in
+                        guard let call else {
+                            return nil
+                        }
+                        switch state.state {
+                        case .ringing:
+                            return nil
+                        case .terminating, .terminated:
+                            return nil
+                        default:
+                            return call
+                        }
+                    }
+                }
+                |> distinctUntilChanged(isEqual: { lhs, rhs in
+                    return lhs === rhs
+                })
             )
             let groupCallSignal: Signal<PresentationGroupCall?, NoError> = .single(nil)
             |> then(
@@ -894,7 +1034,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             return true
         })
         
-        let _ = managedCleanupAccounts(networkArguments: networkArguments, accountManager: self.accountManager, rootPath: rootPath, auxiliaryMethods: makeTelegramAccountAuxiliaryMethods(appDelegate: appDelegate), encryptionParameters: encryptionParameters).start()
+        let _ = managedCleanupAccounts(networkArguments: networkArguments, accountManager: self.accountManager, rootPath: rootPath, auxiliaryMethods: makeTelegramAccountAuxiliaryMethods(uploadInBackground: appDelegate?.uploadInBackround), encryptionParameters: encryptionParameters).start()
         
         self.updateNotificationTokensRegistration()
         
@@ -923,6 +1063,18 @@ public final class SharedAccountContextImpl: SharedAccountContext {
                 }
             })
         }
+        
+        /*if #available(iOS 13.0, *) {
+            let userInterfaceStyle: UIUserInterfaceStyle
+            if self.currentPresentationData.with({ $0 }).theme.overallDarkAppearance {
+                userInterfaceStyle = .dark
+            } else {
+                userInterfaceStyle = .light
+            }
+            if let eventView = self.mainWindow?.hostView.eventView, eventView.overrideUserInterfaceStyle != userInterfaceStyle {
+                eventView.overrideUserInterfaceStyle = userInterfaceStyle
+            }
+        }*/
     }
     
     deinit {
@@ -937,6 +1089,8 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         self.callDisposable?.dispose()
         self.groupCallDisposable?.dispose()
         self.callStateDisposable?.dispose()
+        self.awaitingCallConnectionDisposable?.dispose()
+        self.callPeerDisposable?.dispose()
     }
     
     private var didPerformAccountSettingsImport = false
@@ -994,6 +1148,37 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             }
             |> ignoreValues
         }
+    }
+    
+    private func presentControllerWithCurrentCall() {
+        guard let call = self.call else {
+            return
+        }
+        
+        if let currentCallController = self.callController {
+            if currentCallController.call === call {
+                self.navigateToCurrentCall()
+                return
+            } else {
+                self.callController = nil
+                currentCallController.dismiss()
+            }
+        }
+        
+        self.mainWindow?.hostView.containerView.endEditing(true)
+        let callController = CallController(sharedContext: self, account: call.context.account, call: call, easyDebugAccess: !GlobalExperimentalSettings.isAppStoreBuild)
+        self.callController = callController
+        callController.restoreUIForPictureInPicture = { [weak self, weak callController] completion in
+            guard let self, let callController else {
+                completion(false)
+                return
+            }
+            if callController.window == nil {
+                self.mainWindow?.present(callController, on: .calls)
+            }
+            completion(true)
+        }
+        self.mainWindow?.present(callController, on: .calls)
     }
     
     public func updateNotificationTokensRegistration() {
@@ -1185,8 +1370,8 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         self.navigateToChatImpl(accountId, peerId, messageId)
     }
     
-    public func messageFromPreloadedChatHistoryViewForLocation(id: MessageId, location: ChatHistoryLocationInput, context: AccountContext, chatLocation: ChatLocation, subject: ChatControllerSubject?, chatLocationContextHolder: Atomic<ChatLocationContextHolder?>, tagMask: MessageTags?) -> Signal<(MessageIndex?, Bool), NoError> {
-        let historyView = preloadedChatHistoryViewForLocation(location, context: context, chatLocation: chatLocation, subject: subject, chatLocationContextHolder: chatLocationContextHolder, fixedCombinedReadStates: nil, tagMask: tagMask, additionalData: [])
+    public func messageFromPreloadedChatHistoryViewForLocation(id: MessageId, location: ChatHistoryLocationInput, context: AccountContext, chatLocation: ChatLocation, subject: ChatControllerSubject?, chatLocationContextHolder: Atomic<ChatLocationContextHolder?>, tag: HistoryViewInputTag?) -> Signal<(MessageIndex?, Bool), NoError> {
+        let historyView = preloadedChatHistoryViewForLocation(location, context: context, chatLocation: chatLocation, subject: subject, chatLocationContextHolder: chatLocationContextHolder, fixedCombinedReadStates: nil, tag: tag, additionalData: [])
         return historyView
         |> mapToSignal { historyView -> Signal<(MessageIndex?, Bool), NoError> in
             switch historyView {
@@ -1211,7 +1396,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
     }
     
     public func makeTempAccountContext(account: Account) -> AccountContext {
-        return AccountContextImpl(sharedContext: self, account: account, limitsConfiguration: .defaultValue, contentSettings: .default, appConfiguration: .defaultValue, temp: true)
+        return AccountContextImpl(sharedContext: self, account: account, limitsConfiguration: .defaultValue, contentSettings: .default, appConfiguration: .defaultValue, availableReplyColors: EngineAvailableColorOptions(hash: 0, options: []), availableProfileColors: EngineAvailableColorOptions(hash: 0, options: []), temp: true)
     }
     
     public func openChatMessage(_ params: OpenChatMessageParams) -> Bool {
@@ -1324,12 +1509,12 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         openExternalUrlImpl(context: context, urlContext: urlContext, url: url, forceExternal: forceExternal, presentationData: presentationData, navigationController: navigationController, dismissInput: dismissInput)
     }
     
-    public func chatAvailableMessageActions(engine: TelegramEngine, accountPeerId: EnginePeer.Id, messageIds: Set<EngineMessage.Id>) -> Signal<ChatAvailableMessageActions, NoError> {
-        return chatAvailableMessageActionsImpl(engine: engine, accountPeerId: accountPeerId, messageIds: messageIds)
+    public func chatAvailableMessageActions(engine: TelegramEngine, accountPeerId: EnginePeer.Id, messageIds: Set<EngineMessage.Id>, keepUpdated: Bool) -> Signal<ChatAvailableMessageActions, NoError> {
+        return chatAvailableMessageActionsImpl(engine: engine, accountPeerId: accountPeerId, messageIds: messageIds, keepUpdated: keepUpdated)
     }
     
     public func chatAvailableMessageActions(engine: TelegramEngine, accountPeerId: EnginePeer.Id, messageIds: Set<EngineMessage.Id>, messages: [EngineMessage.Id: EngineMessage] = [:], peers: [EnginePeer.Id: EnginePeer] = [:]) -> Signal<ChatAvailableMessageActions, NoError> {
-        return chatAvailableMessageActionsImpl(engine: engine, accountPeerId: accountPeerId, messageIds: messageIds, messages: messages.mapValues({ $0._asMessage() }), peers: peers.mapValues({ $0._asPeer() }))
+        return chatAvailableMessageActionsImpl(engine: engine, accountPeerId: accountPeerId, messageIds: messageIds, messages: messages.mapValues({ $0._asMessage() }), peers: peers.mapValues({ $0._asPeer() }), keepUpdated: false)
     }
     
     public func navigateToChatController(_ params: NavigateToChatControllerParams) {
@@ -1370,7 +1555,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         
         if !found {
             let controllerParams = LocationViewParams(sendLiveLocation: { location in
-                //let outMessage: EnqueueMessage = .message(text: "", attributes: [], mediaReference: .standalone(media: location), replyToMessageId: nil, replyToStoryId: nil, localGroupingKey: nil, correlationId: nil)
+                //let outMessage: EnqueueMessage = .message(text: "", attributes: [], mediaReference: .standalone(media: location), threadId: nil, replyToMessageId: nil, replyToStoryId: nil, localGroupingKey: nil, correlationId: nil)
 //                params.enqueueMessage(outMessage)
             }, stopLiveLocation: { messageId in
                 if let messageId = messageId {
@@ -1394,10 +1579,22 @@ public final class SharedAccountContextImpl: SharedAccountContext {
     
     public func resolveUrl(context: AccountContext, peerId: PeerId?, url: String, skipUrlAuth: Bool) -> Signal<ResolvedUrl, NoError> {
         return resolveUrlImpl(context: context, peerId: peerId, url: url, skipUrlAuth: skipUrlAuth)
+        |> mapToSignal { result -> Signal<ResolvedUrl, NoError> in
+            switch result {
+            case .progress:
+                return .complete()
+            case let .result(value):
+                return .single(value)
+            }
+        }
     }
     
-    public func openResolvedUrl(_ resolvedUrl: ResolvedUrl, context: AccountContext, urlContext: OpenURLContext, navigationController: NavigationController?, forceExternal: Bool, openPeer: @escaping (EnginePeer, ChatControllerInteractionNavigateToPeer) -> Void, sendFile: ((FileMediaReference) -> Void)?, sendSticker: ((FileMediaReference, UIView, CGRect) -> Bool)?, requestMessageActionUrlAuth: ((MessageActionUrlSubject) -> Void)?, joinVoiceChat: ((PeerId, String?, CachedChannelData.ActiveCall) -> Void)?, present: @escaping (ViewController, Any?) -> Void, dismissInput: @escaping () -> Void, contentContext: Any?) {
-        openResolvedUrlImpl(resolvedUrl, context: context, urlContext: urlContext, navigationController: navigationController, forceExternal: forceExternal, openPeer: openPeer, sendFile: sendFile, sendSticker: sendSticker, requestMessageActionUrlAuth: requestMessageActionUrlAuth, joinVoiceChat: joinVoiceChat, present: present, dismissInput: dismissInput, contentContext: contentContext)
+    public func resolveUrlWithProgress(context: AccountContext, peerId: PeerId?, url: String, skipUrlAuth: Bool) -> Signal<ResolveUrlResult, NoError> {
+        return resolveUrlImpl(context: context, peerId: peerId, url: url, skipUrlAuth: skipUrlAuth)
+    }
+    
+    public func openResolvedUrl(_ resolvedUrl: ResolvedUrl, context: AccountContext, urlContext: OpenURLContext, navigationController: NavigationController?, forceExternal: Bool, openPeer: @escaping (EnginePeer, ChatControllerInteractionNavigateToPeer) -> Void, sendFile: ((FileMediaReference) -> Void)?, sendSticker: ((FileMediaReference, UIView, CGRect) -> Bool)?, requestMessageActionUrlAuth: ((MessageActionUrlSubject) -> Void)?, joinVoiceChat: ((PeerId, String?, CachedChannelData.ActiveCall) -> Void)?, present: @escaping (ViewController, Any?) -> Void, dismissInput: @escaping () -> Void, contentContext: Any?, progress: Promise<Bool>?, completion: (() -> Void)?) {
+        openResolvedUrlImpl(resolvedUrl, context: context, urlContext: urlContext, navigationController: navigationController, forceExternal: forceExternal, openPeer: openPeer, sendFile: sendFile, sendSticker: sendSticker, requestMessageActionUrlAuth: requestMessageActionUrlAuth, joinVoiceChat: joinVoiceChat, present: present, dismissInput: dismissInput, contentContext: contentContext, progress: progress, completion: completion)
     }
     
     public func makeDeviceContactInfoController(context: AccountContext, subject: DeviceContactInfoSubject, completed: (() -> Void)?, cancelled: (() -> Void)?) -> ViewController {
@@ -1410,6 +1607,33 @@ public final class SharedAccountContextImpl: SharedAccountContext {
     
     public func makeChatController(context: AccountContext, chatLocation: ChatLocation, subject: ChatControllerSubject?, botStart: ChatControllerInitialBotStart?, mode: ChatControllerPresentationMode) -> ChatController {
         return ChatControllerImpl(context: context, chatLocation: chatLocation, subject: subject, botStart: botStart, mode: mode)
+    }
+    
+    public func makeChatHistoryListNode(
+        context: AccountContext,
+        updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>),
+        chatLocation: ChatLocation,
+        chatLocationContextHolder: Atomic<ChatLocationContextHolder?>,
+        tag: HistoryViewInputTag?,
+        source: ChatHistoryListSource,
+        subject: ChatControllerSubject?,
+        controllerInteraction: ChatControllerInteractionProtocol,
+        selectedMessages: Signal<Set<MessageId>?, NoError>,
+        mode: ChatHistoryListMode
+    ) -> ChatHistoryListNode {
+        return ChatHistoryListNodeImpl(
+            context: context,
+            updatedPresentationData: updatedPresentationData,
+            chatLocation: chatLocation,
+            chatLocationContextHolder: chatLocationContextHolder,
+            tag: tag,
+            source: source,
+            subject: subject,
+            controllerInteraction: controllerInteraction as! ChatControllerInteraction,
+            selectedMessages: selectedMessages,
+            mode: mode,
+            messageTransitionNode: { return nil }
+        )
     }
     
     public func makePeerSharedMediaController(context: AccountContext, peerId: PeerId) -> ViewController? {
@@ -1468,13 +1692,13 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         return presentAddMembersImpl(context: context, updatedPresentationData: updatedPresentationData, parentController: parentController, groupPeer: groupPeer, selectAddMemberDisposable: selectAddMemberDisposable, addMemberDisposable: addMemberDisposable)
     }
     
-    public func makeChatMessagePreviewItem(context: AccountContext, messages: [Message], theme: PresentationTheme, strings: PresentationStrings, wallpaper: TelegramWallpaper, fontSize: PresentationFontSize, chatBubbleCorners: PresentationChatBubbleCorners, dateTimeFormat: PresentationDateTimeFormat, nameOrder: PresentationPersonNameOrder, forcedResourceStatus: FileMediaResourceStatus?, tapMessage: ((Message) -> Void)?, clickThroughMessage: (() -> Void)? = nil, backgroundNode: ASDisplayNode?, availableReactions: AvailableReactions?, isCentered: Bool) -> ListViewItem {
+    public func makeChatMessagePreviewItem(context: AccountContext, messages: [Message], theme: PresentationTheme, strings: PresentationStrings, wallpaper: TelegramWallpaper, fontSize: PresentationFontSize, chatBubbleCorners: PresentationChatBubbleCorners, dateTimeFormat: PresentationDateTimeFormat, nameOrder: PresentationPersonNameOrder, forcedResourceStatus: FileMediaResourceStatus?, tapMessage: ((Message) -> Void)?, clickThroughMessage: (() -> Void)? = nil, backgroundNode: ASDisplayNode?, availableReactions: AvailableReactions?, accountPeer: Peer?, isCentered: Bool, isPreview: Bool, isStandalone: Bool) -> ListViewItem {
         let controllerInteraction: ChatControllerInteraction
 
         controllerInteraction = ChatControllerInteraction(openMessage: { _, _ in
-            return false }, openPeer: { _, _, _, _ in }, openPeerMention: { _ in }, openMessageContextMenu: { _, _, _, _, _, _ in }, openMessageReactionContextMenu: { _, _, _, _ in
-            }, updateMessageReaction: { _, _ in }, activateMessagePinch: { _ in
-            }, openMessageContextActions: { _, _, _, _ in }, navigateToMessage: { _, _ in }, navigateToMessageStandalone: { _ in
+            return false }, openPeer: { _, _, _, _ in }, openPeerMention: { _, _ in }, openMessageContextMenu: { _, _, _, _, _, _ in }, openMessageReactionContextMenu: { _, _, _, _ in
+            }, updateMessageReaction: { _, _, _, _ in }, activateMessagePinch: { _ in
+            }, openMessageContextActions: { _, _, _, _ in }, navigateToMessage: { _, _, _ in }, navigateToMessageStandalone: { _ in
             }, navigateToThreadMessage: { _, _, _ in
             }, tapMessage: { message in
                 tapMessage?(message)
@@ -1482,7 +1706,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             clickThroughMessage?()
         }, toggleMessagesSelection: { _, _ in }, sendCurrentMessage: { _ in }, sendMessage: { _ in }, sendSticker: { _, _, _, _, _, _, _, _, _ in return false }, sendEmoji: { _, _, _ in }, sendGif: { _, _, _, _, _ in return false }, sendBotContextResultAsGif: { _, _, _, _, _, _ in
             return false
-        }, requestMessageActionCallback: { _, _, _, _ in }, requestMessageActionUrlAuth: { _, _ in }, activateSwitchInline: { _, _, _ in }, openUrl: { _, _, _, _ in }, shareCurrentLocation: {}, shareAccountContact: {}, sendBotCommand: { _, _ in }, openInstantPage: { _, _ in  }, openWallpaper: { _ in  }, openTheme: { _ in  }, openHashtag: { _, _ in }, updateInputState: { _ in }, updateInputMode: { _ in }, openMessageShareMenu: { _ in
+        }, requestMessageActionCallback: { _, _, _, _ in }, requestMessageActionUrlAuth: { _, _ in }, activateSwitchInline: { _, _, _ in }, openUrl: { _ in }, shareCurrentLocation: {}, shareAccountContact: {}, sendBotCommand: { _, _ in }, openInstantPage: { _, _ in  }, openWallpaper: { _ in  }, openTheme: { _ in  }, openHashtag: { _, _ in }, updateInputState: { _ in }, updateInputMode: { _ in }, openMessageShareMenu: { _ in
         }, presentController: { _, _ in
         }, presentControllerInCurrent: { _, _ in
         }, navigationController: {
@@ -1492,6 +1716,8 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         }, presentGlobalOverlayController: { _, _ in }, callPeer: { _, _ in }, longTap: { _, _ in }, openCheckoutOrReceipt: { _ in }, openSearch: { }, setupReply: { _ in
         }, canSetupReply: { _ in
             return .none
+        }, canSendMessages: {
+            return false
         }, navigateToFirstDateMessage: { _, _ in
         }, requestRedeliveryOfFailedMessages: { _ in
         }, addContact: { _ in
@@ -1504,7 +1730,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         }, scheduleCurrentMessage: {
         }, sendScheduledMessagesNow: { _ in
         }, editScheduledMessagesTime: { _ in
-        }, performTextSelectionAction: { _, _, _ in
+        }, performTextSelectionAction: { _, _, _, _ in
         }, displayImportedMessageTooltip: { _ in
         }, displaySwipeToReplyHint: {
         }, dismissReplyMarkupMessage: { _ in
@@ -1533,12 +1759,21 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         }, openJoinLink: { _ in
         }, openWebView: { _, _, _, _ in
         }, activateAdAction: { _ in
-        }, openRequestedPeerSelection: { _, _, _ in
+        }, openRequestedPeerSelection: { _, _, _, _ in
+        }, saveMediaToFiles: { _ in
+        }, openNoAdsDemo: {
+        }, openAdsInfo: {
+        }, displayGiveawayParticipationStatus: { _ in
+        }, openPremiumStatusInfo: { _, _, _, _ in
+        }, openRecommendedChannelContextMenu: { _, _, _ in
+        }, openGroupBoostInfo: { _, _ in
+        }, openStickerEditor: {
         }, requestMessageUpdate: { _, _ in
         }, cancelInteractiveKeyboardGestures: {
         }, dismissTextInput: {
         }, scrollToMessageId: { _ in
         }, navigateToStory: { _, _ in
+        }, attemptedNavigationToPrivateQuote: { _ in
         }, automaticMediaDownloadSettings: MediaAutoDownloadSettings.defaultSettings,
         pollActionState: ChatInterfacePollActionState(), stickerSettings: ChatInterfaceStickerSettings(), presentationContext: ChatPresentationContext(context: context, backgroundNode: backgroundNode as? WallpaperBackgroundNode))
         
@@ -1555,11 +1790,15 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             chatLocation = .peer(id: messages.first!.id.peerId)
         }
         
-        return ChatMessageItem(presentationData: ChatPresentationData(theme: ChatPresentationThemeData(theme: theme, wallpaper: wallpaper), fontSize: fontSize, strings: strings, dateTimeFormat: dateTimeFormat, nameDisplayOrder: nameOrder, disableAnimations: false, largeEmoji: false, chatBubbleCorners: chatBubbleCorners, animatedEmojiScale: 1.0, isPreview: true), context: context, chatLocation: chatLocation, associatedData: ChatMessageItemAssociatedData(automaticDownloadPeerType: .contact, automaticDownloadPeerId: nil, automaticDownloadNetworkType: .cellular, isRecentActions: false, subject: nil, contactsPeerIds: Set(), animatedEmojiStickers: [:], forcedResourceStatus: forcedResourceStatus, availableReactions: availableReactions, defaultReaction: nil, isPremium: false, accountPeer: nil, forceInlineReactions: true), controllerInteraction: controllerInteraction, content: content, disableDate: true, additionalContent: nil)
+        return ChatMessageItemImpl(presentationData: ChatPresentationData(theme: ChatPresentationThemeData(theme: theme, wallpaper: wallpaper), fontSize: fontSize, strings: strings, dateTimeFormat: dateTimeFormat, nameDisplayOrder: nameOrder, disableAnimations: false, largeEmoji: false, chatBubbleCorners: chatBubbleCorners, animatedEmojiScale: 1.0, isPreview: isPreview), context: context, chatLocation: chatLocation, associatedData: ChatMessageItemAssociatedData(automaticDownloadPeerType: .contact, automaticDownloadPeerId: nil, automaticDownloadNetworkType: .cellular, isRecentActions: false, subject: nil, contactsPeerIds: Set(), animatedEmojiStickers: [:], forcedResourceStatus: forcedResourceStatus, availableReactions: availableReactions, savedMessageTags: nil, defaultReaction: nil, isPremium: false, accountPeer: accountPeer.flatMap(EnginePeer.init), forceInlineReactions: true, isStandalone: isStandalone), controllerInteraction: controllerInteraction, content: content, disableDate: true, additionalContent: nil)
     }
     
     public func makeChatMessageDateHeaderItem(context: AccountContext, timestamp: Int32, theme: PresentationTheme, strings: PresentationStrings, wallpaper: TelegramWallpaper, fontSize: PresentationFontSize, chatBubbleCorners: PresentationChatBubbleCorners, dateTimeFormat: PresentationDateTimeFormat, nameOrder: PresentationPersonNameOrder) -> ListViewItemHeader {
         return ChatMessageDateHeader(timestamp: timestamp, scheduled: false, presentationData: ChatPresentationData(theme: ChatPresentationThemeData(theme: theme, wallpaper: wallpaper), fontSize: fontSize, strings: strings, dateTimeFormat: dateTimeFormat, nameDisplayOrder: nameOrder, disableAnimations: false, largeEmoji: false, chatBubbleCorners: chatBubbleCorners, animatedEmojiScale: 1.0, isPreview: true), controllerInteraction: nil, context: context)
+    }
+    
+    public func makeChatMessageAvatarHeaderItem(context: AccountContext, timestamp: Int32, peer: Peer, message: Message, theme: PresentationTheme, strings: PresentationStrings, wallpaper: TelegramWallpaper, fontSize: PresentationFontSize, chatBubbleCorners: PresentationChatBubbleCorners, dateTimeFormat: PresentationDateTimeFormat, nameOrder: PresentationPersonNameOrder) -> ListViewItemHeader {
+        return ChatMessageAvatarHeader(timestamp: timestamp, peerId: peer.id, peer: peer, messageReference: nil, message: message, presentationData: ChatPresentationData(theme: ChatPresentationThemeData(theme: theme, wallpaper: wallpaper), fontSize: fontSize, strings: strings, dateTimeFormat: dateTimeFormat, nameDisplayOrder: nameOrder, disableAnimations: false, largeEmoji: false, chatBubbleCorners: chatBubbleCorners, animatedEmojiScale: 1.0, isPreview: true), context: context, controllerInteraction: nil, storyStats: nil)
     }
     
     public func openImagePicker(context: AccountContext, completion: @escaping (UIImage) -> Void, present: @escaping (ViewController) -> Void) {
@@ -1594,16 +1833,32 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         })
     }
     
+    public func openChatInstantPage(context: AccountContext, message: Message, sourcePeerType: MediaAutoDownloadPeerType?, navigationController: NavigationController) {
+        openChatInstantPageImpl(context: context, message: message, sourcePeerType: sourcePeerType, navigationController: navigationController)
+    }
+    
+    public func openChatWallpaper(context: AccountContext, message: Message, present: @escaping (ViewController, Any?) -> Void) {
+        openChatWallpaperImpl(context: context, message: message, present: present)
+    }
+    
     public func makeRecentSessionsController(context: AccountContext, activeSessionsContext: ActiveSessionsContext) -> ViewController & RecentSessionsController {
         return recentSessionsController(context: context, activeSessionsContext: activeSessionsContext, webSessionsContext: context.engine.privacy.webSessions(), websitesOnly: false)
     }
     
-    public func makeChatQrCodeScreen(context: AccountContext, peer: Peer, threadId: Int64?) -> ViewController {
-        return ChatQrCodeScreen(context: context, subject: .peer(peer: peer, threadId: threadId, temporary: false))
+    public func makeChatQrCodeScreen(context: AccountContext, peer: Peer, threadId: Int64?, temporary: Bool) -> ViewController {
+        return ChatQrCodeScreen(context: context, subject: .peer(peer: peer, threadId: threadId, temporary: temporary))
     }
     
     public func makePrivacyAndSecurityController(context: AccountContext) -> ViewController {
         return SettingsUI.makePrivacyAndSecurityController(context: context)
+    }
+
+    public func makeBioPrivacyController(context: AccountContext, settings: Promise<AccountPrivacySettings?>, present: @escaping (ViewController) -> Void) {
+        SettingsUI.makeBioPrivacyController(context: context, settings: settings, present: present)
+    }
+    
+    public func makeBirthdayPrivacyController(context: AccountContext, settings: Promise<AccountPrivacySettings?>, openedFromBirthdayScreen: Bool, present: @escaping (ViewController) -> Void) {
+        SettingsUI.makeBirthdayPrivacyController(context: context, settings: settings, openedFromBirthdayScreen: openedFromBirthdayScreen, present: present)
     }
     
     public func makeSetupTwoFactorAuthController(context: AccountContext) -> ViewController {
@@ -1623,100 +1878,17 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         return makeAttachmentFileControllerImpl(context: context, updatedPresentationData: updatedPresentationData, bannedSendMedia: bannedSendMedia, presentGallery: presentGallery, presentFiles: presentFiles, send: send)
     }
     
-    public func makeGalleryCaptionPanelView(context: AccountContext, chatLocation: ChatLocation, customEmojiAvailable: Bool, present: @escaping (ViewController) -> Void, presentInGlobalOverlay: @escaping (ViewController) -> Void) -> NSObject? {
-        var presentationData = context.sharedContext.currentPresentationData.with { $0 }
-        presentationData = presentationData.withUpdated(theme: defaultDarkColorPresentationTheme)
-        
-        var presentationInterfaceState = ChatPresentationInterfaceState(chatWallpaper: .builtin(WallpaperSettings()), theme: presentationData.theme, strings: presentationData.strings, dateTimeFormat: presentationData.dateTimeFormat, nameDisplayOrder: presentationData.nameDisplayOrder, limitsConfiguration: context.currentLimitsConfiguration.with { $0 }, fontSize: presentationData.chatFontSize, bubbleCorners: presentationData.chatBubbleCorners, accountPeerId: context.account.peerId, mode: .standard(previewing: false), chatLocation: chatLocation, subject: nil, peerNearbyData: nil, greetingData: nil, pendingUnpinnedAllMessages: false, activeGroupCallInfo: nil, hasActiveGroupCall: false, importState: nil, threadData: nil, isGeneralThreadClosed: nil)
-        
-        var updateChatPresentationInterfaceStateImpl: (((ChatPresentationInterfaceState) -> ChatPresentationInterfaceState) -> Void)?
-        var ensureFocusedImpl: (() -> Void)?
-        
-        let interfaceInteraction = ChatPanelInterfaceInteraction(updateTextInputStateAndMode: { f in
-            updateChatPresentationInterfaceStateImpl?({
-                let (updatedState, updatedMode) = f($0.interfaceState.effectiveInputState, $0.inputMode)
-                return $0.updatedInterfaceState { interfaceState in
-                    return interfaceState.withUpdatedEffectiveInputState(updatedState)
-                }.updatedInputMode({ _ in updatedMode })
-            })
-        }, updateInputModeAndDismissedButtonKeyboardMessageId: { f in
-            updateChatPresentationInterfaceStateImpl?({
-                let (updatedInputMode, updatedClosedButtonKeyboardMessageId) = f($0)
-                return $0.updatedInputMode({ _ in return updatedInputMode }).updatedInterfaceState({
-                    $0.withUpdatedMessageActionsState({ value in
-                        var value = value
-                        value.closedButtonKeyboardMessageId = updatedClosedButtonKeyboardMessageId
-                        return value
-                    })
-                })
-            })
-        }, openLinkEditing: {
-            var selectionRange: Range<Int>?
-            var text: NSAttributedString?
-            var inputMode: ChatInputMode?
-            updateChatPresentationInterfaceStateImpl?({ state in
-                selectionRange = state.interfaceState.effectiveInputState.selectionRange
-                if let selectionRange = selectionRange {
-                    text = state.interfaceState.effectiveInputState.inputText.attributedSubstring(from: NSRange(location: selectionRange.startIndex, length: selectionRange.count))
-                }
-                inputMode = state.inputMode
-                return state
-            })
-            
-            var link: String?
-            if let text {
-                text.enumerateAttributes(in: NSMakeRange(0, text.length)) { attributes, _, _ in
-                    if let linkAttribute = attributes[ChatTextInputAttributes.textUrl] as? ChatTextInputTextUrlAttribute {
-                        link = linkAttribute.url
-                    }
-                }
+    public func makeGalleryCaptionPanelView(context: AccountContext, chatLocation: ChatLocation, isScheduledMessages: Bool, customEmojiAvailable: Bool, present: @escaping (ViewController) -> Void, presentInGlobalOverlay: @escaping (ViewController) -> Void) -> NSObject? {
+        let inputPanelNode = LegacyMessageInputPanelNode(
+            context: context,
+            chatLocation: chatLocation,
+            isScheduledMessages: isScheduledMessages,
+            present: present,
+            presentInGlobalOverlay: presentInGlobalOverlay,
+            makeEntityInputView: {
+                return EntityInputView(context: context, isDark: true, areCustomEmojiEnabled: customEmojiAvailable)
             }
-            
-            let controller = chatTextLinkEditController(sharedContext: context.sharedContext, updatedPresentationData: (presentationData, .never()), account: context.account, text: text?.string ?? "", link: link, apply: { link in
-                if let inputMode = inputMode, let selectionRange = selectionRange {
-                    if let link = link {
-                        updateChatPresentationInterfaceStateImpl?({
-                            return $0.updatedInterfaceState({
-                                $0.withUpdatedEffectiveInputState(chatTextInputAddLinkAttribute($0.effectiveInputState, selectionRange: selectionRange, url: link))
-                            })
-                        })
-                    }
-                    ensureFocusedImpl?()
-                    updateChatPresentationInterfaceStateImpl?({
-                        return $0.updatedInputMode({ _ in return inputMode }).updatedInterfaceState({
-                            $0.withUpdatedEffectiveInputState(ChatTextInputState(inputText: $0.effectiveInputState.inputText, selectionRange: selectionRange.endIndex ..< selectionRange.endIndex))
-                        })
-                    })
-                }
-            })
-            present(controller)
-        })
-        
-        let inputPanelNode = AttachmentTextInputPanelNode(context: context, presentationInterfaceState: presentationInterfaceState, isCaption: true, presentController: { c in
-            presentInGlobalOverlay(c)
-        }, makeEntityInputView: {
-            return EntityInputView(context: context, isDark: true, areCustomEmojiEnabled: customEmojiAvailable)
-        })
-        inputPanelNode.interfaceInteraction = interfaceInteraction
-        inputPanelNode.effectivePresentationInterfaceState = {
-            return presentationInterfaceState
-        }
-        
-        updateChatPresentationInterfaceStateImpl = { [weak inputPanelNode] f in
-            let updatedPresentationInterfaceState = f(presentationInterfaceState)
-            let updateInputTextState = presentationInterfaceState.interfaceState.effectiveInputState != updatedPresentationInterfaceState.interfaceState.effectiveInputState
-            
-            presentationInterfaceState = updatedPresentationInterfaceState
-            
-            if let inputPanelNode = inputPanelNode, updateInputTextState {
-                inputPanelNode.updateInputTextState(updatedPresentationInterfaceState.interfaceState.effectiveInputState, animated: true)
-            }
-        }
-        
-        ensureFocusedImpl =  { [weak inputPanelNode] in
-            inputPanelNode?.ensureFocused()
-        }
-        
+        )
         return inputPanelNode
     }
     
@@ -1732,11 +1904,85 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         return archiveSettingsController(context: context)
     }
     
+    public func makeFilterSettingsController(context: AccountContext, modal: Bool, scrollToTags: Bool, dismissed: (() -> Void)?) -> ViewController {
+        return chatListFilterPresetListController(context: context, mode: modal ? .modal : .default, scrollToTags: scrollToTags, dismissed: dismissed)
+    }
+    
+    public func makeBusinessSetupScreen(context: AccountContext) -> ViewController {
+        return PremiumIntroScreen(context: context, mode: .business, source: .settings, modal: false, forceDark: false)
+    }
+    
+    public func makeChatbotSetupScreen(context: AccountContext, initialData: ChatbotSetupScreenInitialData) -> ViewController {
+        return ChatbotSetupScreen(context: context, initialData: initialData as! ChatbotSetupScreen.InitialData)
+    }
+    
+    public func makeChatbotSetupScreenInitialData(context: AccountContext) -> Signal<ChatbotSetupScreenInitialData, NoError> {
+        return ChatbotSetupScreen.initialData(context: context)
+    }
+    
+    public func makeBusinessLocationSetupScreen(context: AccountContext, initialValue: TelegramBusinessLocation?, completion: @escaping (TelegramBusinessLocation?) -> Void) -> ViewController {
+        return BusinessLocationSetupScreen(context: context, initialValue: initialValue, completion: completion)
+    }
+    
+    public func makeBusinessHoursSetupScreen(context: AccountContext, initialValue: TelegramBusinessHours?, completion: @escaping (TelegramBusinessHours?) -> Void) -> ViewController {
+        return BusinessHoursSetupScreen(context: context, initialValue: initialValue, completion: completion)
+    }
+    
+    public func makeAutomaticBusinessMessageSetupScreen(context: AccountContext, initialData: AutomaticBusinessMessageSetupScreenInitialData, isAwayMode: Bool) -> ViewController {
+        return AutomaticBusinessMessageSetupScreen(context: context, initialData: initialData as! AutomaticBusinessMessageSetupScreen.InitialData, mode: isAwayMode ? .away : .greeting)
+    }
+    
+    public func makeAutomaticBusinessMessageSetupScreenInitialData(context: AccountContext) -> Signal<AutomaticBusinessMessageSetupScreenInitialData, NoError> {
+        return AutomaticBusinessMessageSetupScreen.initialData(context: context)
+    }
+    
+    public func makeQuickReplySetupScreen(context: AccountContext, initialData: QuickReplySetupScreenInitialData) -> ViewController {
+        return QuickReplySetupScreen(context: context, initialData: initialData as! QuickReplySetupScreen.InitialData, mode: .manage)
+    }
+    
+    public func makeQuickReplySetupScreenInitialData(context: AccountContext) -> Signal<QuickReplySetupScreenInitialData, NoError> {
+        return QuickReplySetupScreen.initialData(context: context)
+    }
+    
+    public func makeBusinessIntroSetupScreen(context: AccountContext, initialData: BusinessIntroSetupScreenInitialData) -> ViewController {
+        return BusinessIntroSetupScreen(context: context, initialData: initialData as! BusinessIntroSetupScreen.InitialData)
+    }
+    
+    public func makeBusinessIntroSetupScreenInitialData(context: AccountContext) -> Signal<BusinessIntroSetupScreenInitialData, NoError> {
+        return BusinessIntroSetupScreen.initialData(context: context)
+    }
+    
+    public func makeBusinessLinksSetupScreen(context: AccountContext, initialData: BusinessLinksSetupScreenInitialData) -> ViewController {
+        return BusinessLinksSetupScreen(context: context, initialData: initialData as! BusinessLinksSetupScreen.InitialData)
+    }
+    
+    public func makeBusinessLinksSetupScreenInitialData(context: AccountContext) -> Signal<BusinessLinksSetupScreenInitialData, NoError> {
+        return BusinessLinksSetupScreen.makeInitialData(context: context)
+    }
+    
+    public func makeCollectibleItemInfoScreen(context: AccountContext, initialData: CollectibleItemInfoScreenInitialData) -> ViewController {
+        return CollectibleItemInfoScreen(context: context, initialData: initialData as! CollectibleItemInfoScreen.InitialData)
+    }
+    
+    public func makeCollectibleItemInfoScreenInitialData(context: AccountContext, peerId: EnginePeer.Id, subject: CollectibleItemInfoScreenSubject) -> Signal<CollectibleItemInfoScreenInitialData?, NoError> {
+        return CollectibleItemInfoScreen.initialData(context: context, peerId: peerId, subject: subject)
+    }
+    
+    public func makeBotSettingsScreen(context: AccountContext, peerId: EnginePeer.Id?) -> ViewController {
+        if let peerId {
+            return botSettingsScreen(context: context, peerId: peerId)
+        } else {
+            return botListSettingsScreen(context: context)
+        }
+    }
+    
     public func makePremiumIntroController(context: AccountContext, source: PremiumIntroSource, forceDark: Bool, dismissed: (() -> Void)?) -> ViewController {
+        var modal = true
         let mappedSource: PremiumSource
         switch source {
         case .settings:
             mappedSource = .settings
+            modal = false
         case .stickers:
             mappedSource = .stickers
         case .reactions:
@@ -1789,8 +2035,28 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             mappedSource = .storiesFormatting
         case .storiesExpirationDurations:
             mappedSource = .storiesExpirationDurations
+        case .storiesSuggestedReactions:
+            mappedSource = .storiesSuggestedReactions
+        case .storiesHigherQuality:
+            mappedSource = .storiesHigherQuality
+        case let .channelBoost(peerId):
+            mappedSource = .channelBoost(peerId)
+        case .nameColor:
+            mappedSource = .nameColor
+        case .similarChannels:
+            mappedSource = .similarChannels
+        case .wallpapers:
+            mappedSource = .wallpapers
+        case .presence:
+            mappedSource = .presence
+        case .readTime:
+            mappedSource = .readTime
+        case .messageTags:
+            mappedSource = .messageTags
+        case .folderTags:
+            mappedSource = .folderTags
         }
-        let controller = PremiumIntroScreen(context: context, source: mappedSource, forceDark: forceDark)
+        let controller = PremiumIntroScreen(context: context, source: mappedSource, modal: modal, forceDark: forceDark)
         controller.wasDismissed = dismissed
         return controller
     }
@@ -1828,11 +2094,25 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             mappedSubject = .translation
         case .stories:
             mappedSubject = .stories
+        case .colors:
+            mappedSubject = .colors
+        case .wallpapers:
+            mappedSubject = .wallpapers
+        case .messageTags:
+            mappedSubject = .messageTags
+        case .lastSeen:
+            mappedSubject = .lastSeen
+        case .messagePrivacy:
+            mappedSubject = .messagePrivacy
+        case .folderTags:
+            mappedSubject = .folderTags
+        default:
+            mappedSubject = .doubleLimits
         }
         return PremiumDemoScreen(context: context, subject: mappedSubject, action: action)
     }
     
-    public func makePremiumLimitController(context: AccountContext, subject: PremiumLimitSubject, count: Int32, forceDark: Bool, cancel: @escaping () -> Void, action: @escaping () -> Void) -> ViewController {
+    public func makePremiumLimitController(context: AccountContext, subject: PremiumLimitSubject, count: Int32, forceDark: Bool, cancel: @escaping () -> Void, action: @escaping () -> Bool) -> ViewController {
         let mappedSubject: PremiumLimitScreen.Subject
         switch subject {
         case .folders:
@@ -1857,12 +2137,299 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             mappedSubject = .storiesWeekly
         case .storiesMonthly:
             mappedSubject = .storiesMonthly
+        case let .storiesChannelBoost(peer, isCurrent, level, currentLevelBoosts, nextLevelBoosts, link, myBoostCount, canBoostAgain):
+            mappedSubject = .storiesChannelBoost(peer: peer, boostSubject: .stories, isCurrent: isCurrent, level: level, currentLevelBoosts: currentLevelBoosts, nextLevelBoosts: nextLevelBoosts, link: link, myBoostCount: myBoostCount, canBoostAgain: canBoostAgain)
         }
         return PremiumLimitScreen(context: context, subject: mappedSubject, count: count, forceDark: forceDark, cancel: cancel, action: action)
     }
     
-    public func makeStickerPackScreen(context: AccountContext, updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)?, mainStickerPack: StickerPackReference, stickerPacks: [StickerPackReference], loadedStickerPacks: [LoadedStickerPack], parentNavigationController: NavigationController?, sendSticker: ((FileMediaReference, UIView, CGRect) -> Bool)?) -> ViewController {
-        return StickerPackScreen(context: context, updatedPresentationData: updatedPresentationData, mainStickerPack: mainStickerPack, stickerPacks: stickerPacks, loadedStickerPacks: loadedStickerPacks, parentNavigationController: parentNavigationController, sendSticker: sendSticker)
+    public func makePremiumGiftController(context: AccountContext, source: PremiumGiftSource, completion: (() -> Void)?) -> ViewController {
+        let options = Promise<[PremiumGiftCodeOption]>()
+        options.set(context.engine.payments.premiumGiftCodeOptions(peerId: nil))
+                
+        let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+
+        let limit: Int32 = 10
+        var reachedLimitImpl: ((Int32) -> Void)?
+        
+        let mode: ContactMultiselectionControllerMode
+        var currentBirthdays: [EnginePeer.Id: TelegramBirthday]?
+        if case let .chatList(birthdays) = source, let birthdays, !birthdays.isEmpty {
+            mode = .premiumGifting(birthdays: birthdays, selectToday: true)
+            currentBirthdays = birthdays
+        } else if case let .settings(birthdays) = source, let birthdays, !birthdays.isEmpty {
+            mode = .premiumGifting(birthdays: birthdays, selectToday: false)
+            currentBirthdays = birthdays
+        } else {
+            mode = .premiumGifting(birthdays: nil, selectToday: false)
+        }
+        
+        let controller = context.sharedContext.makeContactMultiselectionController(ContactMultiselectionControllerParams(context: context, mode: mode, options: [], isPeerEnabled: { peer in
+            if case let .user(user) = peer, user.botInfo == nil && !peer.isService && !user.flags.contains(.isSupport) {
+                return true
+            } else {
+                return false
+            }
+        }, limit: limit, reachedLimit: { limit in
+            reachedLimitImpl?(limit)
+        }))
+        
+        reachedLimitImpl = { [weak controller] limit in
+            guard let controller else {
+                return
+            }
+            HapticFeedback().error()
+            controller.present(UndoOverlayController(presentationData: presentationData, content: .info(title: nil, text: presentationData.strings.Premium_Gift_ContactSelection_MaximumReached("\(limit)").string, timeout: nil, customUndoText: nil), elevatedLayout: true, position: .bottom, animateInAsReplacement: false, action: { _ in return false }), in: .current)
+        }
+    
+        let _ = combineLatest(queue: Queue.mainQueue(), controller.result, options.get())
+        .startStandalone(next: { [weak controller] result, options in
+            guard let controller else {
+                return
+            }
+            var peerIds: [PeerId] = []
+            if case let .result(peerIdsValue, _) = result {
+                peerIds = peerIdsValue.compactMap({ peerId in
+                    if case let .peer(peerId) = peerId {
+                        return peerId
+                    } else {
+                        return nil
+                    }
+                })
+            }
+            guard !peerIds.isEmpty else {
+                return
+            }
+            
+            let mappedOptions = options.filter { $0.users == 1 }.map { CachedPremiumGiftOption(months: $0.months, currency: $0.currency, amount: $0.amount, botUrl: "", storeProductId: $0.storeProductId) }
+            var pushImpl: ((ViewController) -> Void)?
+            var filterImpl: (() -> Void)?
+            let giftController = PremiumGiftScreen(context: context, peerIds: peerIds, options: mappedOptions, source: source, pushController: { c in
+                pushImpl?(c)
+            }, completion: {
+                filterImpl?()
+                completion?()
+                
+                if case .chatList = source, let _ = currentBirthdays {
+                    let _ = context.engine.notices.dismissServerProvidedSuggestion(suggestion: .todayBirthdays).startStandalone()
+                }
+            })
+            pushImpl = { [weak giftController] c in
+                giftController?.push(c)
+            }
+            filterImpl = { [weak giftController] in
+                if let navigationController = giftController?.navigationController as? NavigationController {
+                    var controllers = navigationController.viewControllers
+                    controllers = controllers.filter { !($0 is ContactMultiselectionController) && !($0 is PremiumGiftScreen) }
+                    navigationController.setViewControllers(controllers, animated: true)
+                }
+            }
+            controller.push(giftController)
+        })
+        
+        return controller
+    }
+    
+    public func makePremiumPrivacyControllerController(context: AccountContext, subject: PremiumPrivacySubject, peerId: EnginePeer.Id) -> ViewController {
+        let mappedSubject: PremiumPrivacyScreen.Subject
+        let introSource: PremiumIntroSource
+        
+        switch subject {
+        case .presence:
+            mappedSubject = .presence
+            introSource = .presence
+        case .readTime:
+            mappedSubject = .readTime
+            introSource = .presence
+        }
+        
+        var actionImpl: (() -> Void)?
+        var openPremiumIntroImpl: (() -> Void)?
+        
+        let controller = PremiumPrivacyScreen(
+            context: context,
+            peerId: peerId,
+            subject: mappedSubject,
+            action: {
+                actionImpl?()
+            }, openPremiumIntro: {
+                openPremiumIntroImpl?()
+            }
+        )
+        actionImpl = { [weak controller] in
+            guard let parentController = controller, let navigationController = parentController.navigationController as? NavigationController else {
+                return
+            }
+            
+            let currentPrivacy = Promise<AccountPrivacySettings>()
+            currentPrivacy.set(context.engine.privacy.requestAccountPrivacySettings())
+            
+            let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+            let tooltipText: String
+            
+            switch subject {
+            case .presence:
+                tooltipText = presentationData.strings.Settings_Privacy_LastSeenRevealedToast
+                
+                let _ = (currentPrivacy.get()
+                |> take(1)
+                |> mapToSignal { current in
+                    let presence = current.presence
+                    var disabledFor: [PeerId: SelectivePrivacyPeer] = [:]
+                    switch presence {
+                    case let .enableEveryone(disabledForValue), let .enableContacts(_, disabledForValue, _):
+                        disabledFor = disabledForValue
+                    default:
+                        break
+                    }
+                    disabledFor.removeValue(forKey: peerId)
+                    
+                    return context.engine.privacy.updateSelectiveAccountPrivacySettings(type: .presence, settings: .enableEveryone(disableFor: disabledFor))
+                }
+                |> deliverOnMainQueue).startStandalone(completed: { [weak navigationController] in
+                    let _ = context.engine.peers.fetchAndUpdateCachedPeerData(peerId: peerId).startStandalone()
+                    
+                    if let parentController = navigationController?.viewControllers.last as? ViewController {
+                        parentController.present(UndoOverlayController(presentationData: presentationData, content: .info(title: nil, text: tooltipText, timeout: 4.0, customUndoText: nil), elevatedLayout: false, action: { _ in
+                            return true
+                        }), in: .window(.root))
+                    }
+                })
+            case .readTime:
+                tooltipText = presentationData.strings.Settings_Privacy_MessageReadTimeRevealedToast
+                
+                let _ = (currentPrivacy.get()
+                |> take(1)
+                |> mapToSignal { current in
+                    var settings = current.globalSettings
+                    settings.hideReadTime = false
+                    return context.engine.privacy.updateGlobalPrivacySettings(settings: settings)
+                }
+                |> deliverOnMainQueue).startStandalone(completed: { [weak navigationController] in
+                    if let parentController = navigationController?.viewControllers.last as? ViewController {
+                        parentController.present(UndoOverlayController(presentationData: presentationData, content: .info(title: nil, text: tooltipText, timeout: 4.0, customUndoText: nil), elevatedLayout: false, action: { _ in
+                            return true
+                        }), in: .window(.root))
+                    }
+                })
+            }
+        }
+        openPremiumIntroImpl = { [weak controller] in
+            guard let parentController = controller else {
+                return
+            }
+            let controller = context.sharedContext.makePremiumIntroController(context: context, source: introSource, forceDark: false, dismissed: nil)
+            parentController.push(controller)
+        }
+        
+        return controller
+    }
+    
+    public func makePremiumBoostLevelsController(context: AccountContext, peerId: EnginePeer.Id, subject: BoostSubject, boostStatus: ChannelBoostStatus, myBoostStatus: MyBoostStatus, forceDark: Bool, openStats: (() -> Void)?) -> ViewController {
+        let premiumConfiguration = PremiumConfiguration.with(appConfiguration: context.currentAppConfiguration.with { $0 })
+        
+        var pushImpl: ((ViewController) -> Void)?
+        var dismissImpl: (() -> Void)?
+        let controller = PremiumBoostLevelsScreen(
+            context: context,
+            peerId: peerId,
+            mode: .owner(subject: subject),
+            status: boostStatus,
+            myBoostStatus: myBoostStatus,
+            openStats: openStats,
+            openGift: premiumConfiguration.giveawayGiftsPurchaseAvailable ? {
+                var updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)?
+                if forceDark {
+                    let presentationData = context.sharedContext.currentPresentationData.with { $0 }.withUpdated(theme: defaultDarkColorPresentationTheme)
+                    updatedPresentationData = (presentationData, .single(presentationData))
+                }
+                let controller = createGiveawayController(context: context, updatedPresentationData: updatedPresentationData, peerId: peerId, subject: .generic)
+                pushImpl?(controller)
+                
+                Queue.mainQueue().after(0.4) {
+                    dismissImpl?()
+                }
+            } : nil,
+            forceDark: forceDark
+        )
+        pushImpl = { [weak controller] c in
+            controller?.push(c)
+        }
+        dismissImpl = { [weak controller] in
+            if let controller, let navigationController = controller.navigationController as? NavigationController {
+                navigationController.setViewControllers(navigationController.viewControllers.filter { !($0 is PremiumBoostLevelsScreen) }, animated: false)
+            }
+        }
+        return controller
+    }
+    
+    public func makeStickerPackScreen(context: AccountContext, updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)?, mainStickerPack: StickerPackReference, stickerPacks: [StickerPackReference], loadedStickerPacks: [LoadedStickerPack], isEditing: Bool, expandIfNeeded: Bool, parentNavigationController: NavigationController?, sendSticker: ((FileMediaReference, UIView, CGRect) -> Bool)?) -> ViewController {
+        return StickerPackScreen(context: context, updatedPresentationData: updatedPresentationData, mainStickerPack: mainStickerPack, stickerPacks: stickerPacks, loadedStickerPacks: loadedStickerPacks, isEditing: isEditing, expandIfNeeded: expandIfNeeded, parentNavigationController: parentNavigationController, sendSticker: sendSticker)
+    }
+    
+    public func makeStickerEditorScreen(context: AccountContext, source: Any?, transitionArguments: (UIView, CGRect, UIImage?)?, completion: @escaping (TelegramMediaFile, [String], @escaping () -> Void) -> Void, cancelled: @escaping () -> Void) -> ViewController {
+        let subject: Signal<MediaEditorScreen.Subject?, NoError>
+        let mode: MediaEditorScreen.Mode.StickerEditorMode
+        var fromCamera = false
+        if let (file, emoji) = source as? (TelegramMediaFile, [String]) {
+            subject = .single(.sticker(file, emoji))
+            mode = .editing
+        } else if let asset = source as? PHAsset {
+            subject = .single(.asset(asset))
+            mode = .addingToPack
+        } else if let image = source as? UIImage {
+            subject = .single(.image(image, PixelDimensions(image.size), nil, .bottomRight))
+            mode = .addingToPack
+        } else if let source = source as? Signal<CameraScreen.Result, NoError> {
+            subject = source
+            |> map { value -> MediaEditorScreen.Subject? in
+                switch value {
+                case .pendingImage:
+                    return nil
+                case let .image(image):
+                    return .image(image.image, PixelDimensions(image.image.size), nil, .topLeft)
+                default:
+                    return nil
+                }
+            }
+            fromCamera = true
+            mode = .addingToPack
+        } else {
+            subject = .single(.empty(PixelDimensions(width: 1080, height: 1920)))
+            mode = .addingToPack
+        }
+        let editorController = MediaEditorScreen(
+            context: context,
+            mode: .stickerEditor(mode: mode),
+            subject: subject,
+            transitionIn: fromCamera ? .camera : transitionArguments.flatMap { .gallery(
+                MediaEditorScreen.TransitionIn.GalleryTransitionIn(
+                    sourceView: $0.0,
+                    sourceRect: $0.1,
+                    sourceImage: $0.2
+                )
+            ) },
+            transitionOut: { finished, isNew in
+                if !finished, let transitionArguments {
+                    return MediaEditorScreen.TransitionOut(
+                        destinationView: transitionArguments.0,
+                        destinationRect: transitionArguments.0.bounds,
+                        destinationCornerRadius: 0.0
+                    )
+                }
+                return nil
+            }, completion: { result, commit in
+                if case let .sticker(file, emoji) = result.media {
+                    completion(file, emoji, {
+                        commit({})
+                    })
+                }
+            } as (MediaEditorScreen.Result, @escaping (@escaping () -> Void) -> Void) -> Void
+        )
+        editorController.cancelled = { _ in
+            cancelled()
+        }
+        return editorController
     }
     
     public func makeMediaPickerScreen(context: AccountContext, hasSearch: Bool, completion: @escaping (Any) -> Void) -> ViewController {
@@ -1872,6 +2439,21 @@ public final class SharedAccountContextImpl: SharedAccountContext {
     public func makeStoryMediaPickerScreen(context: AccountContext, getSourceRect: @escaping () -> CGRect, completion: @escaping (Any, UIView, CGRect, UIImage?, @escaping (Bool?) -> (UIView, CGRect)?, @escaping () -> Void) -> Void, dismissed: @escaping () -> Void, groupsPresented: @escaping () -> Void) -> ViewController {
         return storyMediaPickerController(context: context, getSourceRect: getSourceRect, completion: completion, dismissed: dismissed, groupsPresented: groupsPresented)
     }
+    
+    public func makeStickerMediaPickerScreen(context: AccountContext, getSourceRect: @escaping () -> CGRect?, completion: @escaping (Any?, UIView?, CGRect, UIImage?, Bool, @escaping (Bool?) -> (UIView, CGRect)?, @escaping () -> Void) -> Void, dismissed: @escaping () -> Void) -> ViewController {
+        return stickerMediaPickerController(context: context, getSourceRect: getSourceRect, completion: completion, dismissed: dismissed)
+    }
+    
+    public func makeStickerPickerScreen(context: AccountContext, inputData: Promise<StickerPickerInput>, completion: @escaping (FileMediaReference) -> Void) -> ViewController {
+        let controller = StickerPickerScreen(context: context, inputData: inputData.get(), expanded: true, hasGifs: false, hasInteractiveStickers: false)
+        controller.completion = { content in
+            if let content, case let .file(file, _) = content {
+                completion(file)
+            }
+            return true
+        }
+        return controller
+    }
         
     public func makeProxySettingsController(sharedContext: SharedAccountContext, account: UnauthorizedAccount) -> ViewController {
         return proxySettingsController(accountManager: sharedContext.accountManager, postbox: account.postbox, network: account.network, mode: .modal, presentationData: sharedContext.currentPresentationData.with { $0 }, updatedPresentationData: sharedContext.presentationData)
@@ -1880,6 +2462,18 @@ public final class SharedAccountContextImpl: SharedAccountContext {
     public func makeInstalledStickerPacksController(context: AccountContext, mode: InstalledStickerPacksControllerMode, forceTheme: PresentationTheme?) -> ViewController {
         return installedStickerPacksController(context: context, mode: mode, forceTheme: forceTheme)
     }
+    
+    public func makeChannelStatsController(context: AccountContext, updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)?, peerId: EnginePeer.Id, boosts: Bool, boostStatus: ChannelBoostStatus?) -> ViewController {
+        return channelStatsController(context: context, updatedPresentationData: updatedPresentationData, peerId: peerId, section: boosts ? .boosts : .stats, boostStatus: boostStatus)
+    }
+    
+    public func makeMessagesStatsController(context: AccountContext, updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)?, messageId: EngineMessage.Id) -> ViewController {
+        return messageStatsController(context: context, updatedPresentationData: updatedPresentationData, subject: .message(id: messageId))
+    }
+    
+    public func makeStoryStatsController(context: AccountContext, updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)?, peerId: EnginePeer.Id, storyId: Int32, storyItem: EngineStoryItem, fromStory: Bool) -> ViewController {
+        return messageStatsController(context: context, updatedPresentationData: updatedPresentationData, subject: .story(peerId: peerId, id: storyId, item: storyItem, fromStory: fromStory))
+    }
 }
 
 private func peerInfoControllerImpl(context: AccountContext, updatedPresentationData: (PresentationData, Signal<PresentationData, NoError>)?, peer: Peer, mode: PeerInfoControllerMode, avatarInitiallyExpanded: Bool, isOpenedFromChat: Bool, requestsContext: PeerInvitationImportersContext? = nil) -> ViewController? {
@@ -1887,18 +2481,23 @@ private func peerInfoControllerImpl(context: AccountContext, updatedPresentation
         return PeerInfoScreenImpl(context: context, updatedPresentationData: updatedPresentationData, peerId: peer.id, avatarInitiallyExpanded: avatarInitiallyExpanded, isOpenedFromChat: isOpenedFromChat, nearbyPeerDistance: nil, reactionSourceMessageId: nil, callMessages: [])
     } else if let _ = peer as? TelegramChannel {
         var forumTopicThread: ChatReplyThreadMessage?
+        var switchToRecommendedChannels = false
         switch mode {
         case let .forumTopic(thread):
             forumTopicThread = thread
+        case .recommendedChannels:
+            switchToRecommendedChannels = true
         default:
             break
         }
-        return PeerInfoScreenImpl(context: context, updatedPresentationData: updatedPresentationData, peerId: peer.id, avatarInitiallyExpanded: avatarInitiallyExpanded, isOpenedFromChat: isOpenedFromChat, nearbyPeerDistance: nil, reactionSourceMessageId: nil, callMessages: [], forumTopicThread: forumTopicThread)
+        return PeerInfoScreenImpl(context: context, updatedPresentationData: updatedPresentationData, peerId: peer.id, avatarInitiallyExpanded: avatarInitiallyExpanded, isOpenedFromChat: isOpenedFromChat, nearbyPeerDistance: nil, reactionSourceMessageId: nil, callMessages: [], forumTopicThread: forumTopicThread, switchToRecommendedChannels: switchToRecommendedChannels)
     } else if peer is TelegramUser {
         var nearbyPeerDistance: Int32?
         var reactionSourceMessageId: MessageId?
         var callMessages: [Message] = []
         var hintGroupInCommon: PeerId?
+        var forumTopicThread: ChatReplyThreadMessage?
+
         switch mode {
         case let .nearbyPeer(distance):
             nearbyPeerDistance = distance
@@ -1910,10 +2509,12 @@ private func peerInfoControllerImpl(context: AccountContext, updatedPresentation
             hintGroupInCommon = id
         case let .reaction(messageId):
             reactionSourceMessageId = messageId
-        case .forumTopic:
+        case let .forumTopic(thread):
+            forumTopicThread = thread
+        default:
             break
         }
-        return PeerInfoScreenImpl(context: context, updatedPresentationData: updatedPresentationData, peerId: peer.id, avatarInitiallyExpanded: avatarInitiallyExpanded, isOpenedFromChat: isOpenedFromChat, nearbyPeerDistance: nearbyPeerDistance, reactionSourceMessageId: reactionSourceMessageId, callMessages: callMessages, hintGroupInCommon: hintGroupInCommon)
+        return PeerInfoScreenImpl(context: context, updatedPresentationData: updatedPresentationData, peerId: peer.id, avatarInitiallyExpanded: avatarInitiallyExpanded, isOpenedFromChat: isOpenedFromChat, nearbyPeerDistance: nearbyPeerDistance, reactionSourceMessageId: reactionSourceMessageId, callMessages: callMessages, hintGroupInCommon: hintGroupInCommon, forumTopicThread: forumTopicThread)
     } else if peer is TelegramSecretChat {
         return PeerInfoScreenImpl(context: context, updatedPresentationData: updatedPresentationData, peerId: peer.id, avatarInitiallyExpanded: avatarInitiallyExpanded, isOpenedFromChat: isOpenedFromChat, nearbyPeerDistance: nil, reactionSourceMessageId: nil, callMessages: [])
     }

@@ -31,6 +31,7 @@ private extension SimpleShapeLayer {
 private final class ShutterButtonContentComponent: Component {
     let isTablet: Bool
     let hasAppeared: Bool
+    let tintColor: UIColor
     let shutterState: ShutterButtonState
     let blobState: ShutterBlobView.BlobState
     let highlightedAction: ActionSlot<Bool>
@@ -40,6 +41,7 @@ private final class ShutterButtonContentComponent: Component {
     init(
         isTablet: Bool,
         hasAppeared: Bool,
+        tintColor: UIColor,
         shutterState: ShutterButtonState,
         blobState: ShutterBlobView.BlobState,
         highlightedAction: ActionSlot<Bool>,
@@ -48,6 +50,7 @@ private final class ShutterButtonContentComponent: Component {
     ) {
         self.isTablet = isTablet
         self.hasAppeared = hasAppeared
+        self.tintColor = tintColor
         self.shutterState = shutterState
         self.blobState = blobState
         self.highlightedAction = highlightedAction
@@ -60,6 +63,9 @@ private final class ShutterButtonContentComponent: Component {
             return false
         }
         if lhs.hasAppeared != rhs.hasAppeared {
+            return false
+        }
+        if lhs.tintColor != rhs.tintColor {
             return false
         }
         if lhs.shutterState != rhs.shutterState {
@@ -156,7 +162,7 @@ private final class ShutterButtonContentComponent: Component {
                     }
                 }
             }
-            
+                        
             let innerColor: UIColor
             let innerSize: CGSize
             let ringSize: CGSize
@@ -164,7 +170,7 @@ private final class ShutterButtonContentComponent: Component {
             var recordingProgress: Float?
             switch component.shutterState {
             case .generic, .disabled:
-                innerColor = .white
+                innerColor = component.tintColor
                 innerSize = CGSize(width: 60.0, height: 60.0)
                 ringSize = CGSize(width: 68.0, height: 68.0)
             case .video:
@@ -188,7 +194,7 @@ private final class ShutterButtonContentComponent: Component {
             }
             
             self.ringLayer.fillColor = UIColor.clear.cgColor
-            self.ringLayer.strokeColor = UIColor.white.cgColor
+            self.ringLayer.strokeColor = component.tintColor.cgColor
             self.ringLayer.lineWidth = ringWidth
             let ringPath = CGPath(
                 ellipseIn: CGRect(
@@ -204,7 +210,7 @@ private final class ShutterButtonContentComponent: Component {
             self.ringLayer.position = CGPoint(x: maximumShutterSize.width / 2.0, y: maximumShutterSize.height / 2.0)
             
             if let blobView = self.blobView {
-                blobView.updateState(component.blobState, transition: transition)
+                blobView.updateState(component.blobState, tintColor: innerColor, transition: transition)
                 if component.isTablet {
                     blobView.bounds = CGRect(origin: .zero, size: CGSize(width: maximumShutterSize.width, height: 440.0))
                 } else {
@@ -247,14 +253,16 @@ private final class ShutterButtonContentComponent: Component {
 final class FlipButtonContentComponent: Component {
     private let action: ActionSlot<Void>
     private let maskFrame: CGRect
+    private let tintColor: UIColor
     
-    init(action: ActionSlot<Void>, maskFrame: CGRect) {
+    init(action: ActionSlot<Void>, maskFrame: CGRect, tintColor: UIColor) {
         self.action = action
         self.maskFrame = maskFrame
+        self.tintColor = tintColor
     }
     
     static func ==(lhs: FlipButtonContentComponent, rhs: FlipButtonContentComponent) -> Bool {
-        return lhs.maskFrame == rhs.maskFrame
+        return lhs.maskFrame == rhs.maskFrame && lhs.tintColor == rhs.tintColor
     }
     
     final class View: UIView {
@@ -280,7 +288,7 @@ final class FlipButtonContentComponent: Component {
             self.maskLayer.masksToBounds = true
             self.maskLayer.cornerRadius = 16.0
             
-            self.icon.contents = UIImage(bundleImageName: "Camera/FlipIcon")?.cgImage
+            self.icon.contents = UIImage(bundleImageName: "Camera/FlipIcon")?.withRenderingMode(.alwaysTemplate).cgImage
             self.darkIcon.contents = UIImage(bundleImageName: "Camera/FlipIcon")?.cgImage
             self.darkIcon.layerTintColor = UIColor.black.cgColor
         }
@@ -326,6 +334,8 @@ final class FlipButtonContentComponent: Component {
             
             let size = CGSize(width: 48.0, height: 48.0)
             
+            self.icon.layerTintColor = component.tintColor.cgColor
+            
             self.icon.position = CGPoint(x: size.width / 2.0, y: size.height / 2.0)
             self.icon.bounds = CGRect(origin: .zero, size: size)
             
@@ -350,13 +360,15 @@ final class FlipButtonContentComponent: Component {
 
 final class LockContentComponent: Component {
     private let maskFrame: CGRect
+    private let tintColor: UIColor
     
-    init(maskFrame: CGRect) {
+    init(maskFrame: CGRect, tintColor: UIColor) {
         self.maskFrame = maskFrame
+        self.tintColor = tintColor
     }
     
     static func ==(lhs: LockContentComponent, rhs: LockContentComponent) -> Bool {
-        return lhs.maskFrame == rhs.maskFrame
+        return lhs.maskFrame == rhs.maskFrame && lhs.tintColor == rhs.tintColor
     }
     
     final class View: UIView {
@@ -383,7 +395,7 @@ final class LockContentComponent: Component {
             self.maskLayer.masksToBounds = true
             self.maskLayer.cornerRadius = 24.0
             
-            self.icon.contents = UIImage(bundleImageName: "Camera/LockIcon")?.cgImage
+            self.icon.contents = UIImage(bundleImageName: "Camera/LockIcon")?.withRenderingMode(.alwaysTemplate).cgImage
             self.darkIcon.contents = UIImage(bundleImageName: "Camera/LockedIcon")?.cgImage
             self.darkIcon.layerTintColor = UIColor.black.cgColor
         }
@@ -396,6 +408,8 @@ final class LockContentComponent: Component {
             self.component = component
             
             let size = CGSize(width: 30.0, height: 30.0)
+            
+            self.icon.layerTintColor = component.tintColor.cgColor
             
             self.icon.position = CGPoint(x: size.width / 2.0, y: size.height / 2.0)
             self.icon.bounds = CGRect(origin: .zero, size: size)
@@ -445,8 +459,10 @@ final class CaptureControlsComponent: Component {
     }
     
     let isTablet: Bool
+    let isSticker: Bool
     let hasAppeared: Bool
     let hasAccess: Bool
+    let tintColor: UIColor
     let shutterState: ShutterButtonState
     let lastGalleryAsset: PHAsset?
     let tag: AnyObject?
@@ -463,8 +479,10 @@ final class CaptureControlsComponent: Component {
     
     init(
         isTablet: Bool,
+        isSticker: Bool,
         hasAppeared: Bool,
         hasAccess: Bool,
+        tintColor: UIColor,
         shutterState: ShutterButtonState,
         lastGalleryAsset: PHAsset?,
         tag: AnyObject?,
@@ -480,8 +498,10 @@ final class CaptureControlsComponent: Component {
         flipAnimationAction: ActionSlot<Void>
     ) {
         self.isTablet = isTablet
+        self.isSticker = isSticker
         self.hasAppeared = hasAppeared
         self.hasAccess = hasAccess
+        self.tintColor = tintColor
         self.shutterState = shutterState
         self.lastGalleryAsset = lastGalleryAsset
         self.tag = tag
@@ -501,10 +521,16 @@ final class CaptureControlsComponent: Component {
         if lhs.isTablet != rhs.isTablet {
             return false
         }
+        if lhs.isSticker != rhs.isSticker {
+            return false
+        }
         if lhs.hasAppeared != rhs.hasAppeared {
             return false
         }
         if lhs.hasAccess != rhs.hasAccess {
+            return false
+        }
+        if lhs.tintColor != rhs.tintColor {
             return false
         }
         if lhs.shutterState != rhs.shutterState {
@@ -578,8 +604,7 @@ final class CaptureControlsComponent: Component {
         
         private let shutterHightlightedAction = ActionSlot<Bool>()
         
-        private let lockImage = UIImage(bundleImageName: "Camera/LockIcon")
-        private let zoomImage = UIImage(bundleImageName: "Camera/ZoomIcon")
+        private let zoomImage = UIImage(bundleImageName: "Camera/ZoomIcon")?.withRenderingMode(.alwaysTemplate)
         
         private var didFlip = false
         
@@ -892,64 +917,71 @@ final class CaptureControlsComponent: Component {
             } else if case .transition = component.shutterState {
                 isTransitioning = true
             }
-                     
-            let gallerySize: CGSize
-            let galleryCornerRadius: CGFloat
-            if component.isTablet {
-                gallerySize = CGSize(width: 72.0, height: 72.0)
-                galleryCornerRadius = 16.0
-            } else {
-                gallerySize = CGSize(width: 50.0, height: 50.0)
-                galleryCornerRadius = 10.0
-            }
-            let galleryButtonId: String
-            if let (identifier, _) = state.cachedAssetImage, identifier == "" {
-                galleryButtonId = "placeholder"
-            } else {
-                galleryButtonId = "gallery"
-            }
-            let galleryButtonSize = self.galleryButtonView.update(
-                transition: transition,
-                component: AnyComponent(
-                    CameraButton(
-                        content: AnyComponentWithIdentity(
-                            id: galleryButtonId,
-                            component: AnyComponent(
-                                Image(
-                                    image: state.cachedAssetImage?.1,
-                                    size: gallerySize,
-                                    contentMode: .scaleAspectFill
-                                )
-                            )
-                        ),
-                        tag: component.galleryButtonTag,
-                        action: {
-                            component.galleryTapped()
-                        }
-                    )
-                ),
-                environment: {},
-                containerSize: gallerySize
-            )
+                    
             let galleryButtonFrame: CGRect
-            if component.isTablet {
-                galleryButtonFrame = CGRect(origin: CGPoint(x: floorToScreenPixels((size.width - galleryButtonSize.width) / 2.0), y: size.height - galleryButtonSize.height - 56.0), size: galleryButtonSize)
-            } else {
-                galleryButtonFrame = CGRect(origin: CGPoint(x: buttonSideInset, y: floorToScreenPixels((size.height - galleryButtonSize.height) / 2.0)), size: galleryButtonSize)
-            }
-            if let galleryButtonView = self.galleryButtonView.view {
-                galleryButtonView.clipsToBounds = true
-                galleryButtonView.layer.cornerRadius = galleryCornerRadius
-                if galleryButtonView.superview == nil {
-                    self.addSubview(galleryButtonView)
+            let gallerySize: CGSize
+            if !component.isSticker {
+                let galleryCornerRadius: CGFloat
+                if component.isTablet {
+                    gallerySize = CGSize(width: 72.0, height: 72.0)
+                    galleryCornerRadius = 16.0
+                } else {
+                    gallerySize = CGSize(width: 50.0, height: 50.0)
+                    galleryCornerRadius = 10.0
                 }
-                transition.setBounds(view: galleryButtonView, bounds: CGRect(origin: .zero, size: galleryButtonFrame.size))
-                transition.setPosition(view: galleryButtonView, position: galleryButtonFrame.center)
-                
-                transition.setScale(view: galleryButtonView, scale: isRecording || isTransitioning ? 0.1 : 1.0)
-                transition.setAlpha(view: galleryButtonView, alpha: isRecording || isTransitioning ? 0.0 : 1.0)
+                let galleryButtonId: String
+                if let (identifier, _) = state.cachedAssetImage, identifier == "" {
+                    galleryButtonId = "placeholder"
+                } else {
+                    galleryButtonId = "gallery"
+                }
+                let galleryButtonSize = self.galleryButtonView.update(
+                    transition: transition,
+                    component: AnyComponent(
+                        CameraButton(
+                            content: AnyComponentWithIdentity(
+                                id: galleryButtonId,
+                                component: AnyComponent(
+                                    Image(
+                                        image: state.cachedAssetImage?.1,
+                                        size: gallerySize,
+                                        contentMode: .scaleAspectFill
+                                    )
+                                )
+                            ),
+                            tag: component.galleryButtonTag,
+                            action: {
+                                component.galleryTapped()
+                            }
+                        )
+                    ),
+                    environment: {},
+                    containerSize: gallerySize
+                )
+                if component.isTablet {
+                    galleryButtonFrame = CGRect(origin: CGPoint(x: floorToScreenPixels((size.width - galleryButtonSize.width) / 2.0), y: size.height - galleryButtonSize.height - 56.0), size: galleryButtonSize)
+                } else {
+                    galleryButtonFrame = CGRect(origin: CGPoint(x: buttonSideInset, y: floorToScreenPixels((size.height - galleryButtonSize.height) / 2.0)), size: galleryButtonSize)
+                }
+                if let galleryButtonView = self.galleryButtonView.view as? CameraButton.View {
+                    galleryButtonView.contentView.clipsToBounds = true
+                    galleryButtonView.contentView.layer.cornerRadius = galleryCornerRadius
+                    if galleryButtonView.superview == nil {
+                        self.addSubview(galleryButtonView)
+                    }
+                    transition.setBounds(view: galleryButtonView, bounds: CGRect(origin: .zero, size: galleryButtonFrame.size))
+                    transition.setPosition(view: galleryButtonView, position: galleryButtonFrame.center)
+                    
+                    let normalAlpha = component.tintColor.rgb == 0xffffff ? 1.0 : 0.6
+                    
+                    transition.setScale(view: galleryButtonView, scale: isRecording || isTransitioning ? 0.1 : 1.0)
+                    transition.setAlpha(view: galleryButtonView, alpha: isRecording || isTransitioning ? 0.0 : normalAlpha)
+                }
+            } else {
+                galleryButtonFrame = .zero
+                gallerySize = .zero
             }
-                        
+            
             if !component.isTablet && component.hasAccess {
                 let flipButtonOriginX = availableSize.width - 48.0 - buttonSideInset
                 let flipButtonMaskFrame: CGRect = CGRect(origin: CGPoint(x: availableSize.width / 2.0 - (flipButtonOriginX + 22.0) + 6.0 + self.shutterOffsetX, y: 8.0), size: CGSize(width: 32.0, height: 32.0))
@@ -963,7 +995,8 @@ final class CaptureControlsComponent: Component {
                                 component: AnyComponent(
                                     FlipButtonContentComponent(
                                         action: component.flipAnimationAction,
-                                        maskFrame: flipButtonMaskFrame
+                                        maskFrame: flipButtonMaskFrame,
+                                        tintColor: component.tintColor
                                     )
                                 )
                             ),
@@ -1011,6 +1044,7 @@ final class CaptureControlsComponent: Component {
                             ShutterButtonContentComponent(
                                 isTablet: component.isTablet,
                                 hasAppeared: component.hasAppeared,
+                                tintColor: component.tintColor,
                                 shutterState: component.shutterState,
                                 blobState: blobState,
                                 highlightedAction: self.shutterHightlightedAction,
@@ -1072,6 +1106,7 @@ final class CaptureControlsComponent: Component {
                     component: AnyComponent(
                         Image(
                             image: self.zoomImage,
+                            tintColor: component.tintColor,
                             size: hintIconSize
                         )
                     ),
@@ -1117,7 +1152,8 @@ final class CaptureControlsComponent: Component {
                             id: "lock",
                             component: AnyComponent(
                                 LockContentComponent(
-                                    maskFrame: lockMaskFrame
+                                    maskFrame: lockMaskFrame,
+                                    tintColor: component.tintColor
                                 )
                             )
                         ),
@@ -1148,15 +1184,16 @@ final class CaptureControlsComponent: Component {
             
             if let shutterButtonView = self.shutterButtonView.view {
                 if shutterButtonView.superview == nil {
-                    let panGestureRecognizer = UIPanGestureRecognizer(target: self, action: #selector(self.handlePan(_:)))
-                    panGestureRecognizer.delegate = self
-                    shutterButtonView.addGestureRecognizer(panGestureRecognizer)
-                    
-                    let pressGestureRecognizer = UILongPressGestureRecognizer(target: self, action: #selector(self.handlePress(_:)))
-                    pressGestureRecognizer.minimumPressDuration = 0.3
-                    pressGestureRecognizer.delegate = self
-                    shutterButtonView.addGestureRecognizer(pressGestureRecognizer)
-                    
+                    if !component.isSticker {
+                        let panGestureRecognizer = UIPanGestureRecognizer(target: self, action: #selector(self.handlePan(_:)))
+                        panGestureRecognizer.delegate = self
+                        shutterButtonView.addGestureRecognizer(panGestureRecognizer)
+                        
+                        let pressGestureRecognizer = UILongPressGestureRecognizer(target: self, action: #selector(self.handlePress(_:)))
+                        pressGestureRecognizer.minimumPressDuration = 0.3
+                        pressGestureRecognizer.delegate = self
+                        shutterButtonView.addGestureRecognizer(pressGestureRecognizer)
+                    }
                     self.addSubview(shutterButtonView)
                 }
                 let alpha: CGFloat = component.hasAccess ? 1.0 : 0.3

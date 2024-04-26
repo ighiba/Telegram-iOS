@@ -8,19 +8,21 @@ public final class RoundedRectangle: Component {
     }
     
     public let colors: [UIColor]
-    public let cornerRadius: CGFloat
+    public let cornerRadius: CGFloat?
     public let gradientDirection: GradientDirection
     public let stroke: CGFloat?
+    public let strokeColor: UIColor?
     
-    public convenience init(color: UIColor, cornerRadius: CGFloat, stroke: CGFloat? = nil) {
-        self.init(colors: [color], cornerRadius: cornerRadius, stroke: stroke)
+    public convenience init(color: UIColor, cornerRadius: CGFloat?, stroke: CGFloat? = nil, strokeColor: UIColor? = nil) {
+        self.init(colors: [color], cornerRadius: cornerRadius, stroke: stroke, strokeColor: strokeColor)
     }
     
-    public init(colors: [UIColor], cornerRadius: CGFloat, gradientDirection: GradientDirection = .horizontal, stroke: CGFloat? = nil) {
+    public init(colors: [UIColor], cornerRadius: CGFloat?, gradientDirection: GradientDirection = .horizontal, stroke: CGFloat? = nil, strokeColor: UIColor? = nil) {
         self.colors = colors
         self.cornerRadius = cornerRadius
         self.gradientDirection = gradientDirection
         self.stroke = stroke
+        self.strokeColor = strokeColor
     }
 
     public static func ==(lhs: RoundedRectangle, rhs: RoundedRectangle) -> Bool {
@@ -36,6 +38,9 @@ public final class RoundedRectangle: Component {
         if lhs.stroke != rhs.stroke {
             return false
         }
+        if lhs.strokeColor != rhs.strokeColor {
+            return false
+        }
         return true
     }
     
@@ -44,25 +49,35 @@ public final class RoundedRectangle: Component {
         
         func update(component: RoundedRectangle, availableSize: CGSize, transition: Transition) -> CGSize {
             if self.component != component {
+                let cornerRadius = component.cornerRadius ?? min(availableSize.width, availableSize.height) * 0.5
+                
                 if component.colors.count == 1, let color = component.colors.first {
-                    let imageSize = CGSize(width: max(component.stroke ?? 0.0, component.cornerRadius) * 2.0, height: max(component.stroke ?? 0.0, component.cornerRadius) * 2.0)
+                    let imageSize = CGSize(width: max(component.stroke ?? 0.0, cornerRadius) * 2.0, height: max(component.stroke ?? 0.0, cornerRadius) * 2.0)
                     UIGraphicsBeginImageContextWithOptions(imageSize, false, 0.0)
                     if let context = UIGraphicsGetCurrentContext() {
-                        context.setFillColor(color.cgColor)
+                        if let strokeColor = component.strokeColor {
+                            context.setFillColor(strokeColor.cgColor)
+                        } else {
+                            context.setFillColor(color.cgColor)
+                        }
                         context.fillEllipse(in: CGRect(origin: CGPoint(), size: imageSize))
                         
                         if let stroke = component.stroke, stroke > 0.0 {
-                            context.setBlendMode(.clear)
+                            if let _ = component.strokeColor {
+                                context.setFillColor(color.cgColor)
+                            } else {
+                                context.setBlendMode(.clear)
+                            }
                             context.fillEllipse(in: CGRect(origin: CGPoint(), size: imageSize).insetBy(dx: stroke, dy: stroke))
                         }
                     }
-                    self.image = UIGraphicsGetImageFromCurrentImageContext()?.stretchableImage(withLeftCapWidth: Int(component.cornerRadius), topCapHeight: Int(component.cornerRadius))
+                    self.image = UIGraphicsGetImageFromCurrentImageContext()?.stretchableImage(withLeftCapWidth: Int(cornerRadius), topCapHeight: Int(cornerRadius))
                     UIGraphicsEndImageContext()
                 } else if component.colors.count > 1 {
                     let imageSize = availableSize
                     UIGraphicsBeginImageContextWithOptions(imageSize, false, 0.0)
                     if let context = UIGraphicsGetCurrentContext() {
-                        context.addPath(UIBezierPath(roundedRect: CGRect(origin: CGPoint(), size: imageSize), cornerRadius: component.cornerRadius).cgPath)
+                        context.addPath(UIBezierPath(roundedRect: CGRect(origin: CGPoint(), size: imageSize), cornerRadius: cornerRadius).cgPath)
                         context.clip()
 
                         let colors = component.colors
@@ -80,12 +95,12 @@ public final class RoundedRectangle: Component {
                         if let stroke = component.stroke, stroke > 0.0 {
                             context.resetClip()
                             
-                            context.addPath(UIBezierPath(roundedRect: CGRect(origin: CGPoint(), size: imageSize).insetBy(dx: stroke, dy: stroke), cornerRadius: component.cornerRadius).cgPath)
+                            context.addPath(UIBezierPath(roundedRect: CGRect(origin: CGPoint(), size: imageSize).insetBy(dx: stroke, dy: stroke), cornerRadius: cornerRadius).cgPath)
                             context.setBlendMode(.clear)
                             context.fill(CGRect(origin: .zero, size: imageSize))
                         }
                     }
-                    self.image = UIGraphicsGetImageFromCurrentImageContext()?.stretchableImage(withLeftCapWidth: Int(component.cornerRadius), topCapHeight: Int(component.cornerRadius))
+                    self.image = UIGraphicsGetImageFromCurrentImageContext()?.stretchableImage(withLeftCapWidth: Int(cornerRadius), topCapHeight: Int(cornerRadius))
                     UIGraphicsEndImageContext()
                 }
             }

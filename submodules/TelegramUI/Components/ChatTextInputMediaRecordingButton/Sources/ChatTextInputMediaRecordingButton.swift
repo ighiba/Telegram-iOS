@@ -179,6 +179,7 @@ public final class ChatTextInputMediaRecordingButton: TGModernConversationInputM
     private let context: AccountContext
     private var theme: PresentationTheme
     private let useDarkTheme: Bool
+    private let pause: Bool
     private let strings: PresentationStrings
     
     public var mode: ChatTextInputMediaRecordingButtonMode = .audio
@@ -205,6 +206,35 @@ public final class ChatTextInputMediaRecordingButton: TGModernConversationInputM
     private var micLevelDisposable: MetaDisposable?
 
     private weak var currentPresenter: UIView?
+    
+    public var hasShadow: Bool = false {
+        didSet {
+            self.updateShadow()
+        }
+    }
+    
+    public var hidesOnLock: Bool = false {
+        didSet {
+            if self.hidesOnLock {
+                self.setHidesPanelOnLock()
+            }
+        }
+    }
+    
+    private func updateShadow() {
+        if let view = self.animationView.view {
+            if self.hasShadow {
+                view.layer.shadowOffset = CGSize(width: 0.0, height: 0.0)
+                view.layer.shadowRadius = 2.0
+                view.layer.shadowColor = UIColor.black.cgColor
+                view.layer.shadowOpacity = 0.35
+            } else {
+                view.layer.shadowRadius = 0.0
+                view.layer.shadowColor = UIColor.clear.cgColor
+                view.layer.shadowOpacity = 0.0
+            }
+        }
+    }
 
     public var contentContainer: (UIView, CGRect)? {
         if let _ = self.currentPresenter {
@@ -223,7 +253,6 @@ public final class ChatTextInputMediaRecordingButton: TGModernConversationInputM
                 if let audioRecorder = self.audioRecorder {
                     self.micLevelDisposable?.set(audioRecorder.micLevel.start(next: { [weak self] level in
                         Queue.mainQueue().async {
-                            //self?.recordingOverlay?.addImmediateMicLevel(CGFloat(level))
                             self?.addMicLevel(CGFloat(level))
                         }
                     }))
@@ -246,7 +275,6 @@ public final class ChatTextInputMediaRecordingButton: TGModernConversationInputM
                 if let videoRecordingStatus = self.videoRecordingStatus {
                     self.micLevelDisposable?.set(videoRecordingStatus.micLevel.start(next: { [weak self] level in
                         Queue.mainQueue().async {
-                            //self?.recordingOverlay?.addImmediateMicLevel(CGFloat(level))
                             self?.addMicLevel(CGFloat(level))
                         }
                     }))
@@ -283,7 +311,8 @@ public final class ChatTextInputMediaRecordingButton: TGModernConversationInputM
                 mediumBlobRange: (0.52, 0.87),
                 bigBlobRange: (0.57, 1.00)
             )
-            blobView.setColor(self.theme.chat.inputPanel.actionControlFillColor)
+            let theme = self.hidesOnLock ? defaultDarkColorPresentationTheme : self.theme
+            blobView.setColor(theme.chat.inputPanel.actionControlFillColor)
             self.micDecorationValue = blobView
             return blobView
         }
@@ -294,17 +323,18 @@ public final class ChatTextInputMediaRecordingButton: TGModernConversationInputM
         if let current = self.micLockValue {
             return current
         } else {
-            let lockView = LockView(frame: CGRect(origin: CGPoint(), size: CGSize(width: 40.0, height: 60.0)), theme: self.theme, useDarkTheme: self.useDarkTheme, strings: self.strings)
+            let lockView = LockView(frame: CGRect(origin: CGPoint(), size: CGSize(width: 40.0, height: 60.0)), theme: self.theme, useDarkTheme: self.useDarkTheme, pause: self.pause, strings: self.strings)
             lockView.addTarget(self, action: #selector(handleStopTap), for: .touchUpInside)
             self.micLockValue = lockView
             return lockView
         }
     }
     
-    public init(context: AccountContext, theme: PresentationTheme, useDarkTheme: Bool = false, strings: PresentationStrings, presentController: @escaping (ViewController) -> Void) {
+    public init(context: AccountContext, theme: PresentationTheme, useDarkTheme: Bool = false, pause: Bool = false, strings: PresentationStrings, presentController: @escaping (ViewController) -> Void) {
         self.context = context
         self.theme = theme
         self.useDarkTheme = useDarkTheme
+        self.pause = pause
         self.strings = strings
         self.animationView = ComponentView<Empty>()
         self.presentController = presentController
@@ -353,13 +383,14 @@ public final class ChatTextInputMediaRecordingButton: TGModernConversationInputM
     
     private func updateAnimation(previousMode: ChatTextInputMediaRecordingButtonMode) {
         let image: UIImage?
+        let theme = self.hidesOnLock ? defaultDarkColorPresentationTheme : self.theme
         switch self.mode {
             case .audio:
-                self.icon = PresentationResourcesChat.chatInputPanelVoiceActiveButtonImage(self.theme)
-                image = PresentationResourcesChat.chatInputPanelVoiceButtonImage(self.theme)
+                self.icon = PresentationResourcesChat.chatInputPanelVoiceActiveButtonImage(theme)
+                image = PresentationResourcesChat.chatInputPanelVoiceButtonImage(theme)
             case .video:
-                self.icon = PresentationResourcesChat.chatInputPanelVideoActiveButtonImage(self.theme)
-                image = PresentationResourcesChat.chatInputPanelVoiceButtonImage(self.theme)
+                self.icon = PresentationResourcesChat.chatInputPanelVideoActiveButtonImage(theme)
+                image = PresentationResourcesChat.chatInputPanelVoiceButtonImage(theme)
         }
         
         let size = self.bounds.size
@@ -380,7 +411,7 @@ public final class ChatTextInputMediaRecordingButton: TGModernConversationInputM
                 animationName = "anim_micToVideo"
         }
 
-        let _ = animationView.update(
+        let _ = self.animationView.update(
             transition: .immediate,
             component: AnyComponent(LottieComponent(
                 content: LottieComponent.AppBundleContent(name: animationName),
@@ -390,10 +421,11 @@ public final class ChatTextInputMediaRecordingButton: TGModernConversationInputM
             containerSize: animationFrame.size
         )
 
-        if let view = animationView.view as? LottieComponent.View {
+        if let view = self.animationView.view as? LottieComponent.View {
             view.isUserInteractionEnabled = false
             if view.superview == nil {
                 self.insertSubview(view, at: 0)
+                self.updateShadow()
             }
             view.frame = animationFrame
             
@@ -411,6 +443,15 @@ public final class ChatTextInputMediaRecordingButton: TGModernConversationInputM
         self.pallete = legacyInputMicPalette(from: theme)
         self.micDecorationValue?.setColor( self.theme.chat.inputPanel.actionControlFillColor)
         (self.micLockValue as? LockView)?.updateTheme(theme)
+    }
+    
+    public override func createLockPanelView() -> UIView! {
+        if self.hidesOnLock {
+            let view = WrapperBlurrredBackgroundView(frame: CGRect(origin: .zero, size: CGSize(width: 40.0, height: 72.0)))
+            return view
+        } else {
+            return super.createLockPanelView()
+        }
     }
     
     public func cancelRecording() {
@@ -496,6 +537,10 @@ public final class ChatTextInputMediaRecordingButton: TGModernConversationInputM
         micButtonInteractionStopped()
     }
     
+    public func lock() {
+        super._commitLocked()
+    }
+    
     override public func animateIn() {
         super.animateIn()
         
@@ -537,6 +582,34 @@ public final class ChatTextInputMediaRecordingButton: TGModernConversationInputM
                 let iconSize = view.bounds.size
                 view.frame = CGRect(origin: CGPoint(x: floor((size.width - iconSize.width) / 2.0), y: floor((size.height - iconSize.height) / 2.0)), size: iconSize)
             }
+        }
+    }
+}
+
+private class WrapperBlurrredBackgroundView: UIView {
+    let view: BlurredBackgroundView
+    
+    override init(frame: CGRect) {
+        let view = BlurredBackgroundView(color: UIColor(white: 0.0, alpha: 0.5), enableBlur: true)
+        view.frame = CGRect(origin: .zero, size: frame.size)
+        view.update(size: frame.size, cornerRadius: frame.width / 2.0, transition: .immediate)
+        self.view = view
+
+        super.init(frame: frame)
+        
+        self.addSubview(view)
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    override var frame: CGRect {
+        get {
+            return super.frame
+        } set {
+            super.frame = newValue
+            self.view.update(size: newValue.size, cornerRadius: newValue.width / 2.0, transition: .immediate)
         }
     }
 }

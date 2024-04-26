@@ -11,11 +11,11 @@ public enum UndoOverlayContent {
     case archivedChat(peerId: Int64, title: String, text: String, undo: Bool)
     case hidArchive(title: String, text: String, undo: Bool)
     case revealedArchive(title: String, text: String, undo: Bool)
-    case succeed(text: String)
-    case info(title: String?, text: String, timeout: Double?)
+    case succeed(text: String, timeout: Double?, customUndoText: String?)
+    case info(title: String?, text: String, timeout: Double?, customUndoText: String?)
     case emoji(name: String, text: String)
     case swipeToReply(title: String, text: String)
-    case actionSucceeded(title: String, text: String, cancel: String, destructive: Bool)
+    case actionSucceeded(title: String?, text: String, cancel: String?, destructive: Bool)
     case stickersModified(title: String, text: String, undo: Bool, info: StickerPackCollectionInfo, topItem: StickerPackItem?, context: AccountContext)
     case dice(dice: TelegramMediaDice, context: AccountContext, text: String, action: String?)
     case chatAddedToFolder(chatTitle: String, folderTitle: String)
@@ -35,6 +35,7 @@ public enum UndoOverlayContent {
     case voiceChatFlag(text: String)
     case voiceChatCanSpeak(text: String)
     case sticker(context: AccountContext, file: TelegramMediaFile, loop: Bool, title: String?, text: String, undoText: String?, customAction: (() -> Void)?)
+    case customEmoji(context: AccountContext, file: TelegramMediaFile, loop: Bool, title: String?, text: String, undoText: String?, customAction: (() -> Void)?)
     case copy(text: String)
     case mediaSaved(text: String)
     case paymentSent(currencyValue: String, itemTitle: String)
@@ -44,12 +45,29 @@ public enum UndoOverlayContent {
     case universal(animation: String, scale: CGFloat, colors: [String: UIColor], title: String?, text: String, customUndoText: String?, timeout: Double?)
     case premiumPaywall(title: String?, text: String, customUndoText: String?, timeout: Double?, linkAction: ((String) -> Void)?)
     case peers(context: AccountContext, peers: [EnginePeer], title: String?, text: String, customUndoText: String?)
+    case messageTagged(context: AccountContext, isSingleMessage: Bool, customEmoji: TelegramMediaFile, isBuiltinReaction: Bool, customUndoText: String?)
 }
 
 public enum UndoOverlayAction {
     case info
     case undo
     case commit
+}
+
+public final class UndoOverlayControllerAdditionalViewInteraction {
+    public let disableTimeout: () -> Void
+    public let dismiss: () -> Void
+    
+    public init(disableTimeout: @escaping () -> Void, dismiss: @escaping () -> Void) {
+        self.disableTimeout = disableTimeout
+        self.dismiss = dismiss
+    }
+}
+
+public protocol UndoOverlayControllerAdditionalView: UIView {
+    var interaction: UndoOverlayControllerAdditionalViewInteraction? { get set }
+    
+    func update(size: CGSize, transition: ContainedViewLayoutTransition)
 }
 
 public final class UndoOverlayController: ViewController {
@@ -68,6 +86,7 @@ public final class UndoOverlayController: ViewController {
     private let position: Position
     private let animateInAsReplacement: Bool
     private var action: (UndoOverlayAction) -> Bool
+    private let additionalView: (() -> UndoOverlayControllerAdditionalView?)?
     
     private let blurred: Bool
     private var didPlayPresentationAnimation = false
@@ -77,7 +96,7 @@ public final class UndoOverlayController: ViewController {
     
     public var tag: Any?
     
-    public init(presentationData: PresentationData, content: UndoOverlayContent, elevatedLayout: Bool, position: Position = .bottom, animateInAsReplacement: Bool = false, blurred: Bool = false, action: @escaping (UndoOverlayAction) -> Bool) {
+    public init(presentationData: PresentationData, content: UndoOverlayContent, elevatedLayout: Bool, position: Position = .bottom, animateInAsReplacement: Bool = false, blurred: Bool = false, action: @escaping (UndoOverlayAction) -> Bool, additionalView: (() -> UndoOverlayControllerAdditionalView?)? = nil) {
         self.presentationData = presentationData
         self.content = content
         self.elevatedLayout = elevatedLayout
@@ -85,6 +104,7 @@ public final class UndoOverlayController: ViewController {
         self.animateInAsReplacement = animateInAsReplacement
         self.blurred = blurred
         self.action = action
+        self.additionalView = additionalView
         
         super.init(navigationBarPresentationData: nil)
         
@@ -96,7 +116,7 @@ public final class UndoOverlayController: ViewController {
     }
     
     override public func loadDisplayNode() {
-        self.displayNode = UndoOverlayControllerNode(presentationData: self.presentationData, content: self.content, elevatedLayout: self.elevatedLayout, placementPosition: self.position, blurred: self.blurred, action: { [weak self] value in
+        self.displayNode = UndoOverlayControllerNode(presentationData: self.presentationData, content: self.content, elevatedLayout: self.elevatedLayout, placementPosition: self.position, blurred: self.blurred, additionalView: self.additionalView, action: { [weak self] value in
             return self?.action(value) ?? false
         }, dismiss: { [weak self] in
             self?.dismiss()

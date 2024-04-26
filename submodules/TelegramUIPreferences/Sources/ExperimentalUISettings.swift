@@ -42,7 +42,7 @@ public struct ExperimentalUISettings: Codable, Equatable {
     public var inlineStickers: Bool
     public var localTranscription: Bool
     public var enableReactionOverrides: Bool
-    public var inlineForums: Bool
+    public var browserExperiment: Bool
     public var accountReactionEffectOverrides: [AccountReactionOverrides]
     public var accountStickerEffectOverrides: [AccountReactionOverrides]
     public var disableQuickReaction: Bool
@@ -51,6 +51,11 @@ public struct ExperimentalUISettings: Codable, Equatable {
     public var disableBackgroundAnimation: Bool
     public var logLanguageRecognition: Bool
     public var storiesExperiment: Bool
+    public var storiesJpegExperiment: Bool
+    public var crashOnMemoryPressure: Bool
+    public var dustEffect: Bool
+    public var callV2: Bool
+    public var allowWebViewInspection: Bool
     
     public static var defaultSettings: ExperimentalUISettings {
         return ExperimentalUISettings(
@@ -71,7 +76,7 @@ public struct ExperimentalUISettings: Codable, Equatable {
             inlineStickers: false,
             localTranscription: false,
             enableReactionOverrides: false,
-            inlineForums: false,
+            browserExperiment: false,
             accountReactionEffectOverrides: [],
             accountStickerEffectOverrides: [],
             disableQuickReaction: false,
@@ -79,7 +84,12 @@ public struct ExperimentalUISettings: Codable, Equatable {
             disableImageContentAnalysis: false,
             disableBackgroundAnimation: false,
             logLanguageRecognition: false,
-            storiesExperiment: false
+            storiesExperiment: false,
+            storiesJpegExperiment: false,
+            crashOnMemoryPressure: false,
+            dustEffect: false,
+            callV2: false,
+            allowWebViewInspection: false
         )
     }
     
@@ -101,7 +111,7 @@ public struct ExperimentalUISettings: Codable, Equatable {
         inlineStickers: Bool,
         localTranscription: Bool,
         enableReactionOverrides: Bool,
-        inlineForums: Bool,
+        browserExperiment: Bool,
         accountReactionEffectOverrides: [AccountReactionOverrides],
         accountStickerEffectOverrides: [AccountReactionOverrides],
         disableQuickReaction: Bool,
@@ -109,7 +119,12 @@ public struct ExperimentalUISettings: Codable, Equatable {
         disableImageContentAnalysis: Bool,
         disableBackgroundAnimation: Bool,
         logLanguageRecognition: Bool,
-        storiesExperiment: Bool
+        storiesExperiment: Bool,
+        storiesJpegExperiment: Bool,
+        crashOnMemoryPressure: Bool,
+        dustEffect: Bool,
+        callV2: Bool,
+        allowWebViewInspection: Bool
     ) {
         self.keepChatNavigationStack = keepChatNavigationStack
         self.skipReadHistory = skipReadHistory
@@ -128,7 +143,7 @@ public struct ExperimentalUISettings: Codable, Equatable {
         self.inlineStickers = inlineStickers
         self.localTranscription = localTranscription
         self.enableReactionOverrides = enableReactionOverrides
-        self.inlineForums = inlineForums
+        self.browserExperiment = browserExperiment
         self.accountReactionEffectOverrides = accountReactionEffectOverrides
         self.accountStickerEffectOverrides = accountStickerEffectOverrides
         self.disableQuickReaction = disableQuickReaction
@@ -137,6 +152,11 @@ public struct ExperimentalUISettings: Codable, Equatable {
         self.disableBackgroundAnimation = disableBackgroundAnimation
         self.logLanguageRecognition = logLanguageRecognition
         self.storiesExperiment = storiesExperiment
+        self.storiesJpegExperiment = storiesJpegExperiment
+        self.crashOnMemoryPressure = crashOnMemoryPressure
+        self.dustEffect = dustEffect
+        self.callV2 = callV2
+        self.allowWebViewInspection = allowWebViewInspection
     }
     
     public init(from decoder: Decoder) throws {
@@ -159,7 +179,7 @@ public struct ExperimentalUISettings: Codable, Equatable {
         self.inlineStickers = (try container.decodeIfPresent(Int32.self, forKey: "inlineStickers") ?? 0) != 0
         self.localTranscription = (try container.decodeIfPresent(Int32.self, forKey: "localTranscription") ?? 0) != 0
         self.enableReactionOverrides = try container.decodeIfPresent(Bool.self, forKey: "enableReactionOverrides") ?? false
-        self.inlineForums = try container.decodeIfPresent(Bool.self, forKey: "inlineForums") ?? false
+        self.browserExperiment = try container.decodeIfPresent(Bool.self, forKey: "browserExperiment") ?? false
         self.accountReactionEffectOverrides = (try? container.decodeIfPresent([AccountReactionOverrides].self, forKey: "accountReactionEffectOverrides")) ?? []
         self.accountStickerEffectOverrides = (try? container.decodeIfPresent([AccountReactionOverrides].self, forKey: "accountStickerEffectOverrides")) ?? []
         self.disableQuickReaction = try container.decodeIfPresent(Bool.self, forKey: "disableQuickReaction") ?? false
@@ -168,6 +188,11 @@ public struct ExperimentalUISettings: Codable, Equatable {
         self.disableBackgroundAnimation = try container.decodeIfPresent(Bool.self, forKey: "disableBackgroundAnimation") ?? false
         self.logLanguageRecognition = try container.decodeIfPresent(Bool.self, forKey: "logLanguageRecognition") ?? false
         self.storiesExperiment = try container.decodeIfPresent(Bool.self, forKey: "storiesExperiment") ?? false
+        self.storiesJpegExperiment = try container.decodeIfPresent(Bool.self, forKey: "storiesJpegExperiment") ?? false
+        self.crashOnMemoryPressure = try container.decodeIfPresent(Bool.self, forKey: "crashOnMemoryPressure") ?? false
+        self.dustEffect = try container.decodeIfPresent(Bool.self, forKey: "dustEffect") ?? false
+        self.callV2 = try container.decodeIfPresent(Bool.self, forKey: "callV2") ?? false
+        self.allowWebViewInspection = try container.decodeIfPresent(Bool.self, forKey: "allowWebViewInspection") ?? false
     }
     
     public func encode(to encoder: Encoder) throws {
@@ -190,7 +215,7 @@ public struct ExperimentalUISettings: Codable, Equatable {
         try container.encode((self.inlineStickers ? 1 : 0) as Int32, forKey: "inlineStickers")
         try container.encode((self.localTranscription ? 1 : 0) as Int32, forKey: "localTranscription")
         try container.encode(self.enableReactionOverrides, forKey: "enableReactionOverrides")
-        try container.encode(self.inlineForums, forKey: "inlineForums")
+        try container.encode(self.browserExperiment, forKey: "browserExperiment")
         try container.encode(self.accountReactionEffectOverrides, forKey: "accountReactionEffectOverrides")
         try container.encode(self.accountStickerEffectOverrides, forKey: "accountStickerEffectOverrides")
         try container.encode(self.disableQuickReaction, forKey: "disableQuickReaction")
@@ -199,6 +224,11 @@ public struct ExperimentalUISettings: Codable, Equatable {
         try container.encode(self.disableBackgroundAnimation, forKey: "disableBackgroundAnimation")
         try container.encode(self.logLanguageRecognition, forKey: "logLanguageRecognition")
         try container.encode(self.storiesExperiment, forKey: "storiesExperiment")
+        try container.encode(self.storiesJpegExperiment, forKey: "storiesJpegExperiment")
+        try container.encode(self.crashOnMemoryPressure, forKey: "crashOnMemoryPressure")
+        try container.encode(self.dustEffect, forKey: "dustEffect")
+        try container.encode(self.callV2, forKey: "callV2")
+        try container.encode(self.allowWebViewInspection, forKey: "allowWebViewInspection")
     }
 }
 

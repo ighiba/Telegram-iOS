@@ -7,6 +7,7 @@ import MetalKit
 import Display
 import SwiftSignalKit
 import TelegramCore
+import Postbox
 import AnimatedStickerNode
 import TelegramAnimatedStickerNode
 import YuvConversion
@@ -60,20 +61,40 @@ private func prerenderTextTransformations(entity: DrawingEntity, image: UIImage,
     return MediaEditorComposerStaticEntity(image: CIImage(image: newImage, options: [.colorSpace: colorSpace])!, position: position, scale: 1.0, rotation: 0.0, baseSize: nil, baseDrawingSize: CGSize(width: 1080, height: 1920), mirrored: false)
 }
 
-func composerEntitiesForDrawingEntity(account: Account, textScale: CGFloat, entity: DrawingEntity, colorSpace: CGColorSpace, tintColor: UIColor? = nil) -> [MediaEditorComposerEntity] {
+func composerEntitiesForDrawingEntity(postbox: Postbox, textScale: CGFloat, entity: DrawingEntity, colorSpace: CGColorSpace, tintColor: UIColor? = nil) -> [MediaEditorComposerEntity] {
     if let entity = entity as? DrawingStickerEntity {
-        let content: MediaEditorComposerStickerEntity.Content
-        switch entity.content {
-        case let .file(file):
-            content = .file(file)
-        case let .image(image, _):
-            content = .image(image)
-        case let .video(file):
-            content = .video(file)
-        case .dualVideoReference:
+        if case let .file(_, type) = entity.content, case .reaction = type {
             return []
+        } else {
+            let content: MediaEditorComposerStickerEntity.Content
+            switch entity.content {
+            case let .file(file, _):
+                content = .file(file.media)
+            case let .image(image, _):
+                content = .image(image)
+            case let .animatedImage(data, _):
+                let _ = data
+                return []
+            case let .video(file):
+                content = .video(file)
+            case .dualVideoReference:
+                return []
+            case .message:
+                if let renderImage = entity.renderImage, let image = CIImage(image: renderImage, options: [.colorSpace: colorSpace]) {
+                    var entities: [MediaEditorComposerEntity] = []
+                    entities.append(MediaEditorComposerStaticEntity(image: image, position: entity.position, scale: entity.scale, rotation: entity.rotation, baseSize: entity.baseSize, mirrored: false))
+                    if let renderSubEntities = entity.renderSubEntities {
+                        for subEntity in renderSubEntities {
+                            entities.append(contentsOf: composerEntitiesForDrawingEntity(postbox: postbox, textScale: textScale, entity: subEntity, colorSpace: colorSpace))
+                        }
+                    }
+                    return entities
+                } else {
+                    return []
+                }
+            }
+            return [MediaEditorComposerStickerEntity(postbox: postbox, content: content, position: entity.position, scale: entity.scale, rotation: entity.rotation, baseSize: entity.baseSize, mirrored: entity.mirrored, colorSpace: colorSpace, tintColor: tintColor, isStatic: entity.isExplicitlyStatic)]
         }
-        return [MediaEditorComposerStickerEntity(account: account, content: content, position: entity.position, scale: entity.scale, rotation: entity.rotation, baseSize: entity.baseSize, mirrored: entity.mirrored, colorSpace: colorSpace, tintColor: tintColor, isStatic: entity.isExplicitlyStatic)]
     } else if let renderImage = entity.renderImage, let image = CIImage(image: renderImage, options: [.colorSpace: colorSpace]) {
         if let entity = entity as? DrawingBubbleEntity {
             return [MediaEditorComposerStaticEntity(image: image, position: entity.position, scale: 1.0, rotation: entity.rotation, baseSize: entity.size, mirrored: false)]
@@ -86,7 +107,7 @@ func composerEntitiesForDrawingEntity(account: Account, textScale: CGFloat, enti
             entities.append(prerenderTextTransformations(entity: entity, image: renderImage, textScale: textScale, colorSpace: colorSpace))
             if let renderSubEntities = entity.renderSubEntities {
                 for subEntity in renderSubEntities {
-                    entities.append(contentsOf: composerEntitiesForDrawingEntity(account: account, textScale: textScale, entity: subEntity, colorSpace: colorSpace, tintColor: entity.color.toUIColor()))
+                    entities.append(contentsOf: composerEntitiesForDrawingEntity(postbox: postbox, textScale: textScale, entity: subEntity, colorSpace: colorSpace, tintColor: entity.color.toUIColor()))
                 }
             }
             return entities
@@ -132,11 +153,12 @@ private class MediaEditorComposerStaticEntity: MediaEditorComposerEntity {
     }
 }
 
-private class MediaEditorComposerStickerEntity: MediaEditorComposerEntity {
+final class MediaEditorComposerStickerEntity: MediaEditorComposerEntity {
     public enum Content {
         case file(TelegramMediaFile)
         case video(TelegramMediaFile)
         case image(UIImage)
+        case animatedImage([UIImage], Double)
         
         var file: TelegramMediaFile? {
             if case let .file(file) = self {
@@ -146,7 +168,7 @@ private class MediaEditorComposerStickerEntity: MediaEditorComposerEntity {
         }
     }
     
-    let account: Account
+    let postbox: Postbox
     let content: Content
     let position: CGPoint
     let scale: CGFloat
@@ -181,8 +203,8 @@ private class MediaEditorComposerStickerEntity: MediaEditorComposerEntity {
     var imagePixelBuffer: CVPixelBuffer?
     let imagePromise = Promise<UIImage>()
     
-    init(account: Account, content: Content, position: CGPoint, scale: CGFloat, rotation: CGFloat, baseSize: CGSize, mirrored: Bool, colorSpace: CGColorSpace, tintColor: UIColor?, isStatic: Bool) {
-        self.account = account
+    init(postbox: Postbox, content: Content, position: CGPoint, scale: CGFloat, rotation: CGFloat, baseSize: CGSize, mirrored: Bool, colorSpace: CGColorSpace, tintColor: UIColor?, isStatic: Bool, highRes: Bool = false) {
+        self.postbox = postbox
         self.content = content
         self.position = position
         self.scale = scale
@@ -200,11 +222,13 @@ private class MediaEditorComposerStickerEntity: MediaEditorComposerEntity {
                 self.isAnimated = true
                 self.isVideoSticker = file.isVideoSticker || file.mimeType == "video/webm"
                 
-                self.source = AnimatedStickerResourceSource(account: account, resource: file.resource, isVideo: isVideoSticker)
-                let pathPrefix = account.postbox.mediaBox.shortLivedResourceCachePathPrefix(file.resource.id)
+                self.source = AnimatedStickerResourceSource(postbox: postbox, resource: file.resource, isVideo: isVideoSticker)
+                let pathPrefix = postbox.mediaBox.shortLivedResourceCachePathPrefix(file.resource.id)
                 if let source = self.source {
                     let fitToSize: CGSize
-                    if self.isStatic {
+                    if highRes {
+                        fitToSize = CGSize(width: 512, height: 512)
+                    } else if self.isStatic {
                         fitToSize = CGSize(width: 768, height: 768)
                     } else {
                         fitToSize = CGSize(width: 384, height: 384)
@@ -223,8 +247,13 @@ private class MediaEditorComposerStickerEntity: MediaEditorComposerEntity {
                                     frameSource.syncWith { frameSource in
                                         strongSelf.frameCount = frameSource.frameCount
                                         strongSelf.frameRate = frameSource.frameRate
-                                        
-                                        let duration = Double(frameSource.frameCount) / Double(frameSource.frameRate)
+                                            
+                                        let duration: Double
+                                        if frameSource.frameCount > 0 {
+                                            duration = Double(frameSource.frameCount) / Double(frameSource.frameRate)
+                                        } else {
+                                            duration = frameSource.duration
+                                        }
                                         strongSelf.totalDuration = duration
                                         strongSelf.durationPromise.set(.single(duration))
                                     }
@@ -251,7 +280,7 @@ private class MediaEditorComposerStickerEntity: MediaEditorComposerEntity {
                 }
             } else {
                 self.isAnimated = false
-                self.disposables.add((chatMessageSticker(account: account, userLocation: .other, file: file, small: false, fetched: true, onlyFullSize: true, thumbnail: false, synchronousLoad: false, colorSpace: self.colorSpace)
+                self.disposables.add((chatMessageSticker(postbox: postbox, userLocation: .other, file: file, small: false, fetched: true, onlyFullSize: true, thumbnail: false, synchronousLoad: false, colorSpace: self.colorSpace)
                 |> deliverOn(self.queue)).start(next: { [weak self] generator in
                     if let self {
                         let context = generator(TransformImageArguments(corners: ImageCorners(), imageSize: baseSize, boundingSize: baseSize, intrinsicInsets: UIEdgeInsets()))
@@ -265,6 +294,10 @@ private class MediaEditorComposerStickerEntity: MediaEditorComposerEntity {
         case let .image(image):
             self.isAnimated = false
             self.imagePromise.set(.single(image))
+        case let .animatedImage(images, duration):
+            self.isAnimated = true
+            let _ = images
+            let _ = duration
         case .video:
             self.isAnimated = true
         }
@@ -276,7 +309,7 @@ private class MediaEditorComposerStickerEntity: MediaEditorComposerEntity {
     
     private func setupVideoOutput() {
         if case let .video(file) = self.content {
-            if let path = self.account.postbox.mediaBox.completedResourcePath(file.resource, pathExtension: "mp4") {
+            if let path = self.postbox.mediaBox.completedResourcePath(file.resource, pathExtension: "mp4") {
                 let url = URL(fileURLWithPath: path)
                 let asset = AVURLAsset(url: url)
                 
@@ -463,7 +496,7 @@ private class MediaEditorComposerStickerEntity: MediaEditorComposerEntity {
                         }
                         completion(strongSelf.image)
                     } else {
-                        completion(nil)
+                        completion(strongSelf.image)
                     }
                 }
             }
@@ -568,7 +601,6 @@ extension CIImage {
 private func render(context: CIContext, width: Int, height: Int, bytesPerRow: Int, data: Data, type: AnimationRendererFrameType, pixelBuffer: CVPixelBuffer, tintColor: UIColor?) -> CIImage? {
     let calculatedBytesPerRow = (4 * Int(width) + 31) & (~31)
     //assert(bytesPerRow == calculatedBytesPerRow)
-    
     
     CVPixelBufferLockBaseAddress(pixelBuffer, CVPixelBufferLockFlags(rawValue: 0))
     let dest = CVPixelBufferGetBaseAddress(pixelBuffer)

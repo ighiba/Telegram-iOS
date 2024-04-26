@@ -5,7 +5,7 @@ import SwiftSignalKit
 private var backArrowImageCache: [Int32: UIImage] = [:]
 
 open class SparseNode: ASDisplayNode {
-    override public func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+    override open func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         if self.alpha.isZero {
             return nil
         }
@@ -143,6 +143,10 @@ public final class NavigationBackgroundNode: ASDisplayNode {
 
     public var effectView: UIVisualEffectView?
     private let backgroundNode: ASDisplayNode
+    
+    public var backgroundView: UIView {
+        return self.backgroundNode.view
+    }
 
     private var validLayout: (CGSize, CGFloat)?
     
@@ -472,6 +476,8 @@ open class NavigationBar: ASDisplayNode {
             }
         }
     }
+    
+    public static let thinBackArrowImage = generateTintedImage(image: UIImage(bundleImageName: "Navigation/BackArrow"), color: .white)?.withRenderingMode(.alwaysTemplate)
 
     public static let titleFont = Font.with(size: 17.0, design: .regular, weight: .semibold, traits: [.monospacedNumbers])
     
@@ -486,6 +492,8 @@ open class NavigationBar: ASDisplayNode {
     public var userInfo: Any?
     public var makeCustomTransitionNode: ((NavigationBar, Bool) -> CustomNavigationTransitionNode?)?
     public var allowsCustomTransition: (() -> Bool)?
+    
+    public var customSetContentNode: ((NavigationBarContentNode?, Bool) -> Void)?
     
     private var collapsed: Bool {
         get {
@@ -725,11 +733,20 @@ open class NavigationBar: ASDisplayNode {
         self.updateAccessibilityElements()
     }
     
+    public var enableAutomaticBackButton: Bool = true
+    
     var _previousItem: NavigationPreviousAction?
     public internal(set) var previousItem: NavigationPreviousAction? {
         get {
+            if !self.enableAutomaticBackButton {
+                return nil
+            }
             return self._previousItem
         } set(value) {
+            if !self.enableAutomaticBackButton {
+                self._previousItem = nil
+                return
+            }
             if self._previousItem != value {
                 if let previousValue = self._previousItem, case let .item(itemValue) = previousValue {
                     if let previousItemListenerKey = self.previousItemListenerKey {
@@ -1186,11 +1203,11 @@ open class NavigationBar: ASDisplayNode {
         transition.updateAlpha(node: self.stripeNode, alpha: alpha, delay: 0.15)
     }
     
-    public func updatePresentationData(_ presentationData: NavigationBarPresentationData) {
+    public func updatePresentationData(_ presentationData: NavigationBarPresentationData, transition: ContainedViewLayoutTransition = .immediate) {
         if presentationData.theme !== self.presentationData.theme || presentationData.strings !== self.presentationData.strings {
             self.presentationData = presentationData
             
-            self.backgroundNode.updateColor(color: self.presentationData.theme.backgroundColor, transition: .immediate)
+            self.backgroundNode.updateColor(color: self.presentationData.theme.backgroundColor, transition: transition)
             
             self.backButtonNode.color = self.presentationData.theme.buttonColor
             self.backButtonNode.disabledColor = self.presentationData.theme.disabledButtonColor
@@ -1634,6 +1651,11 @@ open class NavigationBar: ASDisplayNode {
     }
     
     public func setContentNode(_ contentNode: NavigationBarContentNode?, animated: Bool) {
+        if let customSetContentNode = self.customSetContentNode {
+            customSetContentNode(contentNode, animated)
+            return
+        }
+        
         if self.contentNode !== contentNode {
             if let previous = self.contentNode {
                 if animated {

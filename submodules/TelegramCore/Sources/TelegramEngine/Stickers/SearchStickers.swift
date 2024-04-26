@@ -160,14 +160,7 @@ func _internal_searchStickers(account: Account, query: [String], scope: SearchSt
                         if !currentItems.contains(item.file.fileId) {
                             currentItems.insert(item.file.fileId)
                             
-                            var stringRepresentations: [String] = []
-                            for key in item.indexKeys {
-                                key.withDataNoCopy { data in
-                                    if let string = String(data: data, encoding: .utf8) {
-                                        stringRepresentations.append(string)
-                                    }
-                                }
-                            }
+                            let stringRepresentations = item.getStringRepresentationsOfIndexKeys()
                             if !recentItemsIds.contains(item.file.fileId) {
                                 if item.file.isPremiumSticker {
                                     installedPremiumItems.append(FoundStickerItem(file: item.file, stringRepresentations: stringRepresentations))
@@ -178,6 +171,11 @@ func _internal_searchStickers(account: Account, query: [String], scope: SearchSt
                                 }
                             } else {
                                 matchingRecentItemsIds.insert(item.file.fileId)
+                                if item.file.isAnimatedSticker || item.file.isVideoSticker {
+                                    recentAnimatedItems.append(item.file)
+                                } else {
+                                    recentItems.append(item.file)
+                                }
                             }
                         }
                     }
@@ -202,6 +200,7 @@ func _internal_searchStickers(account: Account, query: [String], scope: SearchSt
                 }
             }
             
+            result.append(contentsOf: installedPremiumItems)
             result.append(contentsOf: installedAnimatedItems)
             result.append(contentsOf: installedItems)
         }
@@ -413,14 +412,7 @@ func _internal_searchEmoji(account: Account, query: [String], scope: SearchStick
                             if !currentItems.contains(file.fileId) {
                                 currentItems.insert(file.fileId)
                                 
-                                var stringRepresentations: [String] = []
-                                for key in item.indexKeys {
-                                    key.withDataNoCopy { data in
-                                        if let string = String(data: data, encoding: .utf8) {
-                                            stringRepresentations.append(string)
-                                        }
-                                    }
-                                }
+                                let stringRepresentations = item.getStringRepresentationsOfIndexKeys()
                                 for stringRepresentation in stringRepresentations {
                                     if querySet.contains(stringRepresentation) {
                                         installedItems.append(FoundStickerItem(file: file, stringRepresentations: stringRepresentations))
@@ -558,9 +550,90 @@ func _internal_searchStickerSetsRemotely(network: Network, query: String) -> Sig
     }
 }
 
+func _internal_searchEmojiSetsRemotely(postbox: Postbox, network: Network, query: String) -> Signal<FoundStickerSets, NoError> {
+    return network.request(Api.functions.messages.searchEmojiStickerSets(flags: 0, q: query, hash: 0))
+    |> mapError {_ in}
+    |> mapToSignal { value in
+        var index: Int32 = 1000
+        switch value {
+        case let .foundStickerSets(_, sets: sets):
+            var result = FoundStickerSets()
+            for set in sets {
+                let parsed = parsePreviewStickerSet(set, namespace: Namespaces.ItemCollection.CloudEmojiPacks)
+                let values = parsed.1.map({ ItemCollectionViewEntry(index: ItemCollectionViewEntryIndex(collectionIndex: index, collectionId: parsed.0.id, itemIndex: $0.index), item: $0) })
+                result = result.withUpdatedInfosAndEntries(infos: [(parsed.0.id, parsed.0, parsed.1.first, false)], entries: values)
+                index += 1
+            }
+            return .single(result)
+        default:
+            break
+        }
+        
+        return .complete()
+    }
+    |> `catch` { _ -> Signal<FoundStickerSets, NoError> in
+        return .single(FoundStickerSets())
+    }
+    |> mapToSignal { result -> Signal<FoundStickerSets, NoError> in
+        return postbox.combinedView(keys: [PostboxViewKey.itemCollectionInfos(namespaces: [Namespaces.ItemCollection.CloudEmojiPacks])])
+        |> map { combinedView -> Set<ItemCollectionId> in
+            var installed = Set<ItemCollectionId>()
+            
+            if let view = combinedView.views[PostboxViewKey.itemCollectionInfos(namespaces: [Namespaces.ItemCollection.CloudEmojiPacks])] as? ItemCollectionInfosView {
+                var installedIds = Set<ItemCollectionId>()
+                if let ids = view.entriesByNamespace[Namespaces.ItemCollection.CloudEmojiPacks] {
+                    installedIds = Set(ids.map(\.id))
+                }
+                installed = installedIds.intersection(Set(result.infos.map(\.0)))
+            }
+            
+            return installed
+        }
+        |> distinctUntilChanged
+        |> map { installed -> FoundStickerSets in
+            return FoundStickerSets(infos: result.infos.map { info in
+                return (info.0, info.1, info.2, installed.contains(info.0))
+            }, entries: result.entries)
+        }
+    }
+}
+
 func _internal_searchStickerSets(postbox: Postbox, query: String) -> Signal<FoundStickerSets, NoError> {
     return postbox.transaction { transaction -> Signal<FoundStickerSets, NoError> in
         let infos = transaction.getItemCollectionsInfos(namespace: Namespaces.ItemCollection.CloudStickerPacks)
+        
+        var collections: [(ItemCollectionId, ItemCollectionInfo)] = []
+        var topItems: [ItemCollectionId: ItemCollectionItem] = [:]
+        var entries: [ItemCollectionViewEntry] = []
+        for info in infos {
+            if let info = info.1 as? StickerPackCollectionInfo {
+                let split = info.title.split(separator: " ")
+                if !split.filter({$0.lowercased().hasPrefix(query.lowercased())}).isEmpty || info.shortName.lowercased().hasPrefix(query.lowercased()) {
+                    collections.append((info.id, info))
+                }
+            }
+        }
+        var index: Int32 = 0
+        
+        for info in collections {
+            let items = transaction.getItemCollectionItems(collectionId: info.0)
+            let values = items.map({ ItemCollectionViewEntry(index: ItemCollectionViewEntryIndex(collectionIndex: index, collectionId: info.0, itemIndex: $0.index), item: $0) })
+            entries.append(contentsOf: values)
+            if let first = items.first {
+                topItems[info.0] = first
+            }
+            index += 1
+        }
+        
+        let result = FoundStickerSets(infos: collections.map { ($0.0, $0.1, topItems[$0.0], true) }, entries: entries)
+        
+        return .single(result)
+    } |> switchToLatest
+}
+
+func _internal_searchEmojiSets(postbox: Postbox, query: String) -> Signal<FoundStickerSets, NoError> {
+    return postbox.transaction { transaction -> Signal<FoundStickerSets, NoError> in
+        let infos = transaction.getItemCollectionsInfos(namespace: Namespaces.ItemCollection.CloudEmojiPacks)
         
         var collections: [(ItemCollectionId, ItemCollectionInfo)] = []
         var topItems: [ItemCollectionId: ItemCollectionItem] = [:]
@@ -596,7 +669,12 @@ func _internal_searchGifs(account: Account, query: String, nextOffset: String = 
         let configuration = currentSearchBotsConfiguration(transaction: transaction)
         return configuration.gifBotUsername ?? "gif"
     } |> mapToSignal {
-         return _internal_resolvePeerByName(account: account, name: $0)
+        return _internal_resolvePeerByName(account: account, name: $0) |> mapToSignal { result in
+            guard case let .result(result) = result else {
+                return .complete()
+            }
+            return .single(result)
+        }
     } |> filter { $0 != nil }
     |> map { $0! }
     |> mapToSignal { peerId -> Signal<Peer, NoError> in

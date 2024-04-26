@@ -9,7 +9,7 @@ import subprocess
 import shutil
 import glob
 
-from BuildEnvironment import resolve_executable, call_executable, run_executable_with_output, BuildEnvironment
+from BuildEnvironment import resolve_executable, call_executable, run_executable_with_output, BuildEnvironmentVersions, BuildEnvironment
 from ProjectGeneration import generate
 from BazelLocation import locate_bazel
 from BuildConfiguration import CodesigningSource, GitCodesigningSource, DirectoryCodesigningSource, XcodeManagedCodesigningSource, BuildConfiguration, build_configuration_from_json
@@ -100,7 +100,7 @@ class BazelCommandLine:
 
             # https://github.com/bazelbuild/rules_swift
             # Use -Osize instead of -O when building swift modules.
-            '--features=swift.opt_uses_osize',
+            #'--features=swift.opt_uses_osize',
 
             # --num-threads 0 forces swiftc to generate one object file per module; it:
             # 1. resolves issues with the linker caused by the swift-objc mixing.
@@ -111,9 +111,6 @@ class BazelCommandLine:
             # Strip unsused code.
             '--features=dead_strip',
             '--objc_enable_binary_stripping',
-
-            # Always embed bitcode into Watch binaries. This is required by the App Store.
-            '--apple_bitcode=watchos=embedded',
         ]
 
     def add_remote_cache(self, host):
@@ -546,6 +543,7 @@ def generate_project(bazel, arguments):
 
     disable_extensions = False
     disable_provisioning_profiles = False
+    project_include_release = False
     generate_dsym = False
     target_name = "Telegram"
 
@@ -553,6 +551,8 @@ def generate_project(bazel, arguments):
         disable_extensions = arguments.disableExtensions
     if arguments.disableProvisioningProfiles is not None:
         disable_provisioning_profiles = arguments.disableProvisioningProfiles
+    if arguments.projectIncludeRelease is not None:
+        project_include_release = arguments.projectIncludeRelease
     if arguments.xcodeManagedCodesigning is not None and arguments.xcodeManagedCodesigning == True:
         disable_extensions = True
     if arguments.generateDsym is not None:
@@ -566,6 +566,7 @@ def generate_project(bazel, arguments):
         build_environment=bazel_command_line.build_environment,
         disable_extensions=disable_extensions,
         disable_provisioning_profiles=disable_provisioning_profiles,
+        include_release=project_include_release,
         generate_dsym=generate_dsym,
         configuration_path=bazel_command_line.configuration_path,
         bazel_app_arguments=bazel_command_line.get_project_generation_arguments(),
@@ -613,7 +614,8 @@ def build(bazel, arguments):
         os.makedirs(artifacts_path, exist_ok=True)
         os.makedirs(artifacts_path + '/DSYMs', exist_ok=True)
 
-        ipa_paths = glob.glob('bazel-out/applebin_ios-ios_arm*-opt-ST-*/bin/Telegram/Telegram.ipa')
+        built_ipa_path_prefix = 'bazel-out/ios_arm64-opt-ios-arm64-min12.0-applebin_ios-ST-*'
+        ipa_paths = glob.glob('{}/bin/Telegram/Telegram.ipa'.format(built_ipa_path_prefix))
         if len(ipa_paths) == 0:
             print('Could not find the IPA at bazel-out/applebin_ios-ios_arm*-opt-ST-*/bin/Telegram/Telegram.ipa')
             sys.exit(1)
@@ -622,7 +624,7 @@ def build(bazel, arguments):
             sys.exit(1)
         shutil.copyfile(ipa_paths[0], artifacts_path + '/Telegram.ipa')
 
-        dsym_paths = glob.glob('bazel-out/applebin_ios-ios_arm*-opt-ST-*/bin/Telegram/*.dSYM')
+        dsym_paths = glob.glob('bazel-bin/Telegram/**/*.dSYM')
         for dsym_path in dsym_paths:
             file_name = os.path.basename(dsym_path)
             shutil.copytree(dsym_path, artifacts_path + '/DSYMs/{}'.format(file_name))
@@ -840,6 +842,15 @@ if __name__ == '__main__':
     )
 
     generateProjectParser.add_argument(
+        '--projectIncludeRelease',
+        action='store_true',
+        default=False,
+        help='''
+            Generate the Xcode project with Debug and Release configurations.
+            '''
+    )
+
+    generateProjectParser.add_argument(
         '--generateDsym',
         action='store_true',
         default=False,
@@ -1046,6 +1057,8 @@ if __name__ == '__main__':
             os.makedirs(remote_input_path + '/certs')
             os.makedirs(remote_input_path + '/profiles')
 
+            versions = BuildEnvironmentVersions(base_path=os.getcwd())
+
             resolve_configuration(
                 base_path=os.getcwd(),
                 bazel_command_line=None,
@@ -1058,6 +1071,7 @@ if __name__ == '__main__':
             RemoteBuild.remote_build(
                 darwin_containers_path=args.darwinContainers,
                 darwin_containers_host=args.darwinContainersHost,
+                macos_version=versions.macos_version,
                 bazel_cache_host=args.cacheHost,
                 configuration=args.configuration,
                 build_input_data_path=remote_input_path
@@ -1092,18 +1106,24 @@ if __name__ == '__main__':
                 print('APPSTORE_CONNECT_PASSWORD environment variable is not set')
                 sys.exit(1)
 
+            versions = BuildEnvironmentVersions(base_path=os.getcwd())
+
             RemoteBuild.remote_deploy_testflight(
                 darwin_containers_path=args.darwinContainers,
                 darwin_containers_host=args.darwinContainersHost,
+                macos_version=versions.macos_version,
                 ipa_path=args.ipa,
                 dsyms_path=args.dsyms,
                 username=env['APPSTORE_CONNECT_USERNAME'],
                 password=env['APPSTORE_CONNECT_PASSWORD']
             )
         elif args.commandName == 'remote-ipa-diff':
+            versions = BuildEnvironmentVersions(base_path=os.getcwd())
+
             RemoteBuild.remote_ipa_diff(
                 darwin_containers_path=args.darwinContainers,
                 darwin_containers_host=args.darwinContainersHost,
+                macos_version=versions.macos_version,
                 ipa1_path=args.ipa1,
                 ipa2_path=args.ipa2
             )

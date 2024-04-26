@@ -2,7 +2,7 @@ import Foundation
 import CoreText
 import AVFoundation
 
-extension Character {
+public extension Character {
     var isSimpleEmoji: Bool {
         guard let firstScalar = unicodeScalars.first else { return false }
         if #available(iOS 10.2, macOS 10.12.2, *) {
@@ -68,37 +68,14 @@ public extension String {
     
     var isSingleEmoji: Bool {
         return self.count == 1 && self.containsEmoji
-//        return self.emojis.count == 1 && self.containsEmoji
     }
     
     var containsEmoji: Bool {
         return self.contains { $0.isEmoji }
-        //return self.unicodeScalars.contains { $0.isEmoji }
     }
     
     var containsOnlyEmoji: Bool {
         return !self.isEmpty && !self.contains { !$0.isEmoji }
-//        guard !self.isEmpty else {
-//            return false
-//        }
-//        var nextShouldBeVariationSelector = false
-//        for scalar in self.unicodeScalars {
-//            if nextShouldBeVariationSelector {
-//                if scalar == UnicodeScalar.VariationSelector {
-//                    nextShouldBeVariationSelector = false
-//                    continue
-//                } else {
-//                    return false
-//                }
-//            }
-//            if !scalar.isEmoji && scalar.maybeEmoji {
-//                nextShouldBeVariationSelector = true
-//            }
-//            else if !scalar.isEmoji && scalar != UnicodeScalar.ZeroWidthJoiner {
-//                return false
-//            }
-//        }
-//        return !nextShouldBeVariationSelector
     }
     
     var emojis: [String] {

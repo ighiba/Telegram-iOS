@@ -49,17 +49,17 @@ public final class HashtagSearchController: TelegramBaseController {
         self.title = query
         self.navigationItem.backBarButtonItem = UIBarButtonItem(title: self.presentationData.strings.Common_Back, style: .plain, target: nil, action: nil)
         
-        let location: SearchMessagesLocation = .general(tags: nil, minDate: nil, maxDate: nil)
+        let location: SearchMessagesLocation = .general(scope: .everywhere, tags: nil, minDate: nil, maxDate: nil)
         let search = context.engine.messages.searchMessages(location: location, query: query, state: nil)
         let foundMessages: Signal<[ChatListSearchEntry], NoError> = combineLatest(search, self.context.sharedContext.presentationData)
         |> map { result, presentationData in
             let result = result.0
             let chatListPresentationData = ChatListPresentationData(theme: presentationData.theme, fontSize: presentationData.listsFontSize, strings: presentationData.strings, dateTimeFormat: presentationData.dateTimeFormat, nameSortOrder: presentationData.nameSortOrder, nameDisplayOrder: presentationData.nameDisplayOrder, disableAnimations: true)
-            return result.messages.map({ .message(EngineMessage($0), EngineRenderedPeer(message: EngineMessage($0)), result.readStates[$0.id.peerId].flatMap { EnginePeerReadCounters(state: $0, isMuted: false) }, nil, chatListPresentationData, result.totalCount, nil, false, .index($0.index), nil, .generic, false, nil) })
+            return result.messages.map({ .message(EngineMessage($0), EngineRenderedPeer(message: EngineMessage($0)), result.readStates[$0.id.peerId].flatMap { EnginePeerReadCounters(state: $0, isMuted: false) }, nil, chatListPresentationData, result.totalCount, nil, false, .index($0.index), nil, .generic, false, nil, false) })
         }
         let interaction = ChatListNodeInteraction(context: context, animationCache: self.animationCache, animationRenderer: self.animationRenderer, activateSearch: {
         }, peerSelected: { _, _, _, _ in
-        }, disabledPeerSelected: { _, _ in
+        }, disabledPeerSelected: { _, _, _ in
         }, togglePeerSelected: { _, _ in
         }, togglePeersSelection: { _, _ in
         }, additionalCategorySelected: { _ in
@@ -67,7 +67,7 @@ public final class HashtagSearchController: TelegramBaseController {
             if let strongSelf = self {
                 strongSelf.openMessageFromSearchDisposable.set((strongSelf.context.engine.peers.ensurePeerIsLocallyAvailable(peer: peer) |> deliverOnMainQueue).start(next: { actualPeer in
                     if let strongSelf = self, let navigationController = strongSelf.navigationController as? NavigationController {
-                        strongSelf.context.sharedContext.navigateToChatController(NavigateToChatControllerParams(navigationController: navigationController, context: strongSelf.context, chatLocation: .peer(actualPeer), subject: message.id.peerId == actualPeer.id ? .message(id: .id(message.id), highlight: true, timecode: nil) : nil, keepStack: .always))
+                        strongSelf.context.sharedContext.navigateToChatController(NavigateToChatControllerParams(navigationController: navigationController, context: strongSelf.context, chatLocation: .peer(actualPeer), subject: message.id.peerId == actualPeer.id ? .message(id: .id(message.id), highlight: ChatControllerSubject.MessageHighlight(quote: nil), timecode: nil) : nil, keepStack: .always))
                     }
                 }))
                 strongSelf.controllerNode.listNode.clearHighlightAnimated(true)
@@ -95,9 +95,16 @@ public final class HashtagSearchController: TelegramBaseController {
         }, openStorageManagement: {
         }, openPasswordSetup: {
         }, openPremiumIntro: {
+        }, openPremiumGift: { _ in
+        }, openPremiumManagement: {   
+        }, openActiveSessions: {
+        }, openBirthdaySetup: {
+        }, performActiveSessionAction: { _, _ in
         }, openChatFolderUpdates: {
         }, hideChatFolderUpdates: {
         }, openStories: { _, _ in
+        }, dismissNotice: { _ in
+        }, editPeer: { _ in
         })
         
         let previousSearchItems = Atomic<[ChatListSearchEntry]?>(value: nil)

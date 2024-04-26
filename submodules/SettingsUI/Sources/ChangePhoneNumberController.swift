@@ -28,7 +28,16 @@ public func ChangePhoneNumberController(context: AccountContext) -> ViewControll
     controller.loginWithNumber = { [weak controller] phoneNumber, _ in
         controller?.inProgress = true
         
-        requestDisposable.set((context.engine.accountData.requestChangeAccountPhoneNumberVerification(phoneNumber: phoneNumber)
+        let authorizationPushConfiguration = context.sharedContext.authorizationPushConfiguration
+        |> take(1)
+        |> timeout(2.0, queue: .mainQueue(), alternate: .single(nil))
+            
+        requestDisposable.set((
+            authorizationPushConfiguration
+            |> castError(RequestChangeAccountPhoneNumberVerificationError.self)
+            |> mapToSignal { authorizationPushConfiguration in
+                return context.engine.accountData.requestChangeAccountPhoneNumberVerification(phoneNumber: phoneNumber, pushNotificationConfiguration: authorizationPushConfiguration, firebaseSecretStream: context.sharedContext.firebaseSecretStream)
+            }
         |> deliverOnMainQueue).start(next: { [weak controller] next in
             controller?.inProgress = false
             
@@ -69,7 +78,7 @@ public func ChangePhoneNumberController(context: AccountContext) -> ViewControll
                 }, completed: { [weak codeController] in
                     codeController?.present(OverlayStatusController(theme: presentationData.theme, type: .success), in: .window(.root))
                     
-                    let _ = dismissServerProvidedSuggestion(account: context.account, suggestion: .validatePhoneNumber).start()
+                    let _ = context.engine.notices.dismissServerProvidedSuggestion(suggestion: .validatePhoneNumber).start()
                     
                     if let navigationController = codeController?.navigationController as? NavigationController {
                         var viewControllers = navigationController.viewControllers
@@ -85,6 +94,12 @@ public func ChangePhoneNumberController(context: AccountContext) -> ViewControll
                         navigationController.setViewControllers(viewControllers, animated: true)
                     }
                 }))
+            }
+            codeController.requestNextOption = { [weak codeController] in
+                guard let codeController else {
+                    return
+                }
+                AuthorizationSequenceController.presentDidNotGetCodeUI(controller: codeController, presentationData: context.sharedContext.currentPresentationData.with({ $0 }), number: phoneNumber)
             }
             codeController.openFragment = { url in
                 context.sharedContext.applicationBindings.openUrl(url)
@@ -147,8 +162,26 @@ public func ChangePhoneNumberController(context: AccountContext) -> ViewControll
     }
     
     Queue.mainQueue().justDispatch {
-        controller.updateData(countryCode: AuthorizationSequenceController.defaultCountryCode(), countryName: nil, number: "")
-        controller.updateCountryCode()
+        let _ = (context.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: context.account.peerId))
+        |> deliverOnMainQueue).start(next: { accountPeer in
+            guard let accountPeer, case let .user(user) = accountPeer else {
+                return
+            }
+            
+            let initialCountryCode: Int32
+            if let phone = user.phone {
+                if let (_, countryCode) = lookupCountryIdByNumber(phone, configuration: context.currentCountriesConfiguration.with { $0 }), let codeValue = Int32(countryCode.code) {
+                    initialCountryCode = codeValue
+                } else {
+                    initialCountryCode = AuthorizationSequenceController.defaultCountryCode()
+                }
+            } else {
+                initialCountryCode = AuthorizationSequenceController.defaultCountryCode()
+            }
+            controller.updateData(countryCode: initialCountryCode, countryName: nil, number: "")
+            controller.updateCountryCode()
+        })
+
     }
     
     return controller

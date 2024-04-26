@@ -98,10 +98,19 @@ typedef NS_ENUM(int32_t, OngoingCallDataSavingWebrtc) {
     OngoingCallDataSavingAlways
 };
 
+@interface GroupCallDisposable : NSObject
+
+- (instancetype _Nonnull)initWithBlock:(dispatch_block_t _Nonnull)block;
+- (void)dispose;
+
+@end
+
 @protocol OngoingCallThreadLocalContextQueueWebrtc <NSObject>
 
 - (void)dispatch:(void (^ _Nonnull)())f;
 - (bool)isCurrent;
+
+- (GroupCallDisposable * _Nonnull)scheduleBlock:(void (^ _Nonnull)())f after:(double)timeout;
 
 @end
 
@@ -131,13 +140,6 @@ typedef NS_ENUM(int32_t, OngoingCallDataSavingWebrtc) {
 - (void)setIsPaused:(bool)paused;
 - (void)renderToSize:(NSSize)size animated: (bool)animated;
 #endif
-@end
-
-@interface GroupCallDisposable : NSObject
-
-- (instancetype _Nonnull)initWithBlock:(dispatch_block_t _Nonnull)block;
-- (void)dispose;
-
 @end
 
 @protocol CallVideoFrameBuffer
@@ -185,6 +187,8 @@ typedef NS_ENUM(int32_t, OngoingCallDataSavingWebrtc) {
 @property (nonatomic, readonly) int width;
 @property (nonatomic, readonly) int height;
 @property (nonatomic, readonly) OngoingCallVideoOrientationWebrtc orientation;
+@property (nonatomic, readonly) bool hasDeviceRelativeOrientation;
+@property (nonatomic, readonly) OngoingCallVideoOrientationWebrtc deviceRelativeOrientation;
 @property (nonatomic, readonly) bool mirrorHorizontally;
 @property (nonatomic, readonly) bool mirrorVertically;
 
@@ -238,7 +242,9 @@ typedef NS_ENUM(int32_t, OngoingCallDataSavingWebrtc) {
 @property (nonatomic, copy) void (^ _Nullable signalBarsChanged)(int32_t);
 @property (nonatomic, copy) void (^ _Nullable audioLevelUpdated)(float);
 
-- (instancetype _Nonnull)initWithVersion:(NSString * _Nonnull)version queue:(id<OngoingCallThreadLocalContextQueueWebrtc> _Nonnull)queue
+- (instancetype _Nonnull)initWithVersion:(NSString * _Nonnull)version
+                        customParameters:(NSString * _Nullable)customParameters
+                                   queue:(id<OngoingCallThreadLocalContextQueueWebrtc> _Nonnull)queue
                                    proxy:(VoipProxyServerWebrtc * _Nullable)proxy
                              networkType:(OngoingCallNetworkTypeWebrtc)networkType dataSaving:(OngoingCallDataSavingWebrtc)dataSaving
                             derivedState:(NSData * _Nonnull)derivedState

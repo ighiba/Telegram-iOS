@@ -163,7 +163,7 @@ private final class PeerChannelMemberCategoriesContextsManagerImpl {
             self.profileDataPreloadContexts[peerId] = context
             
             if let customData = customData {
-                disposable.add(customData.start())
+                disposable.add(customData.startStrict())
             }
             
             /*disposable.set(signal.start(next: { [weak context] value in
@@ -195,7 +195,7 @@ private final class PeerChannelMemberCategoriesContextsManagerImpl {
                     current.subscribers.remove(index)
                     if current.subscribers.isEmpty {
                         if current.emptyTimer == nil {
-                            let timer = SwiftSignalKit.Timer(timeout: 60.0, repeat: false, completion: { [weak context] in
+                            let timer = SwiftSignalKit.Timer(timeout: 1.0, repeat: false, completion: { [weak context] in
                                 if let current = strongSelf.profileDataPreloadContexts[peerId], let context = context, current === context {
                                     if current.subscribers.isEmpty {
                                         strongSelf.profileDataPreloadContexts.removeValue(forKey: peerId)
@@ -222,12 +222,14 @@ private final class PeerChannelMemberCategoriesContextsManagerImpl {
             self.profileDataPhotoPreloadContexts[peerId] = context
             
             disposable.set(fetch.start(next: { [weak context] value in
-                guard let context = context else {
-                    return
-                }
-                context.value = value
-                for f in context.subscribers.copyItems() {
-                    f(value)
+                Queue.mainQueue().async {
+                    guard let context = context else {
+                        return
+                    }
+                    context.value = value
+                    for f in context.subscribers.copyItems() {
+                        f(value)
+                    }
                 }
             }))
         }

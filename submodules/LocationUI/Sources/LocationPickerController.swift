@@ -187,7 +187,7 @@ public final class LocationPickerController: ViewController, AttachmentContainab
             if ["home", "work"].contains(venueType) {
                 completion(TelegramMediaMap(latitude: venue.latitude, longitude: venue.longitude, heading: nil, accuracyRadius: nil, geoPlace: nil, venue: nil, liveBroadcastingTimeout: nil, liveProximityNotificationRadius: nil), nil, nil, nil, nil)
             } else {
-                completion(venue, queryId, resultId, nil, nil)
+                completion(venue, queryId, resultId, venue.venue?.address, nil)
             }
             strongSelf.dismiss()
         }, toggleMapModeSelection: { [weak self] in
@@ -412,6 +412,7 @@ private final class LocationPickerContext: AttachmentMediaPickerContext {
 public func storyLocationPickerController(
     context: AccountContext,
     location: CLLocationCoordinate2D?,
+    dismissed: @escaping () -> Void,
     completion: @escaping (TelegramMediaMap, Int64?, String?, String?, String?) -> Void
 ) -> ViewController {
     let presentationData = context.sharedContext.currentPresentationData.with({ $0 }).withUpdated(theme: defaultDarkColorPresentationTheme)
@@ -427,5 +428,8 @@ public func storyLocationPickerController(
     }
     controller.navigationPresentation = .flatModal
     controller.supportedOrientations = ViewControllerSupportedOrientations(regularSize: .all, compactSize: .portrait)
+    controller.didDismiss = {
+        dismissed()
+    }
     return controller
 }

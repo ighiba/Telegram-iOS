@@ -101,7 +101,9 @@ public protocol CustomViewControllerNavigationDataSummary: AnyObject {
     public final var supportedOrientations: ViewControllerSupportedOrientations = ViewControllerSupportedOrientations(regularSize: .all, compactSize: .allButUpsideDown) {
         didSet {
             if self.supportedOrientations != oldValue {
-                self.window?.invalidateSupportedOrientations()
+                if self.isNodeLoaded {
+                    self.window?.invalidateSupportedOrientations()
+                }
             }
         }
     }
@@ -155,7 +157,7 @@ public protocol CustomViewControllerNavigationDataSummary: AnyObject {
         return self.prefersOnScreenNavigationHidden
     }
     
-    public internal(set) var previousItem: NavigationPreviousAction?
+    open var previousItem: NavigationPreviousAction?
     
     open var navigationPresentation: ViewControllerNavigationPresentation = .default
     open var _presentedInModal: Bool = false
@@ -227,6 +229,10 @@ public protocol CustomViewControllerNavigationDataSummary: AnyObject {
     }
     
     private var navigationBarOrigin: CGFloat = 0.0
+    
+    open var interactiveNavivationGestureEdgeWidth: InteractiveTransitionGestureRecognizerEdgeWidth? {
+        return nil
+    }
 
     open func navigationLayout(layout: ContainerViewLayout) -> NavigationLayout {
         let statusBarHeight: CGFloat = layout.statusBarHeight ?? 0.0
@@ -567,7 +573,7 @@ public protocol CustomViewControllerNavigationDataSummary: AnyObject {
         (self.navigationController as? NavigationController)?.pushViewController(controller)
     }
     
-    public func replace(with controller: ViewController) {
+    open func replace(with controller: ViewController) {
         if let navigationController = self.navigationController as? NavigationController {
             var controllers = navigationController.viewControllers
             controllers.removeAll(where: { $0 === self })

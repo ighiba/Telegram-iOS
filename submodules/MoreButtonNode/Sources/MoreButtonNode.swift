@@ -74,10 +74,34 @@ public final class MoreButtonNode: ASDisplayNode {
     private let buttonNode: HighlightableButtonNode
     public let iconNode: MoreIconNode
     
+    private var color: UIColor?
+    
     public var theme: PresentationTheme {
         didSet {
-            self.iconNode.customColor = self.theme.rootController.navigationBar.buttonColor
+            self.update()
         }
+    }
+    
+    public func updateColor(_ color: UIColor?, transition: ContainedViewLayoutTransition) {
+        self.color = color
+        
+        if case let .animated(duration, curve) = transition {
+            if let snapshotView = self.iconNode.view.snapshotContentTree() {
+                snapshotView.frame = self.iconNode.frame
+                self.view.addSubview(snapshotView)
+                
+                snapshotView.layer.animateAlpha(from: 1.0, to: 0.0, duration: duration, timingFunction: curve.timingFunction, removeOnCompletion: false, completion: { _ in
+                    snapshotView.removeFromSuperview()
+                })
+                self.iconNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: duration, timingFunction: curve.timingFunction)
+            }
+        }
+        self.update()
+    }
+    
+    private func update() {
+        let color = self.color ?? self.theme.rootController.navigationBar.buttonColor
+        self.iconNode.customColor = color
     }
     
     public init(theme: PresentationTheme) {
@@ -121,7 +145,10 @@ public final class MoreButtonNode: ASDisplayNode {
     override public func calculateSizeThatFits(_ constrainedSize: CGSize) -> CGSize {
         let animationSize = CGSize(width: 30.0, height: 30.0)
         let inset: CGFloat = 0.0
-        self.iconNode.frame = CGRect(origin: CGPoint(x: inset + 6.0, y: floor((constrainedSize.height - animationSize.height) / 2.0) + 1.0), size: animationSize)
+        let iconFrame = CGRect(origin: CGPoint(x: inset + 6.0, y: floor((constrainedSize.height - animationSize.height) / 2.0) + 1.0), size: animationSize)
+        
+        self.iconNode.position = iconFrame.center
+        self.iconNode.bounds = CGRect(origin: .zero, size: iconFrame.size)
         
         let size = CGSize(width: animationSize.width + inset * 2.0, height: constrainedSize.height)
         let bounds = CGRect(origin: CGPoint(), size: size)

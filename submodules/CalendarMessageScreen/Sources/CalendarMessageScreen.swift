@@ -70,7 +70,7 @@ private final class MediaPreviewView: SimpleLayer {
                     |> map { image in
                         return image.flatMap(processImage)
                     }
-                    |> deliverOnMainQueue).start(next: { [weak self] image in
+                    |> deliverOnMainQueue).startStrict(next: { [weak self] image in
                         guard let strongSelf = self else {
                             return
                         }
@@ -87,7 +87,7 @@ private final class MediaPreviewView: SimpleLayer {
                             }
                             strongSelf.contents = image.cgImage
                         }
-                    })
+                    }).strict()
                 }
             }
         }
@@ -975,7 +975,7 @@ private func monthMetadata(calendar: Calendar, for baseDate: Date, currentYear: 
 }
 
 public final class CalendarMessageScreen: ViewController {
-    private final class Node: ViewControllerTracingNode, UIScrollViewDelegate {
+    private final class Node: ViewControllerTracingNode, ASScrollViewDelegate {
         struct SelectionState {
             var dayRange: ClosedRange<Int32>?
         }
@@ -1173,28 +1173,28 @@ public final class CalendarMessageScreen: ViewController {
 
             self.backgroundColor = self.presentationData.theme.list.plainBackgroundColor
 
-            self.scrollView.delegate = self
+            self.scrollView.delegate = self.wrappedScrollViewDelegate
             self.addSubnode(self.contextGestureContainerNode)
             self.contextGestureContainerNode.view.addSubview(self.scrollView)
 
             self.isLoadingMoreDisposable = (self.calendarSource.isLoadingMore
             |> distinctUntilChanged
             |> filter { !$0 }
-            |> deliverOnMainQueue).start(next: { [weak self] _ in
+            |> deliverOnMainQueue).startStrict(next: { [weak self] _ in
                 guard let strongSelf = self else {
                     return
                 }
                 strongSelf.calendarSource.loadMore()
-            })
+            }).strict()
 
             self.stateDisposable = (self.calendarSource.state
-            |> deliverOnMainQueue).start(next: { [weak self] state in
+            |> deliverOnMainQueue).startStrict(next: { [weak self] state in
                 guard let strongSelf = self else {
                     return
                 }
                 strongSelf.calendarState = state
                 strongSelf.reloadMediaInfo()
-            })
+            }).strict()
         }
 
         deinit {
@@ -1487,7 +1487,7 @@ public final class CalendarMessageScreen: ViewController {
                     mainPeer: chatPeer
                 )
             }
-            |> deliverOnMainQueue).start(next: { [weak self] info in
+            |> deliverOnMainQueue).startStandalone(next: { [weak self] info in
                 guard let strongSelf = self, let info = info else {
                     return
                 }

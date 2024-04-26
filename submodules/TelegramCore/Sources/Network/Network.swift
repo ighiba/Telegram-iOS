@@ -18,6 +18,10 @@ public enum ConnectionStatus: Equatable {
     case online(proxyAddress: String?)
 }
 
+public func legacy_unarchiveDeprecated(data: Data) -> Any? {
+    return MTDeprecated.unarchiveDeprecated(with: data)
+}
+
 private struct MTProtoConnectionFlags: OptionSet {
     let rawValue: Int
     
@@ -455,7 +459,7 @@ public struct NetworkInitializationArguments {
 private let cloudDataContext = Atomic<CloudDataContext?>(value: nil)
 #endif
 
-func initializedNetwork(accountId: AccountRecordId, arguments: NetworkInitializationArguments, supplementary: Bool, datacenterId: Int, keychain: Keychain, basePath: String, testingEnvironment: Bool, languageCode: String?, proxySettings: ProxySettings?, networkSettings: NetworkSettings?, phoneNumber: String?, useRequestTimeoutTimers: Bool) -> Signal<Network, NoError> {
+func initializedNetwork(accountId: AccountRecordId, arguments: NetworkInitializationArguments, supplementary: Bool, datacenterId: Int, keychain: Keychain, basePath: String, testingEnvironment: Bool, languageCode: String?, proxySettings: ProxySettings?, networkSettings: NetworkSettings?, phoneNumber: String?, useRequestTimeoutTimers: Bool, appConfiguration: AppConfiguration) -> Signal<Network, NoError> {
     return Signal { subscriber in
         let queue = Queue()
         queue.async {
@@ -510,7 +514,7 @@ func initializedNetwork(accountId: AccountRecordId, arguments: NetworkInitializa
                 }
                 
                 if useNetworkFramework {
-                    if #available(iOS 12.0, macOS 10.14, *) {
+                    if #available(iOS 12.0, macOS 14.0, *) {
                         context.makeTcpConnectionInterface = { delegate, delegateQueue in
                             return NetworkFrameworkTcpConnectionInterface(delegate: delegate, delegateQueue: delegateQueue)
                         }
@@ -608,6 +612,11 @@ func initializedNetwork(accountId: AccountRecordId, arguments: NetworkInitializa
             let useExperimentalFeatures = networkSettings?.useExperimentalDownload ?? false
             
             let network = Network(queue: queue, datacenterId: datacenterId, context: context, mtProto: mtProto, requestService: requestService, connectionStatusDelegate: connectionStatusDelegate, _connectionStatus: connectionStatus, basePath: basePath, appDataDisposable: appDataDisposable, encryptionProvider: arguments.encryptionProvider, useRequestTimeoutTimers: useRequestTimeoutTimers, useBetaFeatures: arguments.useBetaFeatures, useExperimentalFeatures: useExperimentalFeatures)
+            
+            if let data = appConfiguration.data, let notifyInterval = data["upload_premium_speedup_notify_period"] as? Double {
+                network.updateNetworkSpeedLimitedEventNotifyInterval(value: notifyInterval)
+            }
+            
             appDataUpdatedImpl = { [weak network] data in
                 guard let data = data else {
                     return
@@ -656,6 +665,9 @@ private final class NetworkHelper: NSObject, MTContextChangeListener {
         self.isContextNetworkAccessAllowedImpl = isContextNetworkAccessAllowed
         self.contextProxyIdUpdated = contextProxyIdUpdated
         self.contextLoggedOutUpdated = contextLoggedOutUpdated
+    }
+    
+    deinit {
     }
     
     func fetchContextDatacenterPublicKeys(_ context: MTContext, datacenterId: Int) -> MTSignal {
@@ -727,12 +739,33 @@ public enum NetworkRequestResult<T> {
     case progress(Float, Int32)
 }
 
+private final class NetworkSpeedLimitedEventState {
+    var notifyInterval: Double = 60.0 * 60.0
+    var lastNotifyTimestamp: Double = 0.0
+    
+    func add(event: NetworkSpeedLimitedEvent) -> Bool {
+        let timestamp = CFAbsoluteTimeGetCurrent()
+        
+        if self.lastNotifyTimestamp + self.notifyInterval < timestamp {
+            return true
+        } else {
+            return false
+        }
+    }
+    
+    func markNotifyTimestamp() {
+        let timestamp = CFAbsoluteTimeGetCurrent()
+        self.lastNotifyTimestamp = timestamp
+    }
+}
+
 public final class Network: NSObject, MTRequestMessageServiceDelegate {
     public let encryptionProvider: EncryptionProvider
     
     private let queue: Queue
     public let datacenterId: Int
     public let context: MTContext
+    private var networkHelper: NetworkHelper?
     let mtProto: MTProto
     let requestService: MTRequestMessageService
     let basePath: String
@@ -757,6 +790,12 @@ public final class Network: NSObject, MTRequestMessageServiceDelegate {
     public var connectionStatus: Signal<ConnectionStatus, NoError> {
         return self._connectionStatus.get() |> distinctUntilChanged
     }
+    
+    public var networkSpeedLimitedEvents: Signal<NetworkSpeedLimitedEvent, NoError> {
+        return self.networkSpeedLimitedEventPipe.signal()
+    }
+    private let networkSpeedLimitedEventPipe = ValuePipe<NetworkSpeedLimitedEvent>()
+    private let networkSpeedLimitedEventState = Atomic<NetworkSpeedLimitedEventState>(value: NetworkSpeedLimitedEventState())
     
     public func dropConnectionStatus() {
         _connectionStatus.set(.single(.waitingForNetwork))
@@ -807,7 +846,7 @@ public final class Network: NSObject, MTRequestMessageServiceDelegate {
         }
         
         let _contextProxyId = self._contextProxyId
-        context.add(NetworkHelper(requestPublicKeys: { [weak self] id in
+        let networkHelper = NetworkHelper(requestPublicKeys: { [weak self] id in
             if let strongSelf = self {
                 return strongSelf.request(Api.functions.help.getCdnConfig())
                 |> map(Optional.init)
@@ -818,18 +857,18 @@ public final class Network: NSObject, MTRequestMessageServiceDelegate {
                     let array = NSMutableArray()
                     if let result = result {
                         switch result {
-                            case let .cdnConfig(publicKeys):
-                                for key in publicKeys {
-                                    switch key {
-                                        case let .cdnPublicKey(dcId, publicKey):
-                                            if id == Int(dcId) {
-                                                let dict = NSMutableDictionary()
-                                                dict["key"] = publicKey
-                                                dict["fingerprint"] = MTRsaFingerprint(encryptionProvider, publicKey)
-                                                array.add(dict)
-                                            }
+                        case let .cdnConfig(publicKeys):
+                            for key in publicKeys {
+                                switch key {
+                                case let .cdnPublicKey(dcId, publicKey):
+                                    if id == Int(dcId) {
+                                        let dict = NSMutableDictionary()
+                                        dict["key"] = publicKey
+                                        dict["fingerprint"] = MTRsaFingerprint(encryptionProvider, publicKey)
+                                        array.add(dict)
                                     }
                                 }
+                            }
                         }
                     }
                     return array
@@ -848,7 +887,9 @@ public final class Network: NSObject, MTRequestMessageServiceDelegate {
         }, contextLoggedOutUpdated: { [weak self] in
             Logger.shared.log("Network", "contextLoggedOut")
             self?.loggedOut?()
-        }))
+        })
+        self.networkHelper = networkHelper
+        context.add(networkHelper)
         requestService.delegate = self
         
         self._multiplexedRequestManager = MultiplexedRequestManager(takeWorker: { [weak self] target, tag, continueInBackground in
@@ -857,12 +898,12 @@ public final class Network: NSObject, MTRequestMessageServiceDelegate {
                 let isCdn: Bool
                 let isMedia: Bool = true
                 switch target {
-                    case let .main(id):
-                        datacenterId = id
-                        isCdn = false
-                    case let .cdn(id):
-                        datacenterId = id
-                        isCdn = true
+                case let .main(id):
+                    datacenterId = id
+                    isCdn = false
+                case let .cdn(id):
+                    datacenterId = id
+                    isCdn = true
                 }
                 return strongSelf.makeWorker(datacenterId: datacenterId, isCdn: isCdn, isMedia: isMedia, tag: tag, continueInBackground: continueInBackground)
             }
@@ -870,7 +911,7 @@ public final class Network: NSObject, MTRequestMessageServiceDelegate {
         })
         
         let shouldKeepConnectionSignal = self.shouldKeepConnection.get()
-            |> distinctUntilChanged |> deliverOn(queue)
+        |> distinctUntilChanged |> deliverOn(queue)
         self.shouldKeepConnectionDisposable.set(shouldKeepConnectionSignal.start(next: { [weak self] value in
             if let strongSelf = self {
                 if value {
@@ -957,11 +998,11 @@ public final class Network: NSObject, MTRequestMessageServiceDelegate {
             self.context.addAddressForDatacenter(withId: Int(datacenterId), address: address)
             
             /*let currentScheme = self.context.transportSchemeForDatacenter(withId: Int(datacenterId), media: false, isProxy: false)
-            if let currentScheme = currentScheme, currentScheme.address.isEqual(to: address) {
-            } else {
-                let scheme = MTTransportScheme(transport: MTTcpTransport.self, address: address, media: false)
-                self.context.updateTransportSchemeForDatacenter(withId: Int(datacenterId), transportScheme: scheme, media: false, isProxy: false)
-            }*/
+             if let currentScheme = currentScheme, currentScheme.address.isEqual(to: address) {
+             } else {
+             let scheme = MTTransportScheme(transport: MTTcpTransport.self, address: address, media: false)
+             self.context.updateTransportSchemeForDatacenter(withId: Int(datacenterId), transportScheme: scheme, media: false, isProxy: false)
+             }*/
             
             let currentSchemes = self.context.transportSchemesForDatacenter(withId: Int(datacenterId), media: false, enforceMedia: false, isProxy: false)
             var found = false
@@ -978,7 +1019,7 @@ public final class Network: NSObject, MTRequestMessageServiceDelegate {
         }
     }
     
-    public func requestWithAdditionalInfo<T>(_ data: (FunctionDescription, Buffer, DeserializeFunctionResponse<T>), info: NetworkRequestAdditionalInfo, tag: NetworkRequestDependencyTag? = nil, automaticFloodWait: Bool = true) -> Signal<NetworkRequestResult<T>, MTRpcError> {
+    public func requestWithAdditionalInfo<T>(_ data: (FunctionDescription, Buffer, DeserializeFunctionResponse<T>), info: NetworkRequestAdditionalInfo, tag: NetworkRequestDependencyTag? = nil, automaticFloodWait: Bool = true, onFloodWaitError: ((String) -> Void)? = nil) -> Signal<NetworkRequestResult<T>, MTRpcError> {
         let requestService = self.requestService
         return Signal { subscriber in
             let request = MTRequest()
@@ -995,6 +1036,9 @@ public final class Network: NSObject, MTRequestMessageServiceDelegate {
             request.shouldContinueExecutionWithErrorContext = { errorContext in
                 guard let errorContext = errorContext else {
                     return true
+                }
+                if let onFloodWaitError, errorContext.floodWaitSeconds > 0, let errorText = errorContext.floodWaitErrorText {
+                    onFloodWaitError(errorText)
                 }
                 if errorContext.floodWaitSeconds > 0 && !automaticFloodWait {
                     return false
@@ -1046,8 +1090,8 @@ public final class Network: NSObject, MTRequestMessageServiceDelegate {
             }
         }
     }
-        
-    public func request<T>(_ data: (FunctionDescription, Buffer, DeserializeFunctionResponse<T>), tag: NetworkRequestDependencyTag? = nil, automaticFloodWait: Bool = true) -> Signal<T, MTRpcError> {
+    
+    public func request<T>(_ data: (FunctionDescription, Buffer, DeserializeFunctionResponse<T>), tag: NetworkRequestDependencyTag? = nil, automaticFloodWait: Bool = true, onFloodWaitError: ((String) -> Void)? = nil) -> Signal<T, MTRpcError> {
         let requestService = self.requestService
         return Signal { subscriber in
             let request = MTRequest()
@@ -1064,6 +1108,9 @@ public final class Network: NSObject, MTRequestMessageServiceDelegate {
             request.shouldContinueExecutionWithErrorContext = { errorContext in
                 guard let errorContext = errorContext else {
                     return true
+                }
+                if let onFloodWaitError, errorContext.floodWaitSeconds > 0, let errorText = errorContext.floodWaitErrorText {
+                    onFloodWaitError(errorText)
                 }
                 if errorContext.floodWaitSeconds > 0 && !automaticFloodWait {
                     return false
@@ -1103,6 +1150,27 @@ public final class Network: NSObject, MTRequestMessageServiceDelegate {
             }
         }
     }
+    
+    func updateNetworkSpeedLimitedEventNotifyInterval(value: Double) {
+        let _ = self.networkSpeedLimitedEventState.with { state in
+            state.notifyInterval = value
+        }
+    }
+    
+    func addNetworkSpeedLimitedEvent(event: NetworkSpeedLimitedEvent) {
+        let notify = self.networkSpeedLimitedEventState.with { state in
+            return state.add(event: event)
+        }
+        if notify {
+            self.networkSpeedLimitedEventPipe.putNext(event)
+        }
+    }
+    
+    public func markNetworkSpeedLimitDisplayed() {
+        self.networkSpeedLimitedEventState.with { state in
+            return state.markNotifyTimestamp()
+        }
+    }
 }
 
 public func retryRequest<T>(signal: Signal<T, MTRpcError>) -> Signal<T, NoError> {
@@ -1126,21 +1194,38 @@ class Keychain: NSObject, MTKeychain {
             return
         }
         MTContext.perform(objCTry: {
-            let data = NSKeyedArchiver.archivedData(withRootObject: object)
-            self.set(group + ":" + aKey, data)
+            if let data = try? NSKeyedArchiver.archivedData(withRootObject: object, requiringSecureCoding: false) {
+                self.set(group + ":" + aKey, data)
+            }
         })
     }
     
-    func object(forKey aKey: String!, group: String!) -> Any! {
+    func dictionary(forKey aKey: String!, group: String!) -> [AnyHashable : Any]? {
         guard let aKey = aKey, let group = group else {
             return nil
         }
         if let data = self.get(group + ":" + aKey) {
-            var result: Any?
-            MTContext.perform(objCTry: {
-                result = NSKeyedUnarchiver.unarchiveObject(with: data as Data)
-            })
-            return result
+            var result: NSDictionary?
+            result = MTDeprecated.unarchiveDeprecated(with: data as Data) as? NSDictionary
+            if let result = result {
+                return result as? [AnyHashable : Any]
+            }
+            assertionFailure("Unexpected keychain entry type")
+        }
+        return nil
+    }
+    
+    func number(forKey aKey: String!, group: String!) -> NSNumber? {
+        guard let aKey = aKey, let group = group else {
+            return nil
+        }
+        if let data = self.get(group + ":" + aKey) {
+            var result: NSNumber?
+            result = MTDeprecated.unarchiveDeprecated(with: data as Data) as? NSNumber
+            if let result = result {
+                return result
+            }
+            assertionFailure("Unexpected keychain entry type")
         }
         return nil
     }

@@ -82,6 +82,7 @@ public final class QrCodeScanScreen: ViewController {
     public enum Subject {
         case authTransfer(activeSessionsContext: ActiveSessionsContext)
         case peer
+        case cryptoAddress
         case custom(info: String)
     }
     
@@ -264,6 +265,8 @@ public final class QrCodeScanScreen: ViewController {
                             strongSelf.controllerNode.updateFocusedRect(nil)
                         }))
                     }
+                case .cryptoAddress:
+                    break
                 case .peer:
                     if let _ = URL(string: code) {
                         strongSelf.controllerNode.resolveCode(code: code, completion: { [weak self] result in
@@ -384,13 +387,13 @@ private final class FrameNode: ASDisplayNode {
     }
 }
 
-private final class QrCodeScanScreenNode: ViewControllerTracingNode, UIScrollViewDelegate {
+private final class QrCodeScanScreenNode: ViewControllerTracingNode, ASScrollViewDelegate {
     private let context: AccountContext
     private var presentationData: PresentationData
     private weak var controller: QrCodeScanScreen?
     private let subject: QrCodeScanScreen.Subject
     
-    private let previewNode: CameraPreviewNode
+    private let previewView: CameraSimplePreviewView
     private let fadeNode: ASDisplayNode
     private let topDimNode: ASDisplayNode
     private let bottomDimNode: ASDisplayNode
@@ -436,8 +439,8 @@ private final class QrCodeScanScreenNode: ViewControllerTracingNode, UIScrollVie
         self.controller = controller
         self.subject = subject
         
-        self.previewNode = CameraPreviewNode()
-        self.previewNode.backgroundColor = .black
+        self.previewView = CameraSimplePreviewView(frame: .zero, main: true)
+        self.previewView.backgroundColor = .black
         
         self.fadeNode = ASDisplayNode()
         self.fadeNode.alpha = 0.0
@@ -479,6 +482,9 @@ private final class QrCodeScanScreenNode: ViewControllerTracingNode, UIScrollVie
             case .peer:
                 title = ""
                 text = ""
+            case .cryptoAddress:
+                title = ""
+                text = ""
             case let .custom(info):
                 title = presentationData.strings.AuthSessions_AddDevice_ScanTitle
                 text = info
@@ -513,7 +519,7 @@ private final class QrCodeScanScreenNode: ViewControllerTracingNode, UIScrollVie
         self.errorTextNode.textAlignment = .center
         self.errorTextNode.isHidden = true
         
-        self.camera = Camera(configuration: .init(preset: .hd1920x1080, position: .back, audio: false, photo: true, metadata: true, preferredFps: 60))
+        self.camera = Camera(configuration: .init(preset: .hd1920x1080, position: .back, audio: false, photo: true, metadata: true), previewView: self.previewView)
         
         super.init()
         
@@ -526,7 +532,6 @@ private final class QrCodeScanScreenNode: ViewControllerTracingNode, UIScrollVie
             }
         })
         
-        self.addSubnode(self.previewNode)
         self.addSubnode(self.fadeNode)
         self.addSubnode(self.topDimNode)
         self.addSubnode(self.bottomDimNode)
@@ -544,6 +549,20 @@ private final class QrCodeScanScreenNode: ViewControllerTracingNode, UIScrollVie
       
         self.galleryButtonNode.addTarget(self, action: #selector(self.galleryPressed), forControlEvents: .touchUpInside)
         self.torchButtonNode.addTarget(self, action: #selector(self.torchPressed), forControlEvents: .touchUpInside)
+        
+        self.previewView.resetPlaceholder(front: false)
+        if #available(iOS 13.0, *) {
+            let _ = (self.previewView.isPreviewing
+            |> filter { $0 }
+            |> take(1)
+            |> deliverOnMainQueue).startStandalone(next: { [weak self] _ in
+                self?.previewView.removePlaceholder(delay: 0.15)
+            })
+        } else {
+            Queue.mainQueue().after(0.35) {
+                self.previewView.removePlaceholder(delay: 0.15)
+            }
+        }
     }
     
     deinit {
@@ -564,7 +583,7 @@ private final class QrCodeScanScreenNode: ViewControllerTracingNode, UIScrollVie
     override func didLoad() {
         super.didLoad()
         
-        self.camera.attachPreviewNode(self.previewNode)
+        self.view.insertSubview(self.previewView, at: 0)
         self.camera.startCapture()
         
         let throttledSignal = self.camera.detectedCodes
@@ -583,6 +602,8 @@ private final class QrCodeScanScreenNode: ViewControllerTracingNode, UIScrollVie
                     filteredCodes = codes.filter { $0.message.hasPrefix("tg://") }
                 case .peer:
                     filteredCodes = codes.filter { $0.message.hasPrefix("https://t.me/") || $0.message.hasPrefix("t.me/") }
+                case .cryptoAddress:
+                    filteredCodes = codes.filter { $0.message.hasPrefix("ton://") }
                 case .custom:
                     filteredCodes = codes
             }
@@ -671,14 +692,14 @@ private final class QrCodeScanScreenNode: ViewControllerTracingNode, UIScrollVie
 
         if case .tablet = layout.deviceMetrics.type {
             if UIDevice.current.orientation == .landscapeLeft {
-                self.previewNode.transform = CATransform3DMakeRotation(-CGFloat.pi / 2.0, 0.0, 0.0, 1.0)
+                self.previewView.layer.transform = CATransform3DMakeRotation(-CGFloat.pi / 2.0, 0.0, 0.0, 1.0)
             } else if UIDevice.current.orientation == .landscapeRight {
-                self.previewNode.transform = CATransform3DMakeRotation(CGFloat.pi / 2.0, 0.0, 0.0, 1.0)
+                self.previewView.layer.transform = CATransform3DMakeRotation(CGFloat.pi / 2.0, 0.0, 0.0, 1.0)
             } else {
-                self.previewNode.transform = CATransform3DIdentity
+                self.previewView.layer.transform = CATransform3DIdentity
             }
         }
-        transition.updateFrame(node: self.previewNode, frame: bounds)
+        transition.updateFrame(view: self.previewView, frame: bounds)
         transition.updateFrame(node: self.fadeNode, frame: bounds)
         
         let frameSide = max(240.0, layout.size.width - sideInset * 2.0)
@@ -903,7 +924,7 @@ private final class QrCodeScanScreenNode: ViewControllerTracingNode, UIScrollVie
             self?.controller?.present(c, in: .window(.root), with: a)
         }, dismissInput: { [weak self] in
             self?.view.endEditing(true)
-        }, contentContext: nil)
+        }, contentContext: nil, progress: nil, completion: nil)
         
         return true
     }

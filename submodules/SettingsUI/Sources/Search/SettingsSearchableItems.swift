@@ -22,6 +22,7 @@ import QrCodeUI
 import PremiumUI
 import StorageUsageScreen
 import PeerInfoStoryGridScreen
+import WallpaperGridScreen
 
 enum SettingsSearchableItemIcon {
     case profile
@@ -278,13 +279,13 @@ private func premiumSearchableItems(context: AccountContext) -> [SettingsSearcha
     var result: [SettingsSearchableItem] = []
         
     result.append(SettingsSearchableItem(id: .premium(0), title: strings.Settings_Premium, alternate: synonyms(strings.SettingsSearch_Synonyms_Premium), icon: icon, breadcrumbs: [], present: { context, _, present in
-        present(.push, PremiumIntroScreen(context: context, modal: false, source: .settings))
+        present(.push, PremiumIntroScreen(context: context, source: .settings, modal: false))
     }))
     
     let presentDemo: (PremiumDemoScreen.Subject, (SettingsSearchableItemPresentation, ViewController?) -> Void) -> Void = { subject, present in
         var replaceImpl: ((ViewController) -> Void)?
         let controller = PremiumDemoScreen(context: context, subject: subject, action: {
-            let controller = PremiumIntroScreen(context: context, modal: false, source: .settings)
+            let controller = PremiumIntroScreen(context: context, source: .settings, modal: false)
             replaceImpl?(controller)
         })
         replaceImpl = { [weak controller] c in
@@ -594,9 +595,11 @@ private func privacySearchableItems(context: AccountContext, privacySettings: Ac
                     current = info.voiceMessages
                 case .bio:
                     current = info.bio
+                case .birthday:
+                    current = info.birthday
             }
 
-            present(.push, selectivePrivacySettingsController(context: context, kind: kind, current: current, callSettings: callSettings != nil ? (info.voiceCallsP2P, callSettings!.0) : nil, voipConfiguration: callSettings?.1, callIntegrationAvailable: CallKitIntegration.isAvailable, updated: { updated, updatedCallSettings, _ in
+            present(.push, selectivePrivacySettingsController(context: context, kind: kind, current: current, callSettings: callSettings != nil ? (info.voiceCallsP2P, callSettings!.0) : nil, voipConfiguration: callSettings?.1, callIntegrationAvailable: CallKitIntegration.isAvailable, updated: { updated, updatedCallSettings, _, _ in
                     if let (_, updatedCallSettings) = updatedCallSettings  {
                         let _ = updateVoiceCallSettingsSettingsInteractively(accountManager: context.sharedContext.accountManager, { _ in
                             return updatedCallSettings
@@ -996,7 +999,7 @@ func settingsSearchableItems(context: AccountContext, notificationExceptionsList
         allItems.append(contentsOf: profileItems)
         
         let savedMessages = SettingsSearchableItem(id: .savedMessages(0), title: strings.Settings_SavedMessages, alternate: synonyms(strings.SettingsSearch_Synonyms_SavedMessages), icon: .savedMessages, breadcrumbs: [], present: { context, _, present in
-            present(.push, context.sharedContext.makeChatController(context: context, chatLocation: .peer(id: context.account.peerId), subject: nil, botStart: nil, mode: .standard(previewing: false)))
+            present(.push, context.sharedContext.makeChatController(context: context, chatLocation: .peer(id: context.account.peerId), subject: nil, botStart: nil, mode: .standard(.default)))
         })
         allItems.append(savedMessages)
         
@@ -1056,7 +1059,7 @@ func settingsSearchableItems(context: AccountContext, notificationExceptionsList
             let _ = (context.engine.peers.supportPeerId()
             |> deliverOnMainQueue).start(next: { peerId in
                 if let peerId = peerId {
-                    present(.push, context.sharedContext.makeChatController(context: context, chatLocation: .peer(id: peerId), subject: nil, botStart: nil, mode: .standard(previewing: false)))
+                    present(.push, context.sharedContext.makeChatController(context: context, chatLocation: .peer(id: peerId), subject: nil, botStart: nil, mode: .standard(.default)))
                 }
             })
         })
@@ -1068,7 +1071,7 @@ func settingsSearchableItems(context: AccountContext, notificationExceptionsList
                 context.sharedContext.openResolvedUrl(resolvedUrl, context: context, urlContext: .generic, navigationController: navigationController, forceExternal: false, openPeer: { peer, navigation in
                 }, sendFile: nil, sendSticker: nil, requestMessageActionUrlAuth: nil, joinVoiceChat: nil, present: { controller, arguments in
                     present(.push, controller)
-                }, dismissInput: {}, contentContext: nil)
+                }, dismissInput: {}, contentContext: nil, progress: nil, completion: nil)
             })
         })
         allItems.append(faq)

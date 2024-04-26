@@ -47,7 +47,7 @@ private enum ChatListTokenId: Int32 {
 
 final class ChatListSearchInteraction {
     let openPeer: (EnginePeer, EnginePeer?, Int64?, Bool) -> Void
-    let openDisabledPeer: (EnginePeer, Int64?) -> Void
+    let openDisabledPeer: (EnginePeer, Int64?, ChatListDisabledPeerReason) -> Void
     let openMessage: (EnginePeer, Int64?, EngineMessage.Id, Bool) -> Void
     let openUrl: (String) -> Void
     let clearRecentSearch: () -> Void
@@ -61,7 +61,7 @@ final class ChatListSearchInteraction {
     let getSelectedMessageIds: () -> Set<EngineMessage.Id>?
     let openStories: ((PeerId, ASDisplayNode) -> Void)?
     
-    init(openPeer: @escaping (EnginePeer, EnginePeer?, Int64?, Bool) -> Void, openDisabledPeer: @escaping (EnginePeer, Int64?) -> Void, openMessage: @escaping (EnginePeer, Int64?, EngineMessage.Id, Bool) -> Void, openUrl: @escaping (String) -> Void, clearRecentSearch: @escaping () -> Void, addContact: @escaping (String) -> Void, toggleMessageSelection: @escaping (EngineMessage.Id, Bool) -> Void, messageContextAction: @escaping ((EngineMessage, ASDisplayNode?, CGRect?, UIGestureRecognizer?, ChatListSearchPaneKey, (id: String, size: Int64, isFirstInList: Bool)?) -> Void), mediaMessageContextAction: @escaping ((EngineMessage, ASDisplayNode?, CGRect?, UIGestureRecognizer?) -> Void), peerContextAction: ((EnginePeer, ChatListSearchContextActionSource, ASDisplayNode, ContextGesture?, CGPoint?) -> Void)?, present: @escaping (ViewController, Any?) -> Void, dismissInput: @escaping () -> Void, getSelectedMessageIds: @escaping () -> Set<EngineMessage.Id>?, openStories: ((PeerId, ASDisplayNode) -> Void)?) {
+    init(openPeer: @escaping (EnginePeer, EnginePeer?, Int64?, Bool) -> Void, openDisabledPeer: @escaping (EnginePeer, Int64?, ChatListDisabledPeerReason) -> Void, openMessage: @escaping (EnginePeer, Int64?, EngineMessage.Id, Bool) -> Void, openUrl: @escaping (String) -> Void, clearRecentSearch: @escaping () -> Void, addContact: @escaping (String) -> Void, toggleMessageSelection: @escaping (EngineMessage.Id, Bool) -> Void, messageContextAction: @escaping ((EngineMessage, ASDisplayNode?, CGRect?, UIGestureRecognizer?, ChatListSearchPaneKey, (id: String, size: Int64, isFirstInList: Bool)?) -> Void), mediaMessageContextAction: @escaping ((EngineMessage, ASDisplayNode?, CGRect?, UIGestureRecognizer?) -> Void), peerContextAction: ((EnginePeer, ChatListSearchContextActionSource, ASDisplayNode, ContextGesture?, CGPoint?) -> Void)?, present: @escaping (ViewController, Any?) -> Void, dismissInput: @escaping () -> Void, getSelectedMessageIds: @escaping () -> Set<EngineMessage.Id>?, openStories: ((PeerId, ASDisplayNode) -> Void)?) {
         self.openPeer = openPeer
         self.openDisabledPeer = openDisabledPeer
         self.openMessage = openMessage
@@ -146,7 +146,7 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
     
     private let sharedOpenStoryDisposable = MetaDisposable()
     
-    public init(context: AccountContext, animationCache: AnimationCache, animationRenderer: MultiAnimationRenderer, updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)? = nil, filter: ChatListNodePeersFilter, requestPeerType: [ReplyMarkupButtonRequestPeerType]?, location: ChatListControllerLocation, displaySearchFilters: Bool, hasDownloads: Bool, initialFilter: ChatListSearchFilter = .chats, openPeer originalOpenPeer: @escaping (EnginePeer, EnginePeer?, Int64?, Bool) -> Void, openDisabledPeer: @escaping (EnginePeer, Int64?) -> Void, openRecentPeerOptions: @escaping (EnginePeer) -> Void, openMessage originalOpenMessage: @escaping (EnginePeer, Int64?, EngineMessage.Id, Bool) -> Void, addContact: ((String) -> Void)?, peerContextAction: ((EnginePeer, ChatListSearchContextActionSource, ASDisplayNode, ContextGesture?, CGPoint?) -> Void)?, present: @escaping (ViewController, Any?) -> Void, presentInGlobalOverlay: @escaping (ViewController, Any?) -> Void, navigationController: NavigationController?, parentController: @escaping () -> ViewController?) {
+    public init(context: AccountContext, animationCache: AnimationCache, animationRenderer: MultiAnimationRenderer, updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)? = nil, filter: ChatListNodePeersFilter, requestPeerType: [ReplyMarkupButtonRequestPeerType]?, location: ChatListControllerLocation, displaySearchFilters: Bool, hasDownloads: Bool, initialFilter: ChatListSearchFilter = .chats, openPeer originalOpenPeer: @escaping (EnginePeer, EnginePeer?, Int64?, Bool) -> Void, openDisabledPeer: @escaping (EnginePeer, Int64?, ChatListDisabledPeerReason) -> Void, openRecentPeerOptions: @escaping (EnginePeer) -> Void, openMessage originalOpenMessage: @escaping (EnginePeer, Int64?, EngineMessage.Id, Bool) -> Void, addContact: ((String) -> Void)?, peerContextAction: ((EnginePeer, ChatListSearchContextActionSource, ASDisplayNode, ContextGesture?, CGPoint?) -> Void)?, present: @escaping (ViewController, Any?) -> Void, presentInGlobalOverlay: @escaping (ViewController, Any?) -> Void, navigationController: NavigationController?, parentController: @escaping () -> ViewController?) {
         var initialFilter = initialFilter
         if case .chats = initialFilter, case .forum = location {
             initialFilter = .topics
@@ -187,15 +187,15 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
             if peer.id.namespace != Namespaces.Peer.SecretChat {
                 addAppLogEvent(postbox: context.account.postbox, type: "search_global_open_peer", peerId: peer.id)
             }
-        }, openDisabledPeer: { peer, threadId in
-            openDisabledPeer(peer, threadId)
+        }, openDisabledPeer: { peer, threadId, reason in
+            openDisabledPeer(peer, threadId, reason)
         }, openMessage: { peer, threadId, messageId, deactivateOnAction in
             originalOpenMessage(peer, threadId, messageId, deactivateOnAction)
             if peer.id.namespace != Namespaces.Peer.SecretChat {
                 addAppLogEvent(postbox: context.account.postbox, type: "search_global_open_message", peerId: peer.id, data: .dictionary(["msg_id": .number(Double(messageId.id))]))
             }
         }, openUrl: { [weak self] url in
-            openUserGeneratedUrl(context: context, peerId: nil, url: url, concealed: false, present: { c in
+            let _ = openUserGeneratedUrl(context: context, peerId: nil, url: url, concealed: false, present: { c in
                 present(c, nil)
             }, openResolved: { [weak self] resolved in
                 context.sharedContext.openResolvedUrl(resolved, context: context, urlContext: .generic, navigationController: navigationController, forceExternal: false, openPeer: { peerId, navigation in
@@ -208,7 +208,7 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
                     present(c, a)
                 }, dismissInput: {
                     self?.dismissInput()
-                }, contentContext: nil)
+                }, contentContext: nil, progress: nil, completion: nil)
             })
         }, clearRecentSearch: { [weak self] in
             guard let strongSelf = self else {
@@ -225,7 +225,7 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
                         return
                     }
                     let _ = (strongSelf.context.engine.peers.clearRecentlySearchedPeers()
-                    |> deliverOnMainQueue).start()
+                    |> deliverOnMainQueue).startStandalone()
                 })
             ]), ActionSheetItemGroup(items: [
                 ActionSheetButtonItem(title: presentationData.strings.Common_Cancel, color: .accent, font: .bold, action: { [weak actionSheet] in
@@ -285,22 +285,24 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
             if let strongSelf = self, let key = key {
                 var filterKey: ChatListSearchFilter
                 switch key {
-                    case .chats:
-                        filterKey = .chats
-                    case .topics:
-                        filterKey = .topics
-                    case .media:
-                        filterKey = .media
-                    case .downloads:
-                        filterKey = .downloads
-                    case .links:
-                        filterKey = .links
-                    case .files:
-                        filterKey = .files
-                    case .music:
-                        filterKey = .music
-                    case .voice:
-                        filterKey = .voice
+                case .chats:
+                    filterKey = .chats
+                case .topics:
+                    filterKey = .topics
+                case .channels:
+                    filterKey = .channels
+                case .media:
+                    filterKey = .media
+                case .downloads:
+                    filterKey = .downloads
+                case .links:
+                    filterKey = .links
+                case .files:
+                    filterKey = .files
+                case .music:
+                    filterKey = .music
+                case .voice:
+                    filterKey = .voice
                 }
                 strongSelf.selectedFilter = .filter(filterKey)
                 strongSelf.selectedFilterPromise.set(.single(strongSelf.selectedFilter))
@@ -337,26 +339,28 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
             var peer = strongSelf.currentSearchOptions.peer
             
             switch filter {
-                case .chats:
-                    key = .chats
-                case .topics:
-                    key = .topics
-                case .media:
-                    key = .media
-                case .downloads:
-                    key = .downloads
-                case .links:
-                    key = .links
-                case .files:
-                    key = .files
-                case .music:
-                    key = .music
-                case .voice:
-                    key = .voice
-                case let .date(minDate, maxDate, title):
-                    date = (minDate, maxDate, title)
-                case let .peer(id, isGroup, _, compactDisplayTitle):
-                    peer = (id, isGroup, compactDisplayTitle)
+            case .chats:
+                key = .chats
+            case .topics:
+                key = .topics
+            case .channels:
+                key = .channels
+            case .media:
+                key = .media
+            case .downloads:
+                key = .downloads
+            case .links:
+                key = .links
+            case .files:
+                key = .files
+            case .music:
+                key = .music
+            case .voice:
+                key = .voice
+            case let .date(minDate, maxDate, title):
+                date = (minDate, maxDate, title)
+            case let .peer(id, isGroup, _, compactDisplayTitle):
+                peer = (id, isGroup, compactDisplayTitle)
             }
             
             if let key = key {
@@ -380,7 +384,7 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
                 switch filter {
                 case let .filter(filter):
                     switch filter {
-                    case .downloads:
+                    case .downloads, .channels:
                         return false
                     default:
                         return true
@@ -467,7 +471,8 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
                 }
             }
             return suggestedFilters
-        } |> deliverOnMainQueue).start(next: { [weak self] filters in
+        }
+        |> deliverOnMainQueue).startStrict(next: { [weak self] filters in
             guard let strongSelf = self else {
                 return
             }
@@ -492,7 +497,7 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
         }))
         
         self.presentationDataDisposable = ((updatedPresentationData?.signal ?? context.sharedContext.presentationData)
-        |> deliverOnMainQueue).start(next: { [weak self] presentationData in
+        |> deliverOnMainQueue).startStrict(next: { [weak self] presentationData in
             if let strongSelf = self {
                 let previousTheme = strongSelf.presentationData.theme
                 strongSelf.presentationData = presentationData
@@ -501,11 +506,11 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
                     strongSelf.updateTheme(theme: presentationData.theme)
                 }
             }
-        })
+        }).strict()
         
         if case let .forum(peerId) = location {
             let _ = (context.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: peerId))
-            |> deliverOnMainQueue).start(next: { [weak self] peer in
+            |> deliverOnMainQueue).startStandalone(next: { [weak self] peer in
                 self?.forumPeer = peer
                 self?.updateSearchOptions(nil)
             })
@@ -630,22 +635,24 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
     public func search(filter: ChatListSearchFilter, query: String?) {
         let key: ChatListSearchPaneKey
         switch filter {
-            case .topics:
-                key = .topics
-            case .media:
-                key = .media
-            case .links:
-                key = .links
-            case .files:
-                key = .files
-            case .music:
-                key = .music
-            case .voice:
-                key = .voice
-            case .downloads:
-                key = .downloads
-            default:
-                key = .chats
+        case .topics:
+            key = .topics
+        case .channels:
+            key = .channels
+        case .media:
+            key = .media
+        case .links:
+            key = .links
+        case .files:
+            key = .files
+        case .music:
+            key = .music
+        case .voice:
+            key = .voice
+        case .downloads:
+            key = .downloads
+        default:
+            key = .chats
         }
         self.paneContainerNode.requestSelectPane(key)
         self.updateSearchOptions(nil)
@@ -736,7 +743,7 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
                         }
                         return messages
                     }
-                    |> deliverOnMainQueue).start(next: { messages in
+                    |> deliverOnMainQueue).startStandalone(next: { messages in
                         if let strongSelf = self, !messages.isEmpty {
                             let shareController = ShareController(context: strongSelf.context, subject: .messages(messages.sorted(by: { lhs, rhs in
                                 return lhs.index < rhs.index
@@ -768,7 +775,7 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
                         }
                         return messages
                     }
-                    |> deliverOnMainQueue).start(next: { messages in
+                    |> deliverOnMainQueue).startStandalone(next: { messages in
                         if let strongSelf = self, !messages.isEmpty {
                             enum PeerType {
                                 case group
@@ -955,7 +962,7 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
                             return
                         }
                         let _ = (strongSelf.context.account.postbox.mediaBox.removeCachedResources([MediaResourceId(downloadResource.id)], notify: true)
-                        |> deliverOnMainQueue).start(completed: {
+                        |> deliverOnMainQueue).startStandalone(completed: {
                             f(.dismissWithoutContent)
                         })
                     })))
@@ -1046,7 +1053,7 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
                 return items
             }
             
-            let controller = ContextController(account: self.context.account, presentationData: self.presentationData, source: .extracted(MessageContextExtractedContentSource(sourceNode: node, shouldBeDismissed: shouldBeDismissed)), items: items |> map { ContextController.Items(content: .list($0)) }, recognizer: nil, gesture: gesture)
+            let controller = ContextController(presentationData: self.presentationData, source: .extracted(MessageContextExtractedContentSource(sourceNode: node, shouldBeDismissed: shouldBeDismissed)), items: items |> map { ContextController.Items(content: .list($0)) }, recognizer: nil, gesture: gesture)
             self.presentInGlobalOverlay?(controller, nil)
             
             return
@@ -1120,14 +1127,14 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
             return items
         }
         
-        let controller = ContextController(account: self.context.account, presentationData: self.presentationData, source: .extracted(MessageContextExtractedContentSource(sourceNode: node)), items: items |> map { ContextController.Items(content: .list($0)) }, recognizer: nil, gesture: gesture)
+        let controller = ContextController(presentationData: self.presentationData, source: .extracted(MessageContextExtractedContentSource(sourceNode: node)), items: items |> map { ContextController.Items(content: .list($0)) }, recognizer: nil, gesture: gesture)
         self.presentInGlobalOverlay?(controller, nil)
     }
     
     private func mediaMessageContextAction(_ message: EngineMessage, node: ASDisplayNode?, rect: CGRect?, gesture anyRecognizer: UIGestureRecognizer?) {
         let gesture: ContextGesture? = anyRecognizer as? ContextGesture
-        let _ = (chatMediaListPreviewControllerData(context: self.context, chatLocation: .peer(id: message.id.peerId), chatLocationContextHolder: Atomic<ChatLocationContextHolder?>(value: nil), message: message._asMessage(), standalone: true, reverseMessageGalleryOrder: false, navigationController: self.navigationController)
-            |> deliverOnMainQueue).start(next: { [weak self] previewData in
+        let _ = (chatMediaListPreviewControllerData(context: self.context, chatLocation: .peer(id: message.id.peerId), chatFilterTag: nil, chatLocationContextHolder: Atomic<ChatLocationContextHolder?>(value: nil), message: message._asMessage(), standalone: true, reverseMessageGalleryOrder: false, navigationController: self.navigationController)
+            |> deliverOnMainQueue).startStandalone(next: { [weak self] previewData in
                 guard let strongSelf = self else {
                     gesture?.cancel()
                     return
@@ -1184,7 +1191,7 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
                     switch previewData {
                         case let .gallery(gallery):
                             gallery.setHintWillBePresentedInPreviewingContext(true)
-                            let contextController = ContextController(account: strongSelf.context.account, presentationData: strongSelf.presentationData, source: .controller(ContextControllerContentSourceImpl(controller: gallery, sourceNode: node)), items: items |> map { ContextController.Items(content: .list($0)) }, gesture: gesture)
+                            let contextController = ContextController(presentationData: strongSelf.presentationData, source: .controller(ContextControllerContentSourceImpl(controller: gallery, sourceNode: node)), items: items |> map { ContextController.Items(content: .list($0)) }, gesture: gesture)
                             strongSelf.presentInGlobalOverlay?(contextController, nil)
                         case .instantPage:
                             break
@@ -1217,7 +1224,7 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
                     }
                     return messages
                 }
-                |> deliverOnMainQueue).start(next: { [weak self] messages in
+                |> deliverOnMainQueue).startStandalone(next: { [weak self] messages in
                     guard let strongSelf = self else {
                         return
                     }
@@ -1246,7 +1253,7 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
                             }
                             
                             let _ = (strongSelf.context.account.postbox.mediaBox.removeCachedResources(Array(resourceIds), force: true, notify: true)
-                            |> deliverOnMainQueue).start(completed: {
+                            |> deliverOnMainQueue).startStandalone(completed: {
                                 guard let strongSelf = self else {
                                     return
                                 }
@@ -1267,7 +1274,7 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
                 self.context.engine.messages.ensureMessagesAreLocallyAvailable(messages: messages.values.filter { messageIds.contains($0.id) })
                 
                 self.activeActionDisposable.set((self.context.sharedContext.chatAvailableMessageActions(engine: self.context.engine, accountPeerId: self.context.account.peerId, messageIds: messageIds, messages: messages, peers: peers)
-                |> deliverOnMainQueue).start(next: { [weak self] actions in
+                |> deliverOnMainQueue).startStrict(next: { [weak self] actions in
                     if let strongSelf = self, !actions.options.isEmpty {
                         let actionSheet = ActionSheetController(presentationData: strongSelf.presentationData)
                         var items: [ActionSheetItem] = []
@@ -1283,7 +1290,7 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
                             items.append(ActionSheetButtonItem(title: globalTitle, color: .destructive, action: { [weak actionSheet] in
                                 actionSheet?.dismissAnimated()
                                 if let strongSelf = self {
-                                    let _ = strongSelf.context.engine.messages.deleteMessagesInteractively(messageIds: Array(messageIds), type: .forEveryone).start()
+                                    let _ = strongSelf.context.engine.messages.deleteMessagesInteractively(messageIds: Array(messageIds), type: .forEveryone).startStandalone()
                                     
                                     strongSelf.updateState { state in
                                         return state.withUpdatedSelectedMessageIds(nil)
@@ -1299,7 +1306,7 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
                             items.append(ActionSheetButtonItem(title: localOptionText, color: .destructive, action: { [weak actionSheet] in
                                 actionSheet?.dismissAnimated()
                                 if let strongSelf = self {
-                                    let _ = strongSelf.context.engine.messages.deleteMessagesInteractively(messageIds: Array(messageIds), type: .forLocalPeer).start()
+                                    let _ = strongSelf.context.engine.messages.deleteMessagesInteractively(messageIds: Array(messageIds), type: .forLocalPeer).startStandalone()
                                     
                                     strongSelf.updateState { state in
                                         return state.withUpdatedSelectedMessageIds(nil)
@@ -1347,7 +1354,7 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
                             if !entities.isEmpty {
                                 attributes.append(TextEntitiesMessageAttribute(entities: entities))
                             }
-                            result.append(.message(text: text.string, attributes: attributes, inlineStickers: [:], mediaReference: nil, replyToMessageId: nil, replyToStoryId: nil, localGroupingKey: nil, correlationId: nil, bubbleUpEmojiOrStickersets: []))
+                            result.append(.message(text: text.string, attributes: attributes, inlineStickers: [:], mediaReference: nil, threadId: nil, replyToMessageId: nil, replyToStoryId: nil, localGroupingKey: nil, correlationId: nil, bubbleUpEmojiOrStickersets: []))
                         }
                     }
                 }
@@ -1362,7 +1369,7 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
                 var displayPeers: [EnginePeer] = []
                 for peer in peers {
                     let _ = (enqueueMessages(account: strongSelf.context.account, peerId: peer.id, messages: result)
-                    |> deliverOnMainQueue).start(next: { messageIds in
+                    |> deliverOnMainQueue).startStandalone(next: { messageIds in
                         if let strongSelf = self {
                             let signals: [Signal<Bool, NoError>] = messageIds.compactMap({ id -> Signal<Bool, NoError>? in
                                 guard let id = id else {
@@ -1382,7 +1389,7 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
                                 strongSelf.shareStatusDisposable = MetaDisposable()
                             }
                             strongSelf.shareStatusDisposable?.set((combineLatest(signals)
-                            |> deliverOnMainQueue).start())
+                            |> deliverOnMainQueue).startStrict())
                         }
                     })
                     if case let .secretChat(secretPeer) = peer {
@@ -1420,7 +1427,21 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
                     }
                 }
                 
-                (strongSelf.navigationController?.topViewController as? ViewController)?.present(UndoOverlayController(presentationData: presentationData, content: .forward(savedMessages: savedMessages, text: text), elevatedLayout: false, animateInAsReplacement: true, action: { _ in return false }), in: .current)
+                (strongSelf.navigationController?.topViewController as? ViewController)?.present(UndoOverlayController(presentationData: presentationData, content: .forward(savedMessages: savedMessages, text: text), elevatedLayout: false, animateInAsReplacement: true, action: { action in
+                    if savedMessages, let self, action == .info {
+                        let _ = (self.context.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: self.context.account.peerId))
+                        |> deliverOnMainQueue).start(next: { [weak self] peer in
+                            guard let self, let peer else {
+                                return
+                            }
+                            guard let navigationController = self.navigationController else {
+                                return
+                            }
+                            self.context.sharedContext.navigateToChatController(NavigateToChatControllerParams(navigationController: navigationController, context: self.context, chatLocation: .peer(peer), forceOpenChat: true))
+                        })
+                    }
+                    return false
+                }), in: .current)
             }
             peerSelectionController.peerSelected = { [weak self, weak peerSelectionController] peer, threadId in
                 let peerId = peer.id
@@ -1431,12 +1452,27 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
                         }
 
                         let presentationData = strongSelf.context.sharedContext.currentPresentationData.with { $0 }
-                        (strongSelf.navigationController?.topViewController as? ViewController)?.present(UndoOverlayController(presentationData: presentationData, content: .forward(savedMessages: true, text: messages.count == 1 ? presentationData.strings.Conversation_ForwardTooltip_SavedMessages_One : presentationData.strings.Conversation_ForwardTooltip_SavedMessages_Many), elevatedLayout: false, animateInAsReplacement: true, action: { _ in return false }), in: .window(.root))
+                        (strongSelf.navigationController?.topViewController as? ViewController)?.present(UndoOverlayController(presentationData: presentationData, content: .forward(savedMessages: true, text: messages.count == 1 ? presentationData.strings.Conversation_ForwardTooltip_SavedMessages_One : presentationData.strings.Conversation_ForwardTooltip_SavedMessages_Many), elevatedLayout: false, animateInAsReplacement: true, action: { action in
+                            if let self, action == .info {
+                                let _ = (self.context.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: self.context.account.peerId))
+                                |> deliverOnMainQueue).start(next: { [weak self] peer in
+                                    guard let self, let peer else {
+                                        return
+                                    }
+                                    guard let navigationController = self.navigationController else {
+                                        return
+                                    }
+                                    self.context.sharedContext.navigateToChatController(NavigateToChatControllerParams(navigationController: navigationController, context: self.context, chatLocation: .peer(peer)))
+                                })
+                            }
+                            
+                            return false
+                        }), in: .window(.root))
                         
                         let _ = (enqueueMessages(account: strongSelf.context.account, peerId: peerId, messages: messageIds.map { id -> EnqueueMessage in
                             return .forward(source: id, threadId: threadId, grouping: .auto, attributes: [], correlationId: nil)
                         })
-                        |> deliverOnMainQueue).start(next: { [weak self] messageIds in
+                        |> deliverOnMainQueue).startStandalone(next: { [weak self] messageIds in
                             if let strongSelf = self {
                                 let signals: [Signal<Bool, NoError>] = messageIds.compactMap({ id -> Signal<Bool, NoError>? in
                                     guard let id = id else {
@@ -1453,7 +1489,7 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
                                     |> take(1)
                                 })
                                 strongSelf.activeActionDisposable.set((combineLatest(signals)
-                                |> deliverOnMainQueue).start(completed: {
+                                |> deliverOnMainQueue).startStrict(completed: {
                                     guard let strongSelf = self else {
                                         return
                                     }
@@ -1475,7 +1511,7 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
                         let _ = (ChatInterfaceState.update(engine: strongSelf.context.engine, peerId: peerId, threadId: threadId, { currentState in
                             return currentState.withUpdatedForwardMessageIds(Array(messageIds))
                         })
-                        |> deliverOnMainQueue).start(completed: { [weak self] in
+                        |> deliverOnMainQueue).startStandalone(completed: { [weak self] in
                             if let strongSelf = self {
                                 let proceed: (ChatController) -> Void = { chatController in
                                     chatController.purposefulAction = { [weak self] in
@@ -1493,7 +1529,7 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
                                         strongSelf.activeActionDisposable.set((chatController.ready.get()
                                         |> filter { $0 }
                                         |> take(1)
-                                        |> deliverOnMainQueue).start(next: { [weak navigationController] _ in
+                                        |> deliverOnMainQueue).startStrict(next: { [weak navigationController] _ in
                                             viewControllers.removeAll(where: { $0 is PeerSelectionController })
                                             navigationController?.setViewControllers(viewControllers, animated: true)
                                         }))
@@ -1502,11 +1538,11 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
 
                                 if let threadId = threadId {
                                     let _ = (strongSelf.context.sharedContext.chatControllerForForumThread(context: strongSelf.context, peerId: peerId, threadId: threadId)
-                                    |> deliverOnMainQueue).start(next: { chatController in
+                                    |> deliverOnMainQueue).startStandalone(next: { chatController in
                                         proceed(chatController)
                                     })
                                 } else {
-                                    proceed(strongSelf.context.sharedContext.makeChatController(context: strongSelf.context, chatLocation: .peer(id: peerId), subject: nil, botStart: nil, mode: .standard(previewing: false)))
+                                    proceed(strongSelf.context.sharedContext.makeChatController(context: strongSelf.context, chatLocation: .peer(id: peerId), subject: nil, botStart: nil, mode: .standard(.default)))
                                 }
 
                                 strongSelf.updateState { state in

@@ -34,6 +34,9 @@ private func withImageBytes(image: UIImage, _ f: (UnsafePointer<UInt8>, Int, Int
     let bytesPerRow = DeviceGraphicsContextSettings.shared.bytesPerRow(forWidth: Int(scaledSize.width))
     let length = bytesPerRow * Int(scaledSize.height)
     let bytes = malloc(length)!.assumingMemoryBound(to: UInt8.self)
+    defer {
+        free(bytes)
+    }
     memset(bytes, 0, length)
     
     let bitmapInfo = DeviceGraphicsContextSettings.shared.transparentBitmapInfo
@@ -372,6 +375,7 @@ public func generateGradientTintedImage(image: UIImage?, colors: [UIColor]) -> U
 public enum GradientImageDirection {
     case vertical
     case horizontal
+    case diagonal
 }
 
 public func generateGradientImage(size: CGSize, scale: CGFloat = 0.0, colors: [UIColor], locations: [CGFloat], direction: GradientImageDirection = .vertical) -> UIImage? {
@@ -395,18 +399,36 @@ public func generateGradientImage(size: CGSize, scale: CGFloat = 0.0, colors: [U
     return image
 }
 
-public func generateGradientFilledCircleImage(diameter: CGFloat, colors: NSArray) -> UIImage? {
+public func generateGradientFilledCircleImage(diameter: CGFloat, colors: NSArray, direction: GradientImageDirection = .vertical) -> UIImage? {
     return generateImage(CGSize(width: diameter, height: diameter), contextGenerator: { size, context in
         let bounds = CGRect(origin: CGPoint(), size: size)
         context.clear(bounds)
         context.addEllipse(in: bounds)
         context.clip()
         
-        var locations: [CGFloat] = [0.0, 1.0]
+        var locations: [CGFloat] = []
+        for i in 0 ..< colors.count {
+            let t = CGFloat(i) / CGFloat(colors.count - 1)
+            locations.append(t)
+        }
         let colorSpace = DeviceGraphicsContextSettings.shared.colorSpace
         let gradient = CGGradient(colorsSpace: colorSpace, colors: colors, locations: &locations)!
         
-        context.drawLinearGradient(gradient, start: CGPoint(), end: CGPoint(x: 0.0, y: bounds.size.height), options: CGGradientDrawingOptions())
+        let start: CGPoint
+        let end: CGPoint
+        switch direction {
+        case .horizontal:
+            start = .zero
+            end = CGPoint(x: size.width, y: 0.0)
+        case .vertical:
+            start = .zero
+            end = CGPoint(x: 0.0, y: size.height)
+        case .diagonal:
+            start = CGPoint(x: 0.0, y: 0.0)
+            end = CGPoint(x: size.width, y: size.height)
+        }
+        
+        context.drawLinearGradient(gradient, start: start, end:end, options: CGGradientDrawingOptions())
     })
 }
 
@@ -423,11 +445,12 @@ public func generateScaledImage(image: UIImage?, size: CGSize, opaque: Bool = tr
     }, opaque: opaque, scale: scale)
 }
 
-public func generateSingleColorImage(size: CGSize, color: UIColor) -> UIImage? {
+public func generateSingleColorImage(size: CGSize, color: UIColor, scale: CGFloat = 0.0) -> UIImage? {
     return generateImage(size, contextGenerator: { size, context in
+        context.clear(CGRect(origin: CGPoint(), size: size))
         context.setFillColor(color.cgColor)
         context.fill(CGRect(origin: CGPoint(), size: size))
-    })
+    }, scale: scale)
 }
 
 public enum DrawingContextBltMode {
@@ -921,4 +944,69 @@ public func drawSvgPath(_ context: CGContext, path: StaticString, strokeOnMove: 
             throw ParsingError.Generic
         }
     }
+}
+
+public func convertSvgPath(_ path: StaticString) throws -> CGPath {
+    var index: UnsafePointer<UInt8> = path.utf8Start
+    let end = path.utf8Start.advanced(by: path.utf8CodeUnitCount)
+    var currentPoint = CGPoint()
+    
+    let result = CGMutablePath()
+    
+    while index < end {
+        let c = index.pointee
+        index = index.successor()
+        
+        if c == 77 { // M
+            let x = try readCGFloat(&index, end: end, separator: 44)
+            let y = try readCGFloat(&index, end: end, separator: 32)
+            
+            //print("Move to \(x), \(y)")
+            currentPoint = CGPoint(x: x, y: y)
+            result.move(to: currentPoint)
+        } else if c == 76 { // L
+            let x = try readCGFloat(&index, end: end, separator: 44)
+            let y = try readCGFloat(&index, end: end, separator: 32)
+            
+            //print("Line to \(x), \(y)")
+            currentPoint = CGPoint(x: x, y: y)
+            result.addLine(to: currentPoint)
+        } else if c == 72 { // H
+            let x = try readCGFloat(&index, end: end, separator: 32)
+            
+            //print("Move to \(x), \(y)")
+            currentPoint = CGPoint(x: x, y: currentPoint.y)
+            result.addLine(to: currentPoint)
+        } else if c == 86 { // V
+            let y = try readCGFloat(&index, end: end, separator: 32)
+            
+            //print("Move to \(x), \(y)")
+            currentPoint = CGPoint(x: currentPoint.x, y: y)
+            result.addLine(to: currentPoint)
+        } else if c == 67 { // C
+            let x1 = try readCGFloat(&index, end: end, separator: 44)
+            let y1 = try readCGFloat(&index, end: end, separator: 32)
+            let x2 = try readCGFloat(&index, end: end, separator: 44)
+            let y2 = try readCGFloat(&index, end: end, separator: 32)
+            let x = try readCGFloat(&index, end: end, separator: 44)
+            let y = try readCGFloat(&index, end: end, separator: 32)
+            
+            currentPoint = CGPoint(x: x, y: y)
+            result.addCurve(to: currentPoint, control1: CGPoint(x: x1, y: y1), control2: CGPoint(x: x2, y: y2))
+        } else if c == 90 { // Z
+            if index != end && index.pointee != 32 {
+                throw ParsingError.Generic
+            }
+        } else if c == 83 { // S
+            if index != end && index.pointee != 32 {
+                throw ParsingError.Generic
+            }
+        } else if c == 32 { // space
+            continue
+        } else {
+            throw ParsingError.Generic
+        }
+    }
+    
+    return result
 }

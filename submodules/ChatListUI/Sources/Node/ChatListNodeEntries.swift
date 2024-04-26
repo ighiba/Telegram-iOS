@@ -79,12 +79,17 @@ public enum ChatListNodeEntryPromoInfo: Equatable {
     case psa(type: String, message: String?)
 }
 
-enum ChatListNotice: Equatable {
+public enum ChatListNotice: Equatable {
     case clearStorage(sizeFraction: Double)
     case setupPassword
     case premiumUpgrade(discount: Int32)
     case premiumAnnualDiscount(discount: Int32)
     case premiumRestore(discount: Int32)
+    case xmasPremiumGift
+    case setupBirthday
+    case birthdayPremiumGift(peers: [EnginePeer], birthdays: [EnginePeer.Id: TelegramBirthday])
+    case reviewLogin(newSessionReview: NewSessionReview, totalCount: Int)
+    case premiumGrace
 }
 
 enum ChatListNodeEntry: Comparable, Identifiable {
@@ -95,6 +100,7 @@ enum ChatListNodeEntry: Comparable, Identifiable {
         var readState: EnginePeerReadCounters?
         var isRemovedFromTotalUnreadCount: Bool
         var draftState: ChatListItemContent.DraftState?
+        var mediaDraftContentType: EngineChatList.MediaDraftContentType?
         var peer: EngineRenderedPeer
         var threadInfo: ChatListItemContent.ThreadInfo?
         var presence: EnginePeer.Presence?
@@ -112,6 +118,8 @@ enum ChatListNodeEntry: Comparable, Identifiable {
         var topForumTopicItems: [EngineChatList.ForumTopicData]
         var revealed: Bool
         var storyState: ChatListNodeState.StoryState?
+        var requiresPremiumForMessaging: Bool
+        var displayAsTopicList: Bool
         
         init(
             index: EngineChatList.Item.Index,
@@ -120,6 +128,7 @@ enum ChatListNodeEntry: Comparable, Identifiable {
             readState: EnginePeerReadCounters?,
             isRemovedFromTotalUnreadCount: Bool,
             draftState: ChatListItemContent.DraftState?,
+            mediaDraftContentType: EngineChatList.MediaDraftContentType?,
             peer: EngineRenderedPeer,
             threadInfo: ChatListItemContent.ThreadInfo?,
             presence: EnginePeer.Presence?,
@@ -136,7 +145,9 @@ enum ChatListNodeEntry: Comparable, Identifiable {
             forumTopicData: EngineChatList.ForumTopicData?,
             topForumTopicItems: [EngineChatList.ForumTopicData],
             revealed: Bool,
-            storyState: ChatListNodeState.StoryState?
+            storyState: ChatListNodeState.StoryState?,
+            requiresPremiumForMessaging: Bool,
+            displayAsTopicList: Bool
         ) {
             self.index = index
             self.presentationData = presentationData
@@ -144,6 +155,7 @@ enum ChatListNodeEntry: Comparable, Identifiable {
             self.readState = readState
             self.isRemovedFromTotalUnreadCount = isRemovedFromTotalUnreadCount
             self.draftState = draftState
+            self.mediaDraftContentType = mediaDraftContentType
             self.peer = peer
             self.threadInfo = threadInfo
             self.presence = presence
@@ -161,6 +173,8 @@ enum ChatListNodeEntry: Comparable, Identifiable {
             self.topForumTopicItems = topForumTopicItems
             self.revealed = revealed
             self.storyState = storyState
+            self.requiresPremiumForMessaging = requiresPremiumForMessaging
+            self.displayAsTopicList = displayAsTopicList
         }
         
         static func ==(lhs: PeerEntryData, rhs: PeerEntryData) -> Bool {
@@ -211,6 +225,9 @@ enum ChatListNodeEntry: Comparable, Identifiable {
                     return false
                 }
             } else if (lhs.draftState != nil) != (rhs.draftState != nil) {
+                return false
+            }
+            if lhs.mediaDraftContentType != rhs.mediaDraftContentType {
                 return false
             }
             if lhs.editing != rhs.editing {
@@ -271,6 +288,12 @@ enum ChatListNodeEntry: Comparable, Identifiable {
                 return false
             }
             if lhs.storyState != rhs.storyState {
+                return false
+            }
+            if lhs.requiresPremiumForMessaging != rhs.requiresPremiumForMessaging {
+                return false
+            }
+            if lhs.displayAsTopicList != rhs.displayAsTopicList {
                 return false
             }
             return true
@@ -582,7 +605,15 @@ func chatListNodeEntriesForView(view: EngineChatList, state: ChatListNodeState, 
     var result: [ChatListNodeEntry] = []
     
     if !view.hasEarlier {
+        var existingPeerIds = Set<EnginePeer.Id>()
+        for item in view.items {
+            existingPeerIds.insert(item.renderedPeer.peerId)
+        }
+        
         for contact in contacts {
+            if existingPeerIds.contains(contact.peer.id) {
+                continue
+            }
             result.append(.ContactEntry(ChatListNodeEntry.ContactEntryData(
                 presentationData: state.presentationData,
                 peer: contact.peer,
@@ -649,7 +680,7 @@ func chatListNodeEntriesForView(view: EngineChatList, state: ChatListNodeState, 
         if let draft = entry.draft {
             draftState = ChatListItemContent.DraftState(draft: draft)
         }
-        
+                
         var hasActiveRevealControls = false
         if let peerId {
             hasActiveRevealControls = ChatListNodeState.ItemId(peerId: peerId, threadId: threadId) == state.peerIdWithRevealedOptions
@@ -678,6 +709,7 @@ func chatListNodeEntriesForView(view: EngineChatList, state: ChatListNodeState, 
             readState: updatedCombinedReadState,
             isRemovedFromTotalUnreadCount: entry.isMuted,
             draftState: draftState,
+            mediaDraftContentType: entry.mediaDraftContentType,
             peer: entry.renderedPeer,
             threadInfo: threadInfo,
             presence: entry.presence,
@@ -699,7 +731,9 @@ func chatListNodeEntriesForView(view: EngineChatList, state: ChatListNodeState, 
                     stats: stats,
                     hasUnseenCloseFriends: stats.hasUnseenCloseFriends
                 )
-            }
+            },
+            requiresPremiumForMessaging: entry.isPremiumRequiredToMessage,
+            displayAsTopicList: entry.displayAsTopicList
         ))
         
         if let threadInfo, threadInfo.isHidden {
@@ -733,6 +767,7 @@ func chatListNodeEntriesForView(view: EngineChatList, state: ChatListNodeState, 
                         readState: nil,
                         isRemovedFromTotalUnreadCount: false,
                         draftState: nil,
+                        mediaDraftContentType: nil,
                         peer: EngineRenderedPeer(peerId: peer.0.id, peers: peers, associatedMedia: [:]),
                         threadInfo: nil,
                         presence: nil,
@@ -749,7 +784,9 @@ func chatListNodeEntriesForView(view: EngineChatList, state: ChatListNodeState, 
                         forumTopicData: nil,
                         topForumTopicItems: [],
                         revealed: false,
-                        storyState: nil
+                        storyState: nil,
+                        requiresPremiumForMessaging: false,
+                        displayAsTopicList: false
                     )))
                     if foundPinningIndex != 0 {
                         foundPinningIndex -= 1
@@ -764,6 +801,7 @@ func chatListNodeEntriesForView(view: EngineChatList, state: ChatListNodeState, 
                 readState: nil,
                 isRemovedFromTotalUnreadCount: false,
                 draftState: nil,
+                mediaDraftContentType: nil,
                 peer: EngineRenderedPeer(peerId: savedMessagesPeer.id, peers: [savedMessagesPeer.id: savedMessagesPeer], associatedMedia: [:]),
                 threadInfo: nil,
                 presence: nil,
@@ -780,7 +818,9 @@ func chatListNodeEntriesForView(view: EngineChatList, state: ChatListNodeState, 
                 forumTopicData: nil,
                 topForumTopicItems: [],
                 revealed: false,
-                storyState: nil
+                storyState: nil,
+                requiresPremiumForMessaging: false,
+                displayAsTopicList: false
             )))
         } else {
             if !filteredAdditionalItemEntries.isEmpty {
@@ -815,6 +855,7 @@ func chatListNodeEntriesForView(view: EngineChatList, state: ChatListNodeState, 
                         readState: item.item.readCounters,
                         isRemovedFromTotalUnreadCount: item.item.isMuted,
                         draftState: draftState,
+                        mediaDraftContentType: item.item.mediaDraftContentType,
                         peer: item.item.renderedPeer,
                         threadInfo: item.item.threadData.flatMap { ChatListItemContent.ThreadInfo(id: threadId, info: $0.info, isOwnedByMe: $0.isOwnedByMe, isClosed: $0.isClosed, isHidden: $0.isHidden) },
                         presence: item.item.presence,
@@ -831,7 +872,9 @@ func chatListNodeEntriesForView(view: EngineChatList, state: ChatListNodeState, 
                         forumTopicData: item.item.forumTopicData,
                         topForumTopicItems: item.item.topForumTopicItems,
                         revealed: state.hiddenItemShouldBeTemporaryRevealed || state.editing,
-                        storyState: nil
+                        storyState: nil,
+                        requiresPremiumForMessaging: false,
+                        displayAsTopicList: false
                     )))
                     if pinningIndex != 0 {
                         pinningIndex -= 1

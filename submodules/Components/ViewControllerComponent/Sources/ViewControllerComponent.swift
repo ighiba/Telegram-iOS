@@ -46,6 +46,7 @@ open class ViewControllerComponentContainer: ViewController {
         public let statusBarHeight: CGFloat
         public let navigationHeight: CGFloat
         public let safeInsets: UIEdgeInsets
+        public let additionalInsets: UIEdgeInsets
         public let inputHeight: CGFloat
         public let metrics: LayoutMetrics
         public let deviceMetrics: DeviceMetrics
@@ -60,6 +61,7 @@ open class ViewControllerComponentContainer: ViewController {
             statusBarHeight: CGFloat,
             navigationHeight: CGFloat,
             safeInsets: UIEdgeInsets,
+            additionalInsets: UIEdgeInsets,
             inputHeight: CGFloat,
             metrics: LayoutMetrics,
             deviceMetrics: DeviceMetrics,
@@ -73,6 +75,7 @@ open class ViewControllerComponentContainer: ViewController {
             self.statusBarHeight = statusBarHeight
             self.navigationHeight = navigationHeight
             self.safeInsets = safeInsets
+            self.additionalInsets = additionalInsets
             self.inputHeight = inputHeight
             self.metrics = metrics
             self.deviceMetrics = deviceMetrics
@@ -96,6 +99,9 @@ open class ViewControllerComponentContainer: ViewController {
                 return false
             }
             if lhs.safeInsets != rhs.safeInsets {
+                return false
+            }
+            if lhs.additionalInsets != rhs.additionalInsets {
                 return false
             }
             if lhs.inputHeight != rhs.inputHeight {
@@ -167,6 +173,7 @@ open class ViewControllerComponentContainer: ViewController {
                 statusBarHeight: layout.statusBarHeight ?? 0.0,
                 navigationHeight: navigationHeight,
                 safeInsets: UIEdgeInsets(top: layout.intrinsicInsets.top + layout.safeInsets.top, left: layout.safeInsets.left, bottom: layout.intrinsicInsets.bottom + layout.safeInsets.bottom, right: layout.safeInsets.right),
+                additionalInsets: layout.additionalInsets,
                 inputHeight: layout.inputHeight ?? 0.0,
                 metrics: layout.metrics,
                 deviceMetrics: layout.deviceMetrics,
@@ -225,12 +232,25 @@ open class ViewControllerComponentContainer: ViewController {
     
     public var wasDismissed: (() -> Void)?
     
-    public init<C: Component>(context: AccountContext, component: C, navigationBarAppearance: NavigationBarAppearance, statusBarStyle: StatusBarStyle = .default, presentationMode: PresentationMode = .default, theme: Theme = .default) where C.EnvironmentType == ViewControllerComponentContainer.Environment {
+    public init<C: Component>(
+        context: AccountContext,
+        component: C,
+        navigationBarAppearance: NavigationBarAppearance,
+        statusBarStyle: StatusBarStyle = .default,
+        presentationMode: PresentationMode = .default,
+        theme: Theme = .default,
+        updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)? = nil
+    ) where C.EnvironmentType == ViewControllerComponentContainer.Environment {
         self.context = context
         self.component = AnyComponent(component)
         self.theme = theme
         
-        let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+        let presentationData: PresentationData
+        if let updatedPresentationData {
+            presentationData = updatedPresentationData.initial
+        } else {
+            presentationData = self.context.sharedContext.currentPresentationData.with { $0 }
+        }
         
         let navigationBarPresentationData: NavigationBarPresentationData?
         switch navigationBarAppearance {
@@ -243,16 +263,19 @@ open class ViewControllerComponentContainer: ViewController {
         }
         super.init(navigationBarPresentationData: navigationBarPresentationData)
         
-        self.presentationDataDisposable = (self.context.sharedContext.presentationData
+        self.presentationDataDisposable = ((updatedPresentationData?.signal ?? self.context.sharedContext.presentationData)
         |> deliverOnMainQueue).start(next: { [weak self] presentationData in
             if let strongSelf = self {
                 var theme = presentationData.theme
+                
+                var resolvedTheme = resolveTheme(baseTheme: presentationData.theme, theme: strongSelf.theme)
                 if case .modal = presentationMode {
                     theme = theme.withModalBlocksBackground()
+                    resolvedTheme = resolvedTheme.withModalBlocksBackground()
                 }
 
                 strongSelf.node.presentationData = presentationData.withUpdated(theme: theme)
-                strongSelf.node.resolvedTheme = resolveTheme(baseTheme: presentationData.theme, theme: strongSelf.theme)
+                strongSelf.node.resolvedTheme = resolvedTheme
         
                 switch statusBarStyle {
                     case .none:
@@ -263,11 +286,24 @@ open class ViewControllerComponentContainer: ViewController {
                         strongSelf.statusBar.statusBarStyle = presentationData.theme.rootController.statusBarStyle.style
                 }
                 
+                let navigationBarPresentationData: NavigationBarPresentationData?
+                switch navigationBarAppearance {
+                case .none:
+                    navigationBarPresentationData = nil
+                case .transparent:
+                    navigationBarPresentationData = NavigationBarPresentationData(presentationData: presentationData, hideBackground: true, hideBadge: false, hideSeparator: true)
+                case .default:
+                    navigationBarPresentationData = NavigationBarPresentationData(presentationData: presentationData)
+                }
+                if let navigationBarPresentationData {
+                    strongSelf.navigationBar?.updatePresentationData(navigationBarPresentationData)
+                }
+                
                 if let layout = strongSelf.validLayout {
                     strongSelf.containerLayoutUpdated(layout, transition: .immediate)
                 }
             }
-        })
+        }).strict()
         
         switch statusBarStyle {
             case .none:

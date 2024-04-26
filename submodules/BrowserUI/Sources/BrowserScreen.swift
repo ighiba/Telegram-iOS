@@ -282,7 +282,7 @@ public class BrowserScreen: ViewController {
             let content: BrowserContent
             switch controller.subject {
             case let .webPage(url):
-                content = BrowserWebContent(url: url)
+                content = BrowserWebContent(context: controller.context, url: url)
             }
             
             self.content = content
@@ -293,7 +293,7 @@ public class BrowserScreen: ViewController {
                 }
                 strongSelf.contentState = state
                 strongSelf.requestLayout(transition: .immediate)
-            })
+            }).strict()
             
             self.content?.onScrollingUpdate = { [weak self] update in
                 self?.onContentScrollingUpdate(update)
@@ -537,7 +537,7 @@ public class BrowserScreen: ViewController {
                         action(.default)
                     }))]
                 
-                let contextController = ContextController(account: self.context.account, presentationData: self.presentationData, source: source, items: .single(ContextController.Items(content: .list(items))))
+                let contextController = ContextController(presentationData: self.presentationData, source: source, items: .single(ContextController.Items(content: .list(items))))
                 self.controller?.present(contextController, in: .window(.root))
             })
         }
@@ -618,6 +618,7 @@ public class BrowserScreen: ViewController {
                     bottom: layout.intrinsicInsets.bottom + layout.safeInsets.bottom,
                     right: layout.safeInsets.right
                 ),
+                additionalInsets: layout.additionalInsets,
                 inputHeight: layout.inputHeight ?? 0.0,
                 metrics: layout.metrics,
                 deviceMetrics: layout.deviceMetrics,

@@ -32,7 +32,11 @@ public final class AnimationNode: ASDisplayNode {
         
         super.init()
         
-        self.setViewBlock({
+        self.setViewBlock({ [weak self] in
+            guard let self else {
+                return UIView()
+            }
+            
             var animation: Animation?
             if let animationName {
                 if let url = getAppBundle().url(forResource: animationName, withExtension: "json"), let maybeAnimation = Animation.filepath(url.path) {
@@ -202,7 +206,7 @@ public final class AnimationNode: ASDisplayNode {
     }
     
     public func preferredSize() -> CGSize? {
-        if let animationView = animationView(), let animation = animationView.animation {
+        if let animationView = self.animationView(), let animation = animationView.animation {
             return CGSize(width: animation.size.width * self.scale, height: animation.size.height * self.scale)
         } else {
             return nil

@@ -13,6 +13,7 @@ import AccountContext
 import AnimationCache
 import MultiAnimationRenderer
 import ShimmerEffect
+import GenerateStickerPlaceholderImage
 
 private func generateBubbleImage(foreground: UIColor, diameter: CGFloat, shadowBlur: CGFloat) -> UIImage? {
     return generateImage(CGSize(width: diameter + shadowBlur * 2.0, height: diameter + shadowBlur * 2.0), rotatedContext: { size, context in
@@ -41,22 +42,30 @@ private let font = Font.medium(13.0)
 protocol ReactionItemNode: ASDisplayNode {
     var isExtracted: Bool { get }
     
+    var selectionTintView: UIView? { get }
+    var selectionView: UIView? { get }
+    
     var maskNode: ASDisplayNode? { get }
     
+    func willAppear(animated: Bool)
     func appear(animated: Bool)
     func updateLayout(size: CGSize, isExpanded: Bool, largeExpanded: Bool, isPreviewing: Bool, transition: ContainedViewLayoutTransition)
 }
+
+private let lockedBackgroundImage: UIImage = generateFilledCircleImage(diameter: 12.0, color: .white)!.withRenderingMode(.alwaysTemplate)
+private let lockedBadgeIcon: UIImage? = generateTintedImage(image: UIImage(bundleImageName: "Chat/Input/Media/PanelBadgeLock"), color: .white)
 
 public final class ReactionNode: ASDisplayNode, ReactionItemNode {
     let context: AccountContext
     let theme: PresentationTheme
     let item: ReactionItem
     private let loopIdle: Bool
+    private let isLocked: Bool
     private let hasAppearAnimation: Bool
     private let useDirectRendering: Bool
     
-    let selectionTintView: UIView
-    let selectionView: UIView
+    let selectionTintView: UIView?
+    let selectionView: UIView?
     
     private var animateInAnimationNode: AnimatedStickerNode?
     private var staticAnimationPlaceholderView: UIImageView?
@@ -64,6 +73,9 @@ public final class ReactionNode: ASDisplayNode, ReactionItemNode {
     private var stillAnimationNode: AnimatedStickerNode?
     private var customContentsNode: ASDisplayNode?
     private var animationNode: AnimatedStickerNode?
+    
+    private var lockBackgroundView: UIImageView?
+    private var lockIconView: UIImageView?
     
     private var dismissedStillAnimationNodes: [AnimatedStickerNode] = []
     
@@ -90,21 +102,20 @@ public final class ReactionNode: ASDisplayNode, ReactionItemNode {
         return self.staticAnimationNode.currentFrameImage != nil
     }
     
-    public init(context: AccountContext, theme: PresentationTheme, item: ReactionItem, animationCache: AnimationCache, animationRenderer: MultiAnimationRenderer, loopIdle: Bool, hasAppearAnimation: Bool = true, useDirectRendering: Bool = false) {
+    public init(context: AccountContext, theme: PresentationTheme, item: ReactionItem, animationCache: AnimationCache, animationRenderer: MultiAnimationRenderer, loopIdle: Bool, isLocked: Bool, hasAppearAnimation: Bool = true, useDirectRendering: Bool = false) {
         self.context = context
         self.theme = theme
         self.item = item
         self.loopIdle = loopIdle
+        self.isLocked = isLocked
         self.hasAppearAnimation = hasAppearAnimation
         self.useDirectRendering = useDirectRendering
         
         self.selectionTintView = UIView()
-        self.selectionTintView.backgroundColor = UIColor(white: 1.0, alpha: 0.2)
-        self.selectionTintView.isHidden = true
+        self.selectionTintView?.backgroundColor = UIColor(white: 1.0, alpha: 0.2)
         
         self.selectionView = UIView()
-        self.selectionView.backgroundColor = theme.chat.inputMediaPanel.panelContentControlVibrantSelectionColor
-        self.selectionView.isHidden = true
+        self.selectionView?.backgroundColor = theme.chat.inputMediaPanel.panelContentControlVibrantSelectionColor
         
         self.staticAnimationNode = self.useDirectRendering ? DirectAnimatedStickerNode() : DefaultAnimatedStickerNodeImpl()
     
@@ -141,6 +152,25 @@ public final class ReactionNode: ASDisplayNode, ReactionItemNode {
         if let applicationAnimation = item.applicationAnimation {
             self.fetchFullAnimationDisposable = fetchedMediaResource(mediaBox: context.account.postbox.mediaBox, userLocation: .other, userContentType: .sticker, reference: .standalone(resource: applicationAnimation.resource)).start()
         }
+        
+        if self.isLocked {
+            let lockBackgroundView = UIImageView(image: lockedBackgroundImage)
+            self.lockBackgroundView = lockBackgroundView
+            self.view.addSubview(lockBackgroundView)
+            
+            let lockIconView = UIImageView(image: lockedBadgeIcon)
+            self.lockIconView = lockIconView
+            self.view.addSubview(lockIconView)
+            
+            if let staticAnimationNode = self.staticAnimationNode as? DefaultAnimatedStickerNodeImpl {
+                staticAnimationNode.frameColorUpdated = { [weak lockBackgroundView] color in
+                    guard let lockBackgroundView else {
+                        return
+                    }
+                    lockBackgroundView.tintColor = color
+                }
+            }
+        }
     }
     
     deinit {
@@ -150,6 +180,10 @@ public final class ReactionNode: ASDisplayNode, ReactionItemNode {
     
     var maskNode: ASDisplayNode? {
         return nil
+    }
+    
+    func willAppear(animated: Bool) {
+        
     }
     
     func appear(animated: Bool) {
@@ -167,11 +201,11 @@ public final class ReactionNode: ASDisplayNode, ReactionItemNode {
                 self.animateInAnimationNode?.visibility = true
             }
             
-            self.selectionView.layer.animateAlpha(from: 0.0, to: self.selectionView.alpha, duration: 0.2)
-            self.selectionView.layer.animateSpring(from: 0.01 as NSNumber, to: 1.0 as NSNumber, keyPath: "transform.scale", duration: 0.4)
+            self.selectionView?.layer.animateAlpha(from: 0.0, to: self.selectionView?.alpha ?? 1.0, duration: 0.2)
+            self.selectionView?.layer.animateSpring(from: 0.01 as NSNumber, to: 1.0 as NSNumber, keyPath: "transform.scale", duration: 0.4)
             
-            self.selectionTintView.layer.animateAlpha(from: 0.0, to: self.selectionTintView.alpha, duration: 0.2)
-            self.selectionTintView.layer.animateSpring(from: 0.01 as NSNumber, to: 1.0 as NSNumber, keyPath: "transform.scale", duration: 0.4)
+            self.selectionTintView?.layer.animateAlpha(from: 0.0, to: self.selectionTintView?.alpha ?? 1.0, duration: 0.2)
+            self.selectionTintView?.layer.animateSpring(from: 0.01 as NSNumber, to: 1.0 as NSNumber, keyPath: "transform.scale", duration: 0.4)
         } else {
             self.animateInAnimationNode?.completed(true)
         }
@@ -433,6 +467,17 @@ public final class ReactionNode: ASDisplayNode, ReactionItemNode {
         if let customContentsNode = self.customContentsNode {
             transition.updateFrame(node: customContentsNode, frame: animationFrame)
         }
+        
+        if let lockBackgroundView = self.lockBackgroundView, let lockIconView = self.lockIconView, let iconImage = lockIconView.image {
+            let lockSize: CGFloat = 12.0
+            let iconBackgroundFrame = CGRect(origin: CGPoint(x: animationFrame.maxX - lockSize, y: animationFrame.maxY - lockSize), size: CGSize(width: lockSize, height: lockSize))
+            transition.updateFrame(view: lockBackgroundView, frame: iconBackgroundFrame)
+            
+            let iconFactor: CGFloat = 0.7
+            let iconImageSize = CGSize(width: floor(iconImage.size.width * iconFactor), height: floor(iconImage.size.height * iconFactor))
+            
+            transition.updateFrame(view: lockIconView, frame: CGRect(origin: CGPoint(x: iconBackgroundFrame.minX + floorToScreenPixels((iconBackgroundFrame.width - iconImageSize.width) * 0.5), y: iconBackgroundFrame.minY + floorToScreenPixels((iconBackgroundFrame.height - iconImageSize.height) * 0.5)), size: iconImageSize))
+        }
     }
 }
 
@@ -447,6 +492,9 @@ final class PremiumReactionsNode: ASDisplayNode, ReactionItemNode {
     
     private let maskContainerNode: ASDisplayNode
     private let maskImageNode: ASImageNode
+    
+    let selectionView: UIView? = nil
+    let selectionTintView: UIView? = nil
     
     init(theme: PresentationTheme) {
         self.backgroundMaskNode = ASImageNode()
@@ -513,6 +561,10 @@ final class PremiumReactionsNode: ASDisplayNode, ReactionItemNode {
         self.starsNode = starsNode
     }
     
+    func willAppear(animated: Bool) {
+        
+    }
+    
     func appear(animated: Bool) {
         if animated {
             let delay: Double = 0.1
@@ -549,5 +601,89 @@ final class PremiumReactionsNode: ASDisplayNode, ReactionItemNode {
     
     var maskNode: ASDisplayNode? {
         return self.maskContainerNode
+    }
+}
+
+
+final class EmojiItemNode: ASDisplayNode, ReactionItemNode {
+    var isExtracted: Bool = false
+    let emoji: String
+    
+    let selectionTintView: UIView?
+    let selectionView: UIView?
+    
+    private let imageNode: ASImageNode
+
+    init(theme: PresentationTheme, emoji: String) {
+        self.emoji = emoji
+        
+        self.selectionTintView = UIView()
+        self.selectionTintView?.backgroundColor = UIColor(white: 1.0, alpha: 0.2)
+        
+        self.selectionView = UIView()
+        self.selectionView?.backgroundColor = theme.chat.inputMediaPanel.panelContentControlVibrantSelectionColor
+        
+        self.imageNode = ASImageNode()
+        self.imageNode.contentMode = .scaleAspectFit
+        self.imageNode.displaysAsynchronously = false
+        self.imageNode.isUserInteractionEnabled = false
+        
+        super.init()
+        
+        self.addSubnode(self.imageNode)
+    }
+    
+    func willAppear(animated: Bool) {
+        if animated {
+            let initialScale: CGFloat = 0.25
+            self.imageNode.transform = CATransform3DMakeScale(initialScale, initialScale, 1.0)
+        }
+    }
+    
+    func appear(animated: Bool) {
+        if animated {
+            let delay: Double = 0.1
+            let duration: Double = 0.85
+            let damping: CGFloat = 60.0
+            
+            let initialScale: CGFloat = 0.25
+            self.imageNode.transform = CATransform3DIdentity
+            self.imageNode.layer.animateSpring(from: initialScale as NSNumber, to: 1.0 as NSNumber, keyPath: "transform.scale", duration: duration, delay: delay, damping: damping)
+            
+            self.selectionView?.layer.animateAlpha(from: 0.0, to: self.selectionView?.alpha ?? 1.0, duration: 0.2)
+            self.selectionView?.layer.animateSpring(from: 0.01 as NSNumber, to: 1.0 as NSNumber, keyPath: "transform.scale", duration: 0.4)
+            
+            self.selectionTintView?.layer.animateAlpha(from: 0.0, to: self.selectionTintView?.alpha ?? 1.0, duration: 0.2)
+            self.selectionTintView?.layer.animateSpring(from: 0.01 as NSNumber, to: 1.0 as NSNumber, keyPath: "transform.scale", duration: 0.4)
+        }
+    }
+    
+    func updateLayout(size: CGSize, isExpanded: Bool, largeExpanded: Bool, isPreviewing: Bool, transition: ContainedViewLayoutTransition) {
+        let bounds = CGRect(origin: CGPoint(), size: size)
+        
+        let pointSize = CGSize(width: 36.0, height: 36.0)
+        if self.imageNode.image == nil {
+            let image = generateImage(pointSize, opaque: false, scale: min(UIScreenScale, 3.0), rotatedContext: { size, context in
+                context.clear(CGRect(origin: CGPoint(), size: size))
+                
+                let preScaleFactor: CGFloat = 1.0
+                let scaledSize = CGSize(width: floor(size.width * preScaleFactor), height: floor(size.height * preScaleFactor))
+                let scaleFactor = scaledSize.width / size.width
+                
+                context.scaleBy(x: 1.0 / scaleFactor, y: 1.0 / scaleFactor)
+                
+                let string = NSAttributedString(string: self.emoji, font: Font.regular(floor(32.0 * scaleFactor)), textColor: .black)
+                let boundingRect = string.boundingRect(with: scaledSize, options: .usesLineFragmentOrigin, context: nil)
+                UIGraphicsPushContext(context)
+                string.draw(at: CGPoint(x: floorToScreenPixels((scaledSize.width - boundingRect.width) / 2.0 + boundingRect.minX), y: floorToScreenPixels((scaledSize.height - boundingRect.height) / 2.0 + boundingRect.minY)))
+                UIGraphicsPopContext()
+            })
+            self.imageNode.image = image
+        }
+        transition.updateFrameAsPositionAndBounds(node: self.imageNode, frame: bounds)
+    }
+    
+    var maskNode: ASDisplayNode? {
+        return nil
     }
 }

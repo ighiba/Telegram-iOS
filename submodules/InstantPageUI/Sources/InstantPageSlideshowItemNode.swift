@@ -63,7 +63,7 @@ private final class InstantPageSlideshowItemNode: ASDisplayNode {
     }
 }
 
-private final class InstantPageSlideshowPagerNode: ASDisplayNode, UIScrollViewDelegate {
+private final class InstantPageSlideshowPagerNode: ASDisplayNode, ASScrollViewDelegate {
     private let context: AccountContext
     private let sourceLocation: InstantPageSourceLocation
     private let theme: InstantPageTheme
@@ -123,7 +123,7 @@ private final class InstantPageSlideshowPagerNode: ASDisplayNode, UIScrollViewDe
         self.scrollView.alwaysBounceHorizontal = !pageGap.isZero
         self.scrollView.bounces = !pageGap.isZero
         self.scrollView.isPagingEnabled = true
-        self.scrollView.delegate = self
+        self.scrollView.delegate = self.wrappedScrollViewDelegate
         self.scrollView.clipsToBounds = false
         self.scrollView.scrollsToTop = false
         self.view.addSubview(self.scrollView)
@@ -415,7 +415,7 @@ final class InstantPageSlideshowNode: ASDisplayNode, InstantPageNode {
         super.layout()
         
         self.pagerNode.frame = self.bounds
-        self.pagerNode.containerLayoutUpdated(ContainerViewLayout(size: self.bounds.size, metrics: LayoutMetrics(), deviceMetrics: .unknown(screenSize: CGSize(), statusBarHeight: 0.0, onScreenNavigationHeight: nil), intrinsicInsets: UIEdgeInsets(), safeInsets: UIEdgeInsets(), additionalInsets: UIEdgeInsets(), statusBarHeight: nil, inputHeight: nil, inputHeightIsInteractivellyChanging: false, inVoiceOver: false), transition: .immediate)
+        self.pagerNode.containerLayoutUpdated(ContainerViewLayout(size: self.bounds.size, metrics: LayoutMetrics(), deviceMetrics: .unknown(screenSize: CGSize(), statusBarHeight: 0.0, onScreenNavigationHeight: nil, screenCornerRadius: 0.0), intrinsicInsets: UIEdgeInsets(), safeInsets: UIEdgeInsets(), additionalInsets: UIEdgeInsets(), statusBarHeight: nil, inputHeight: nil, inputHeightIsInteractivellyChanging: false, inVoiceOver: false), transition: .immediate)
         
         self.pageControlNode.layer.transform = CATransform3DIdentity
         self.pageControlNode.frame = CGRect(origin: CGPoint(x: 0.0, y: self.bounds.size.height - 20.0), size: CGSize(width: self.bounds.size.width, height: 20.0))

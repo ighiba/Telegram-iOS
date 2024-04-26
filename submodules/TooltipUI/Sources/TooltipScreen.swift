@@ -17,6 +17,7 @@ import AvatarStoryIndicatorComponent
 import AccountContext
 import Markdown
 import BalancedTextComponent
+import MultilineTextWithEntitiesComponent
 
 public enum TooltipActiveTextItem {
     case url(String, Bool)
@@ -108,9 +109,12 @@ private class DownArrowsIconNode: ASDisplayNode {
 }
 
 private final class TooltipScreenNode: ViewControllerTracingNode {
+    private let context: AccountContext?
+    
     private let text: TooltipScreen.Text
     private let textAlignment: TooltipScreen.Alignment
     private let balancedTextLayout: Bool
+    private let constrainWidth: CGFloat?
     private let tooltipStyle: TooltipScreen.Style
     private let arrowStyle: TooltipScreen.ArrowStyle
     private let icon: TooltipScreen.Icon?
@@ -159,6 +163,7 @@ private final class TooltipScreenNode: ViewControllerTracingNode {
         text: TooltipScreen.Text,
         textAlignment: TooltipScreen.Alignment,
         balancedTextLayout: Bool,
+        constrainWidth: CGFloat?,
         style: TooltipScreen.Style,
         arrowStyle: TooltipScreen.ArrowStyle,
         icon: TooltipScreen.Icon? = nil,
@@ -169,6 +174,7 @@ private final class TooltipScreenNode: ViewControllerTracingNode {
         cornerRadius: CGFloat? = nil,
         shouldDismissOnTouch: @escaping (CGPoint, CGRect) -> TooltipScreen.DismissOnTouch, requestDismiss: @escaping () -> Void, openActiveTextItem: ((TooltipActiveTextItem, TooltipActiveTextAction) -> Void)?)
     {
+        self.context = context
         self.tooltipStyle = style
         self.arrowStyle = arrowStyle
         self.icon = icon
@@ -379,6 +385,7 @@ private final class TooltipScreenNode: ViewControllerTracingNode {
         self.text = text
         self.textAlignment = textAlignment
         self.balancedTextLayout = balancedTextLayout
+        self.constrainWidth = constrainWidth
         
         self.animatedStickerNode = DefaultAnimatedStickerNodeImpl()
         switch icon {
@@ -477,7 +484,7 @@ private final class TooltipScreenNode: ViewControllerTracingNode {
             } else {
                 animationSize = CGSize(width: 32.0, height: 32.0)
             }
-            if animationName == "anim_autoremove_on" {
+            if ["anim_autoremove_on", "anim_autoremove_off"].contains(animationName) {
                 animationOffset = -3.0
             } else if animationName == "ChatListFoldersTooltip" {
                 animationInset = (70.0 - animationSize.width) / 2.0
@@ -491,7 +498,10 @@ private final class TooltipScreenNode: ViewControllerTracingNode {
             animationSpacing = 8.0
         }
         
-        let containerWidth = max(100.0, min(layout.size.width - sideInset * 2.0, 614.0))
+        var containerWidth = max(100.0, min(layout.size.width - sideInset * 2.0, 614.0))
+        if let constrainWidth = self.constrainWidth, constrainWidth > 100.0 {
+            containerWidth = constrainWidth
+        }
         
         var actionSize: CGSize = .zero
         
@@ -528,6 +538,8 @@ private final class TooltipScreenNode: ViewControllerTracingNode {
                 }
             )
             attributedText = parseMarkdownIntoAttributedString(text, attributes: markdownAttributes)
+        case let .attributedString(text):
+            attributedText = text
         }
         
         let highlightColor: UIColor? = UIColor.white.withAlphaComponent(0.5)
@@ -588,21 +600,44 @@ private final class TooltipScreenNode: ViewControllerTracingNode {
             }
         }
         
-        let textSize = self.textView.update(
-            transition: .immediate,
-            component: AnyComponent(BalancedTextComponent(
-                text: .plain(attributedText),
-                balanced: self.balancedTextLayout,
-                horizontalAlignment: self.textAlignment == .center ? .center : .left,
-                maximumNumberOfLines: 0,
-                highlightColor: highlightColor,
-                highlightAction: highlightAction,
-                tapAction: tapAction,
-                longTapAction: longTapAction
-            )),
-            environment: {},
-            containerSize: CGSize(width: containerWidth - contentInset * 2.0 - animationSize.width - animationSpacing - buttonInset, height: 1000000.0)
-        )
+        let textSize: CGSize
+        if case .attributedString = self.text, let context = self.context {
+            textSize = self.textView.update(
+                transition: .immediate,
+                component: AnyComponent(MultilineTextWithEntitiesComponent(
+                    context: context,
+                    animationCache: context.animationCache,
+                    animationRenderer: context.animationRenderer,
+                    placeholderColor: UIColor(rgb: 0xffffff, alpha: 0.4),
+                    text: .plain(attributedText),
+                    horizontalAlignment: self.textAlignment == .center ? .center : .left,
+                    truncationType: .end,
+                    maximumNumberOfLines: 3,
+                    lineSpacing: 0.2,
+                    highlightAction: nil,
+                    tapAction: { _, _ in
+                    }
+                )),
+                environment: {},
+                containerSize: CGSize(width: containerWidth - contentInset * 2.0 - animationSize.width - animationSpacing - buttonInset, height: 1000000.0)
+            )
+        } else {
+            textSize = self.textView.update(
+                transition: .immediate,
+                component: AnyComponent(BalancedTextComponent(
+                    text: .plain(attributedText),
+                    balanced: self.balancedTextLayout,
+                    horizontalAlignment: self.textAlignment == .center ? .center : .left,
+                    maximumNumberOfLines: 0,
+                    highlightColor: highlightColor,
+                    highlightAction: highlightAction,
+                    tapAction: tapAction,
+                    longTapAction: longTapAction
+                )),
+                environment: {},
+                containerSize: CGSize(width: containerWidth - contentInset * 2.0 - animationSize.width - animationSpacing - buttonInset, height: 1000000.0)
+            )
+        }
         
         var backgroundFrame: CGRect
         
@@ -804,6 +839,9 @@ private final class TooltipScreenNode: ViewControllerTracingNode {
             if let _ = self.openActiveTextItem, let textComponentView = self.textView.view, let result = textComponentView.hitTest(self.view.convert(point, to: textComponentView), with: event) {
                 return result
             }
+            if let closeButtonNode = self.closeButtonNode, let result = closeButtonNode.hitTest(self.view.convert(point, to: closeButtonNode.view), with: event) {
+                return result
+            }
             
             var eventIsPresses = false
             if #available(iOSApplicationExtension 9.0, iOS 9.0, *) {
@@ -932,6 +970,7 @@ public final class TooltipScreen: ViewController {
         case plain(text: String)
         case entities(text: String, entities: [MessageTextEntity])
         case markdown(text: String)
+        case attributedString(text: NSAttributedString)
     }
     
     public class Action {
@@ -1001,6 +1040,7 @@ public final class TooltipScreen: ViewController {
     public let text: TooltipScreen.Text
     public let textAlignment: TooltipScreen.Alignment
     private let balancedTextLayout: Bool
+    private let constrainWidth: CGFloat?
     private let style: TooltipScreen.Style
     private let arrowStyle: TooltipScreen.ArrowStyle
     private let icon: TooltipScreen.Icon?
@@ -1039,6 +1079,7 @@ public final class TooltipScreen: ViewController {
         text: TooltipScreen.Text,
         textAlignment: TooltipScreen.Alignment = .natural,
         balancedTextLayout: Bool = false,
+        constrainWidth: CGFloat? = nil,
         style: TooltipScreen.Style = .default,
         arrowStyle: TooltipScreen.ArrowStyle = .default,
         icon: TooltipScreen.Icon? = nil,
@@ -1056,6 +1097,7 @@ public final class TooltipScreen: ViewController {
         self.text = text
         self.textAlignment = textAlignment
         self.balancedTextLayout = balancedTextLayout
+        self.constrainWidth = constrainWidth
         self.style = style
         self.arrowStyle = arrowStyle
         self.icon = icon
@@ -1123,7 +1165,7 @@ public final class TooltipScreen: ViewController {
     }
     
     override public func loadDisplayNode() {
-        self.displayNode = TooltipScreenNode(context: self.context, account: self.account, sharedContext: self.sharedContext, text: self.text, textAlignment: self.textAlignment, balancedTextLayout: self.balancedTextLayout, style: self.style, arrowStyle: self.arrowStyle, icon: self.icon, action: self.action, location: self.location, displayDuration: self.displayDuration, inset: self.inset, cornerRadius: self.cornerRadius, shouldDismissOnTouch: self.shouldDismissOnTouch, requestDismiss: { [weak self] in
+        self.displayNode = TooltipScreenNode(context: self.context, account: self.account, sharedContext: self.sharedContext, text: self.text, textAlignment: self.textAlignment, balancedTextLayout: self.balancedTextLayout, constrainWidth: self.constrainWidth, style: self.style, arrowStyle: self.arrowStyle, icon: self.icon, action: self.action, location: self.location, displayDuration: self.displayDuration, inset: self.inset, cornerRadius: self.cornerRadius, shouldDismissOnTouch: self.shouldDismissOnTouch, requestDismiss: { [weak self] in
             guard let strongSelf = self else {
                 return
             }

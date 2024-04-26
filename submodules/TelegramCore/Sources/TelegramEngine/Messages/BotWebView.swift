@@ -10,11 +10,17 @@ private let botWebViewPlatform = "macos"
 private let botWebViewPlatform = "ios"
 #endif
 
+public enum RequestSimpleWebViewSource {
+    case generic
+    case inline
+    case settings
+}
+
 public enum RequestSimpleWebViewError {
     case generic
 }
 
-func _internal_requestSimpleWebView(postbox: Postbox, network: Network, botId: PeerId, url: String, inline: Bool, themeParams: [String: Any]?) -> Signal<String, RequestSimpleWebViewError> {
+func _internal_requestSimpleWebView(postbox: Postbox, network: Network, botId: PeerId, url: String?, source: RequestSimpleWebViewSource, themeParams: [String: Any]?) -> Signal<String, RequestSimpleWebViewError> {
     var serializedThemeParams: Api.DataJSON?
     if let themeParams = themeParams, let data = try? JSONSerialization.data(withJSONObject: themeParams, options: []), let dataString = String(data: data, encoding: .utf8) {
         serializedThemeParams = .dataJSON(data: dataString)
@@ -28,10 +34,18 @@ func _internal_requestSimpleWebView(postbox: Postbox, network: Network, botId: P
         if let _ = serializedThemeParams {
             flags |= (1 << 0)
         }
-        if inline {
+        switch source {
+        case .inline:
             flags |= (1 << 1)
+        case .settings:
+            flags |= (1 << 2)
+        default:
+            break
         }
-        return network.request(Api.functions.messages.requestSimpleWebView(flags: flags, bot: inputUser, url: url, themeParams: serializedThemeParams, platform: botWebViewPlatform))
+        if let _ = url {
+            flags |= (1 << 3)
+        }
+        return network.request(Api.functions.messages.requestSimpleWebView(flags: flags, bot: inputUser, url: url, startParam: nil, themeParams: serializedThemeParams, platform: botWebViewPlatform))
         |> mapError { _ -> RequestSimpleWebViewError in
             return .generic
         }
@@ -69,7 +83,7 @@ private func keepWebViewSignal(network: Network, stateManager: AccountStateManag
                 if threadId != nil {
                     replyFlags |= 1 << 0
                 }
-                replyTo = .inputReplyToMessage(flags: replyFlags, replyToMsgId: replyToMessageId.id, topMsgId: threadId.flatMap(Int32.init(clamping:)))
+                replyTo = .inputReplyToMessage(flags: replyFlags, replyToMsgId: replyToMessageId.id, topMsgId: threadId.flatMap(Int32.init(clamping:)), replyToPeerId: nil, quoteText: nil, quoteEntities: nil, quoteOffset: nil)
             }
             let signal: Signal<Never, KeepWebViewError> = network.request(Api.functions.messages.prolongWebView(flags: flags, peer: peer, bot: bot, queryId: queryId, replyTo: replyTo, sendAs: sendAs))
             |> mapError { _ -> KeepWebViewError in
@@ -143,7 +157,7 @@ func _internal_requestWebView(postbox: Postbox, network: Network, stateManager: 
             if threadId != nil {
                 replyFlags |= 1 << 0
             }
-            replyTo = .inputReplyToMessage(flags: replyFlags, replyToMsgId: replyToMessageId.id, topMsgId: threadId.flatMap(Int32.init(clamping:)))
+            replyTo = .inputReplyToMessage(flags: replyFlags, replyToMsgId: replyToMessageId.id, topMsgId: threadId.flatMap(Int32.init(clamping:)), replyToPeerId: nil, quoteText: nil, quoteEntities: nil, quoteOffset: nil)
         }
 
         return network.request(Api.functions.messages.requestWebView(flags: flags, peer: inputPeer, bot: inputBot, url: url, startParam: payload, themeParams: serializedThemeParams, platform: botWebViewPlatform, replyTo: replyTo, sendAs: nil))
@@ -235,4 +249,246 @@ func _internal_requestAppWebView(postbox: Postbox, network: Network, stateManage
     }
     |> castError(RequestAppWebViewError.self)
     |> switchToLatest
+}
+
+func _internal_canBotSendMessages(postbox: Postbox, network: Network, botId: PeerId) -> Signal<Bool, NoError> {
+    return postbox.transaction { transaction -> Signal<Bool, NoError> in
+        guard let bot = transaction.getPeer(botId), let inputUser = apiInputUser(bot) else {
+            return .single(false)
+        }
+
+        return network.request(Api.functions.bots.canSendMessage(bot: inputUser))
+        |> `catch` { _ -> Signal<Api.Bool, NoError> in
+            return .single(.boolFalse)
+        }
+        |> map { result -> Bool in
+            if case .boolTrue = result {
+                return true
+            } else {
+                return false
+            }
+        }
+    }
+    |> switchToLatest
+}
+
+func _internal_allowBotSendMessages(postbox: Postbox, network: Network, stateManager: AccountStateManager, botId: PeerId) -> Signal<Never, NoError> {
+    return postbox.transaction { transaction -> Signal<Never, NoError> in
+        guard let bot = transaction.getPeer(botId), let inputUser = apiInputUser(bot) else {
+            return .never()
+        }
+
+        return network.request(Api.functions.bots.allowSendMessage(bot: inputUser))
+        |> map(Optional.init)
+        |> `catch` { _ -> Signal<Api.Updates?, NoError> in
+            return .single(nil)
+        }
+        |> map { updates -> Api.Updates? in
+            if let updates = updates {
+                stateManager.addUpdates(updates)
+            }
+            return updates
+        }
+        |> ignoreValues
+    }
+    |> switchToLatest
+}
+
+public enum InvokeBotCustomMethodError {
+    case generic
+}
+
+func _internal_invokeBotCustomMethod(postbox: Postbox, network: Network, botId: PeerId, method: String, params: String) -> Signal<String, InvokeBotCustomMethodError> {
+    let params = Api.DataJSON.dataJSON(data: params)
+    return postbox.transaction { transaction -> Signal<String, InvokeBotCustomMethodError> in
+        guard let bot = transaction.getPeer(botId), let inputUser = apiInputUser(bot) else {
+            return .fail(.generic)
+        }
+        return network.request(Api.functions.bots.invokeWebViewCustomMethod(bot: inputUser, customMethod: method, params: params))
+        |> mapError { _ -> InvokeBotCustomMethodError in
+            return .generic
+        }
+        |> map { result -> String in
+            if case let .dataJSON(data) = result {
+                return data
+            } else {
+                return ""
+            }
+        }
+    }
+    |> castError(InvokeBotCustomMethodError.self)
+    |> switchToLatest
+}
+
+public struct TelegramBotBiometricsState: Codable, Equatable {
+    public struct OpaqueToken: Codable, Equatable {
+        public let publicKey: Data
+        public let data: Data
+        
+        public init(publicKey: Data, data: Data) {
+            self.publicKey = publicKey
+            self.data = data
+        }
+    }
+    
+    public var deviceId: Data
+    public var accessRequested: Bool
+    public var accessGranted: Bool
+    public var opaqueToken: OpaqueToken?
+    
+    public static func create() -> TelegramBotBiometricsState {
+        var deviceId = Data(count: 32)
+        deviceId.withUnsafeMutableBytes { buffer -> Void in
+            arc4random_buf(buffer.assumingMemoryBound(to: UInt8.self).baseAddress!, buffer.count)
+        }
+
+        return TelegramBotBiometricsState(
+            deviceId: deviceId,
+            accessRequested: false,
+            accessGranted: false,
+            opaqueToken: nil
+        )
+    }
+    
+    public init(deviceId: Data, accessRequested: Bool, accessGranted: Bool, opaqueToken: OpaqueToken?) {
+        self.deviceId = deviceId
+        self.accessRequested = accessRequested
+        self.accessGranted = accessGranted
+        self.opaqueToken = opaqueToken
+    }
+}
+
+func _internal_updateBotBiometricsState(account: Account, peerId: EnginePeer.Id, update: @escaping (TelegramBotBiometricsState?) -> TelegramBotBiometricsState) -> Signal<Never, NoError> {
+    return account.postbox.transaction { transaction -> Void in
+        let previousState = transaction.getPreferencesEntry(key: PreferencesKeys.botBiometricsState(peerId: peerId))?.get(TelegramBotBiometricsState.self)
+        
+        transaction.setPreferencesEntry(key: PreferencesKeys.botBiometricsState(peerId: peerId), value: PreferencesEntry(update(previousState)))
+    }
+    |> ignoreValues
+}
+
+func _internal_botsWithBiometricState(account: Account) -> Signal<Set<EnginePeer.Id>, NoError> {
+    let viewKey: PostboxViewKey = PostboxViewKey.preferencesPrefix(keyPrefix: PreferencesKeys.botBiometricsStatePrefix())
+    return account.postbox.combinedView(keys: [viewKey])
+    |> map { views -> Set<EnginePeer.Id> in
+        guard let view = views.views[viewKey] as? PreferencesPrefixView else {
+            return Set()
+        }
+        
+        var result = Set<EnginePeer.Id>()
+        for (key, value) in view.values {
+            guard let peerId = PreferencesKeys.extractBotBiometricsStatePeerId(key: key) else {
+                continue
+            }
+            if value.get(TelegramBotBiometricsState.self) == nil {
+                continue
+            }
+            result.insert(peerId)
+        }
+        
+        return result
+    }
+}
+
+func _internal_toggleChatManagingBotIsPaused(account: Account, chatId: EnginePeer.Id) -> Signal<Never, NoError> {
+    return account.postbox.transaction { transaction -> Bool in
+        var isPaused = false
+        transaction.updatePeerCachedData(peerIds: Set([chatId]), update: { _, current in
+            guard let current = current as? CachedUserData else {
+                return current
+            }
+            
+            if var peerStatusSettings = current.peerStatusSettings {
+                if let managingBot = peerStatusSettings.managingBot {
+                    isPaused = !managingBot.isPaused
+                    peerStatusSettings.managingBot?.isPaused = isPaused
+                    if !isPaused {
+                        peerStatusSettings.managingBot?.canReply = true
+                    }
+                }
+                
+                return current.withUpdatedPeerStatusSettings(peerStatusSettings)
+            } else {
+                return current
+            }
+        })
+        return isPaused
+    }
+    |> mapToSignal { isPaused -> Signal<Never, NoError> in
+        return account.postbox.transaction { transaction -> Api.InputPeer? in
+            return transaction.getPeer(chatId).flatMap(apiInputPeer)
+        }
+        |> mapToSignal { inputPeer -> Signal<Never, NoError> in
+            guard let inputPeer else {
+                return .complete()
+            }
+            return account.network.request(Api.functions.account.toggleConnectedBotPaused(peer: inputPeer, paused: isPaused ? .boolTrue : .boolFalse))
+            |> `catch` { _ -> Signal<Api.Bool, NoError> in
+                return .single(.boolFalse)
+            }
+            |> ignoreValues
+        }
+    }
+}
+
+func _internal_removeChatManagingBot(account: Account, chatId: EnginePeer.Id) -> Signal<Never, NoError> {
+    return account.postbox.transaction { transaction -> Void in
+        transaction.updatePeerCachedData(peerIds: Set([chatId]), update: { _, current in
+            guard let current = current as? CachedUserData else {
+                return current
+            }
+            
+            if var peerStatusSettings = current.peerStatusSettings {
+                peerStatusSettings.managingBot = nil
+                
+                return current.withUpdatedPeerStatusSettings(peerStatusSettings)
+            } else {
+                return current
+            }
+        })
+        transaction.updatePeerCachedData(peerIds: Set([account.peerId]), update: { _, current in
+            guard let current = current as? CachedUserData else {
+                return current
+            }
+            
+            if let connectedBot = current.connectedBot {
+                var additionalPeers = connectedBot.recipients.additionalPeers
+                var excludePeers = connectedBot.recipients.excludePeers
+                if connectedBot.recipients.exclude {
+                    additionalPeers.insert(chatId)
+                } else {
+                    additionalPeers.remove(chatId)
+                    excludePeers.insert(chatId)
+                }
+                
+                return current.withUpdatedConnectedBot(TelegramAccountConnectedBot(
+                    id: connectedBot.id,
+                    recipients: TelegramBusinessRecipients(
+                        categories: connectedBot.recipients.categories,
+                        additionalPeers: additionalPeers,
+                        excludePeers: excludePeers,
+                        exclude: connectedBot.recipients.exclude
+                    ),
+                    canReply: connectedBot.canReply
+                ))
+            } else {
+                return current
+            }
+        })
+    }
+    |> mapToSignal { _ -> Signal<Never, NoError> in
+        return account.postbox.transaction { transaction -> Api.InputPeer? in
+            return transaction.getPeer(chatId).flatMap(apiInputPeer)
+        }
+        |> mapToSignal { inputPeer -> Signal<Never, NoError> in
+            guard let inputPeer else {
+                return .complete()
+            }
+            return account.network.request(Api.functions.account.disablePeerConnectedBot(peer: inputPeer))
+            |> `catch` { _ -> Signal<Api.Bool, NoError> in
+                return .single(.boolFalse)
+            }
+            |> ignoreValues
+        }
+    }
 }

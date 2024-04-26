@@ -63,8 +63,8 @@ public struct ContactsPeerItemEditing: Equatable {
     }
 }
 
-public enum ContactsPeerItemPeerMode {
-    case generalSearch
+public enum ContactsPeerItemPeerMode: Equatable {
+    case generalSearch(isSavedMessages: Bool)
     case peer
 }
 
@@ -163,6 +163,7 @@ public class ContactsPeerItem: ItemListItem, ListViewItemWithHeader {
     public let peer: ContactsPeerItemPeer
     let status: ContactsPeerItemStatus
     let badge: ContactsPeerItemBadge?
+    let requiresPremiumForMessaging: Bool
     let enabled: Bool
     let selection: ContactsPeerItemSelection
     let selectionPosition: ContactsPeerItemSelectionPosition
@@ -199,6 +200,7 @@ public class ContactsPeerItem: ItemListItem, ListViewItemWithHeader {
         peer: ContactsPeerItemPeer,
         status: ContactsPeerItemStatus,
         badge: ContactsPeerItemBadge? = nil,
+        requiresPremiumForMessaging: Bool = false,
         enabled: Bool,
         selection: ContactsPeerItemSelection,
         selectionPosition: ContactsPeerItemSelectionPosition = .right,
@@ -229,6 +231,7 @@ public class ContactsPeerItem: ItemListItem, ListViewItemWithHeader {
         self.peer = peer
         self.status = status
         self.badge = badge
+        self.requiresPremiumForMessaging = requiresPremiumForMessaging
         self.enabled = enabled
         self.selection = selection
         self.selectionPosition = selectionPosition
@@ -384,7 +387,7 @@ private let avatarFont = avatarPlaceholderFont(size: 16.0)
 public class ContactsPeerItemNode: ItemListRevealOptionsItemNode {
     private let backgroundNode: ASDisplayNode
     private let topSeparatorNode: ASDisplayNode
-    private let separatorNode: ASDisplayNode
+    public let separatorNode: ASDisplayNode
     private let highlightedBackgroundNode: ASDisplayNode
     private let maskNode: ASImageNode
     
@@ -399,12 +402,16 @@ public class ContactsPeerItemNode: ItemListRevealOptionsItemNode {
     private let offsetContainerNode: ASDisplayNode
     private let avatarNodeContainer: ASDisplayNode
     public let avatarNode: AvatarNode
+    private var avatarBadgeBackground: UIImageView?
+    private var avatarBadge: UIImageView?
     private var avatarIconView: ComponentHostView<Empty>?
     private var avatarIconComponent: EmojiStatusComponent?
-    private let titleNode: TextNode
+    public let titleNode: TextNode
     private var credibilityIconView: ComponentHostView<Empty>?
     private var credibilityIconComponent: EmojiStatusComponent?
-    private let statusNode: TextNode
+    private var verifiedIconView: ComponentHostView<Empty>?
+    private var verifiedIconComponent: EmojiStatusComponent?
+    public let statusNode: TextNode
     private var statusIconNode: ASImageNode?
     private var badgeBackgroundNode: ASImageNode?
     private var badgeTextNode: TextNode?
@@ -464,6 +471,14 @@ public class ContactsPeerItemNode: ItemListRevealOptionsItemNode {
                         containerSize: credibilityIconView.bounds.size
                     )
                 }
+                if let verifiedIconView = self.verifiedIconView, let verifiedIconComponent = self.verifiedIconComponent {
+                    let _ = verifiedIconView.update(
+                        transition: .immediate,
+                        component: AnyComponent(verifiedIconComponent.withVisibleForAnimations(self.visibilityStatus)),
+                        environment: {},
+                        containerSize: verifiedIconView.bounds.size
+                    )
+                }
                 if let avatarIconView = self.avatarIconView, let avatarIconComponent = self.avatarIconComponent {
                     let _ = avatarIconView.update(
                         transition: .immediate,
@@ -487,6 +502,7 @@ public class ContactsPeerItemNode: ItemListRevealOptionsItemNode {
         self.separatorNode.isLayerBacked = true
         
         self.highlightedBackgroundNode = ASDisplayNode()
+        self.highlightedBackgroundNode.alpha = 0.0
         self.highlightedBackgroundNode.isLayerBacked = true
         
         self.extractedBackgroundImageNode = ASImageNode()
@@ -616,6 +632,10 @@ public class ContactsPeerItemNode: ItemListRevealOptionsItemNode {
             }
         }
         
+        if let item = self.item, let avatarBadgeBackground = self.avatarBadgeBackground {
+            transition.updateTintColor(layer: avatarBadgeBackground.layer, color: item.presentationData.theme.list.itemHighlightedBackgroundColor.mixedWith(item.presentationData.theme.list.plainBackgroundColor, alpha: reallyHighlighted ? 0.0 : 1.0))
+        }
+        
         if reallyHighlighted {
             if self.highlightedBackgroundNode.supernode == nil {
                 self.insertSubnode(self.highlightedBackgroundNode, aboveSubnode: self.separatorNode)
@@ -692,6 +712,7 @@ public class ContactsPeerItemNode: ItemListRevealOptionsItemNode {
             let premiumConfiguration = PremiumConfiguration.with(appConfiguration: item.context.currentAppConfiguration.with { $0 })
             
             var credibilityIcon: EmojiStatusComponent.Content?
+            var verifiedIcon: EmojiStatusComponent.Content?
             switch item.peer {
             case let .peer(peer, _):
                 if let peer = peer, peer.id != item.context.account.peerId {
@@ -699,7 +720,10 @@ public class ContactsPeerItemNode: ItemListRevealOptionsItemNode {
                         credibilityIcon = .text(color: item.presentationData.theme.chat.message.incoming.scamColor, string: item.presentationData.strings.Message_ScamAccount.uppercased())
                     } else if peer.isFake {
                         credibilityIcon = .text(color: item.presentationData.theme.chat.message.incoming.scamColor, string: item.presentationData.strings.Message_FakeAccount.uppercased())
-                    } else if case let .user(user) = peer, let emojiStatus = user.emojiStatus {
+                    } else if let emojiStatus = peer.emojiStatus {
+                        if case .channel = peer, peer.isVerified {
+                            verifiedIcon = .verified(fillColor: item.presentationData.theme.list.itemCheckColors.fillColor, foregroundColor: item.presentationData.theme.list.itemCheckColors.foregroundColor, sizeType: .compact)
+                        }
                         credibilityIcon = .animation(content: .customEmoji(fileId: emojiStatus.fileId), size: CGSize(width: 20.0, height: 20.0), placeholderColor: item.presentationData.theme.list.mediaPlaceholderColor, themeColor: item.presentationData.theme.list.itemAccentColor, loopMode: .count(2))
                     } else if peer.isVerified {
                         credibilityIcon = .verified(fillColor: item.presentationData.theme.list.itemCheckColors.fillColor, foregroundColor: item.presentationData.theme.list.itemCheckColors.foregroundColor, sizeType: .compact)
@@ -765,10 +789,16 @@ public class ContactsPeerItemNode: ItemListRevealOptionsItemNode {
                         textColor = item.presentationData.theme.list.itemPrimaryTextColor
                     }
                     if case let .user(user) = peer {
-                        if peer.id == item.context.account.peerId, case .generalSearch = item.peerMode {
-                            titleAttributedString = NSAttributedString(string: item.presentationData.strings.DialogList_SavedMessages, font: titleBoldFont, textColor: textColor)
+                        if peer.id == item.context.account.peerId, case let .generalSearch(isSavedMessages) = item.peerMode {
+                            if isSavedMessages {
+                                titleAttributedString = NSAttributedString(string: item.presentationData.strings.DialogList_MyNotes, font: titleBoldFont, textColor: textColor)
+                            } else {
+                                titleAttributedString = NSAttributedString(string: item.presentationData.strings.DialogList_SavedMessages, font: titleBoldFont, textColor: textColor)
+                            }
                         } else if peer.id.isReplies {
                             titleAttributedString = NSAttributedString(string: item.presentationData.strings.DialogList_Replies, font: titleBoldFont, textColor: textColor)
+                        } else if peer.id.isAnonymousSavedMessages {
+                            titleAttributedString = NSAttributedString(string: item.presentationData.strings.ChatList_AuthorHidden, font: titleBoldFont, textColor: textColor)
                         } else if let firstName = user.firstName, let lastName = user.lastName, !firstName.isEmpty, !lastName.isEmpty {
                             let string = NSMutableAttributedString()
                             switch item.displayOrder {
@@ -879,7 +909,18 @@ public class ContactsPeerItemNode: ItemListRevealOptionsItemNode {
             }
             
             var additionalTitleInset: CGFloat = 0.0
-            if let credibilityIcon = credibilityIcon {
+            if let verifiedIcon {
+                additionalTitleInset += 3.0
+                switch verifiedIcon {
+                case let .text(_, string):
+                    let textString = NSAttributedString(string: string, font: Font.bold(10.0), textColor: .black, paragraphAlignment: .center)
+                    let stringRect = textString.boundingRect(with: CGSize(width: 100.0, height: 16.0), options: .usesLineFragmentOrigin, context: nil)
+                    additionalTitleInset += floor(stringRect.width) + 11.0
+                default:
+                    additionalTitleInset += 16.0
+                }
+            }
+            if let credibilityIcon {
                 additionalTitleInset += 3.0
                 switch credibilityIcon {
                 case let .text(_, string):
@@ -1001,10 +1042,16 @@ public class ContactsPeerItemNode: ItemListRevealOptionsItemNode {
                                 case let .peer(peer, _):
                                     if let peer = peer {
                                         var overrideImage: AvatarNodeImageOverride?
-                                        if peer.id == item.context.account.peerId, case .generalSearch = item.peerMode {
-                                            overrideImage = .savedMessagesIcon
+                                        if peer.id == item.context.account.peerId, case let .generalSearch(isSavedMessages) = item.peerMode {
+                                            if isSavedMessages {
+                                                overrideImage = .myNotesIcon
+                                            } else {
+                                                overrideImage = .savedMessagesIcon
+                                            }
                                         } else if peer.id.isReplies, case .generalSearch = item.peerMode {
                                             overrideImage = .repliesIcon
+                                        } else if peer.id.isAnonymousSavedMessages, case .generalSearch = item.peerMode {
+                                            overrideImage = .anonymousSavedMessagesIcon
                                         } else if peer.isDeleted {
                                             overrideImage = .deletedIcon
                                         }
@@ -1106,6 +1153,44 @@ public class ContactsPeerItemNode: ItemListRevealOptionsItemNode {
                             
                             strongSelf.avatarNode.frame = CGRect(origin: CGPoint(), size: avatarFrame.size)
                             
+                            if item.requiresPremiumForMessaging {
+                                let avatarBadgeBackground: UIImageView
+                                if let current = strongSelf.avatarBadgeBackground {
+                                    avatarBadgeBackground = current
+                                } else {
+                                    avatarBadgeBackground = UIImageView()
+                                    avatarBadgeBackground.image = PresentationResourcesChatList.avatarPremiumLockBadgeBackground(item.presentationData.theme)
+                                    avatarBadgeBackground.tintColor = item.presentationData.theme.list.itemHighlightedBackgroundColor.mixedWith(item.presentationData.theme.list.plainBackgroundColor, alpha: 1.0 - strongSelf.highlightedBackgroundNode.alpha)
+                                    strongSelf.avatarBadgeBackground = avatarBadgeBackground
+                                    strongSelf.avatarNode.view.addSubview(avatarBadgeBackground)
+                                }
+                                
+                                let avatarBadge: UIImageView
+                                if let current = strongSelf.avatarBadge {
+                                    avatarBadge = current
+                                } else {
+                                    avatarBadge = UIImageView()
+                                    avatarBadge.image = PresentationResourcesChatList.avatarPremiumLockBadge(item.presentationData.theme)
+                                    strongSelf.avatarBadge = avatarBadge
+                                    strongSelf.avatarNode.view.addSubview(avatarBadge)
+                                }
+                                
+                                let badgeFrame = CGRect(origin: CGPoint(x: avatarFrame.width - 16.0, y: avatarFrame.height - 16.0), size: CGSize(width: 16.0, height: 16.0))
+                                let badgeBackgroundFrame = badgeFrame.insetBy(dx: -1.0 - UIScreenPixel, dy: -1.0 - UIScreenPixel)
+                                
+                                avatarBadgeBackground.frame = badgeBackgroundFrame
+                                avatarBadge.frame = badgeFrame
+                            } else {
+                                if let avatarBadgeBackground = strongSelf.avatarBadgeBackground {
+                                    strongSelf.avatarBadgeBackground = nil
+                                    avatarBadgeBackground.removeFromSuperview()
+                                }
+                                if let avatarBadge = strongSelf.avatarBadge {
+                                    strongSelf.avatarBadge = nil
+                                    avatarBadge.removeFromSuperview()
+                                }
+                            }
+                            
                             transition.updatePosition(node: strongSelf.avatarNodeContainer, position: avatarFrame.center)
                             transition.updateBounds(node: strongSelf.avatarNodeContainer, bounds: CGRect(origin: CGPoint(), size: avatarFrame.size))
                             
@@ -1193,7 +1278,8 @@ public class ContactsPeerItemNode: ItemListRevealOptionsItemNode {
                                 }
                             }
                             
-                            if let credibilityIcon = credibilityIcon {
+                            var nextIconX: CGFloat = titleFrame.maxX
+                            if let credibilityIcon {
                                 let animationCache = item.context.animationCache
                                 let animationRenderer = item.context.animationRenderer
                                 
@@ -1224,10 +1310,51 @@ public class ContactsPeerItemNode: ItemListRevealOptionsItemNode {
                                     containerSize: CGSize(width: 20.0, height: 20.0)
                                 )
                                 
-                                transition.updateFrame(view: credibilityIconView, frame: CGRect(origin: CGPoint(x: titleFrame.maxX + 4.0, y: floorToScreenPixels(titleFrame.midY - iconSize.height / 2.0)), size: iconSize))
+                                nextIconX += 4.0
+                                transition.updateFrame(view: credibilityIconView, frame: CGRect(origin: CGPoint(x: nextIconX, y: floorToScreenPixels(titleFrame.midY - iconSize.height / 2.0)), size: iconSize))
+                                nextIconX += iconSize.width
                             } else if let credibilityIconView = strongSelf.credibilityIconView {
                                 strongSelf.credibilityIconView = nil
                                 credibilityIconView.removeFromSuperview()
+                            }
+                            
+                            if let verifiedIcon {
+                                let animationCache = item.context.animationCache
+                                let animationRenderer = item.context.animationRenderer
+                                
+                                let verifiedIconView: ComponentHostView<Empty>
+                                if let current = strongSelf.verifiedIconView {
+                                    verifiedIconView = current
+                                } else {
+                                    verifiedIconView = ComponentHostView<Empty>()
+                                    strongSelf.offsetContainerNode.view.addSubview(verifiedIconView)
+                                    strongSelf.verifiedIconView = verifiedIconView
+                                }
+                                
+                                let verifiedIconComponent = EmojiStatusComponent(
+                                    context: item.context,
+                                    animationCache: animationCache,
+                                    animationRenderer: animationRenderer,
+                                    content: verifiedIcon,
+                                    isVisibleForAnimations: strongSelf.visibilityStatus,
+                                    action: nil,
+                                    emojiFileUpdated: nil
+                                )
+                                strongSelf.verifiedIconComponent = verifiedIconComponent
+                                
+                                let iconSize = verifiedIconView.update(
+                                    transition: .immediate,
+                                    component: AnyComponent(verifiedIconComponent),
+                                    environment: {},
+                                    containerSize: CGSize(width: 20.0, height: 20.0)
+                                )
+                                
+                                nextIconX += 4.0
+                                transition.updateFrame(view: verifiedIconView, frame: CGRect(origin: CGPoint(x: nextIconX, y: floorToScreenPixels(titleFrame.midY - iconSize.height / 2.0)), size: iconSize))
+                                nextIconX += iconSize.width
+                            } else if let verifiedIconView = strongSelf.verifiedIconView {
+                                strongSelf.verifiedIconView = nil
+                                verifiedIconView.removeFromSuperview()
                             }
                             
                             if let actionButtons = actionButtons {
@@ -1430,10 +1557,18 @@ public class ContactsPeerItemNode: ItemListRevealOptionsItemNode {
             self.statusNode.frame = statusFrame
             transition.animatePositionAdditive(node: self.statusNode, offset: CGPoint(x: previousStatusFrame.minX - statusFrame.minX, y: 0))
             
+            var nextIconX = titleFrame.maxX
             if let credibilityIconView = self.credibilityIconView {
                 var iconFrame = credibilityIconView.frame
-                iconFrame.origin.x = titleFrame.maxX + 4.0
+                iconFrame.origin.x = nextIconX + 4.0
+                nextIconX += 4.0 + iconFrame.width
                 transition.updateFrame(view: credibilityIconView, frame: iconFrame)
+            }
+            if let verifiedIconView = self.verifiedIconView {
+                var iconFrame = verifiedIconView.frame
+                iconFrame.origin.x = nextIconX + 4.0
+                nextIconX += 4.0 + iconFrame.width
+                transition.updateFrame(view: verifiedIconView, frame: iconFrame)
             }
             
             if let badgeBackgroundNode = self.badgeBackgroundNode, let badgeTextNode = self.badgeTextNode {

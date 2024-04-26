@@ -1,6 +1,17 @@
 import Foundation
 import TelegramCore
 
+public func decodeCodableDrawingEntities(data: Data) -> [CodableDrawingEntity] {
+    if let codableEntities = try? JSONDecoder().decode([CodableDrawingEntity].self, from: data) {
+        return codableEntities
+    }
+    return []
+}
+
+public func decodeDrawingEntities(data: Data) -> [DrawingEntity] {
+    return decodeCodableDrawingEntities(data: data).map { $0.entity }
+}
+
 public enum CodableDrawingEntity: Equatable {
     public static func == (lhs: CodableDrawingEntity, rhs: CodableDrawingEntity) -> Bool {
         return lhs.entity.isEqual(to: rhs.entity)
@@ -48,17 +59,59 @@ public enum CodableDrawingEntity: Equatable {
         }
     }
     
+    private var coordinates: MediaArea.Coordinates? {
+        var position: CGPoint?
+        var size: CGSize?
+        var rotation: CGFloat?
+        var scale: CGFloat?
+        
+        switch self {
+        case let .location(entity):
+            position = entity.position
+            size = entity.renderImage?.size
+            rotation = entity.rotation
+            scale = entity.scale
+        case let .sticker(entity):
+            var entityPosition = entity.position
+            var entitySize = entity.baseSize
+            let entityRotation = entity.rotation
+            let entityScale = entity.scale
+            
+            if case .message = entity.content {
+                let offset: CGFloat = 16.18 * entityScale //54.0 * entityScale / 3.337
+                entitySize = CGSize(width: entitySize.width - 38.0, height: entitySize.height - 4.0)
+                entityPosition = CGPoint(x: entityPosition.x + offset * cos(entityRotation), y: entityPosition.y + offset * sin(entityRotation))
+            }
+            
+            position = entityPosition
+            size = entitySize
+            rotation = entityRotation
+            scale = entityScale
+        default:
+            return nil
+        }
+        
+        guard let position, let size, let scale, let rotation else {
+            return nil
+        }
+        
+        return MediaArea.Coordinates(
+            x: position.x / 1080.0 * 100.0,
+            y: position.y / 1920.0 * 100.0,
+            width: size.width * scale / 1080.0 * 100.0,
+            height: size.height * scale / 1920.0 * 100.0,
+            rotation: rotation / .pi * 180.0
+        )
+    }
+    
     public var mediaArea: MediaArea? {
+        guard let coordinates = self.coordinates else {
+            return nil
+        }
         switch self {
         case let .location(entity):
             return .venue(
-                coordinates: MediaArea.Coordinates(
-                    x: entity.position.x / 1080.0 * 100.0,
-                    y: entity.position.y / 1920.0 * 100.0,
-                    width: (entity.renderImage?.size.width ?? 0.0) * entity.scale / 1080.0 * 100.0,
-                    height: (entity.renderImage?.size.height ?? 0.0) * entity.scale / 1920.0 * 100.0,
-                    rotation: entity.rotation / .pi * 180.0
-                ),
+                coordinates: coordinates,
                 venue: MediaArea.Venue(
                     latitude: entity.location.latitude,
                     longitude: entity.location.longitude,
@@ -67,6 +120,25 @@ public enum CodableDrawingEntity: Equatable {
                     resultId: entity.resultId
                 )
             )
+        case let .sticker(entity):
+            if case let .file(_, type) = entity.content, case let .reaction(reaction, style) = type {
+                var flags: MediaArea.ReactionFlags = []
+                if case .black = style {
+                    flags.insert(.isDark)
+                }
+                if entity.mirrored {
+                    flags.insert(.isFlipped)
+                }
+                return .reaction(
+                    coordinates: coordinates,
+                    reaction: reaction,
+                    flags: flags
+                )
+            } else if case let .message(messageIds, _, _, _, _) = entity.content, let messageId = messageIds.first {
+                return .channelMessage(coordinates: coordinates, messageId: messageId)
+            } else {
+                return nil
+            }
         default:
             return nil
         }

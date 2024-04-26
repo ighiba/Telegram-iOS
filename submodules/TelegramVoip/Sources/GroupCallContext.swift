@@ -25,6 +25,17 @@ final class ContextQueueImpl: NSObject, OngoingCallThreadLocalContextQueueWebrtc
     func isCurrent() -> Bool {
         return self.queue.isCurrent()
     }
+    
+    func scheduleBlock(_ f: @escaping () -> Void, after timeout: Double) -> GroupCallDisposable {
+        let timer = SwiftSignalKit.Timer(timeout: timeout, repeat: false, completion: {
+            f()
+        }, queue: self.queue)
+        timer.start()
+        
+        return GroupCallDisposable(block: {
+            timer.invalidate()
+        })
+    }
 }
 
 enum BroadcastPartSubject {
@@ -46,7 +57,7 @@ final class NetworkBroadcastPartSource: BroadcastPartSource {
     private var dataSource: AudioBroadcastDataSource?
     
     #if DEBUG
-    private let debugDumpDirectory = EngineTempBox.shared.tempDirectory()
+    private let debugDumpDirectory: EngineTempBox.Directory?
     #endif
     
     init(queue: Queue, engine: TelegramEngine, callId: Int64, accessHash: Int64, isExternalStream: Bool) {
@@ -55,6 +66,10 @@ final class NetworkBroadcastPartSource: BroadcastPartSource {
         self.callId = callId
         self.accessHash = accessHash
         self.isExternalStream = isExternalStream
+        
+        #if DEBUG && true
+        self.debugDumpDirectory = EngineTempBox.shared.tempDirectory()
+        #endif
     }
 
     func requestTime(completion: @escaping (Int64) -> Void) -> Disposable {
@@ -143,9 +158,10 @@ final class NetworkBroadcastPartSource: BroadcastPartSource {
         }
         |> deliverOn(self.queue)
             
-        /*#if DEBUG
+        #if DEBUG
         let debugDumpDirectory = self.debugDumpDirectory
-        #endif*/
+        #endif
+        
         return signal.start(next: { result in
             guard let result = result else {
                 completion(OngoingGroupCallBroadcastPart(timestampMilliseconds: timestampIdMilliseconds, responseTimestamp: Double(timestampIdMilliseconds), status: .notReady, oggData: Data()))
@@ -154,11 +170,13 @@ final class NetworkBroadcastPartSource: BroadcastPartSource {
             let part: OngoingGroupCallBroadcastPart
             switch result.status {
             case let .data(dataValue):
-                /*#if DEBUG
-                let tempFilePath = debugDumpDirectory.path + "/\(timestampMilliseconds).mp4"
-                let _ = try? dataValue.subdata(in: 32 ..< dataValue.count).write(to: URL(fileURLWithPath: tempFilePath))
-                print("Dump stream part: \(tempFilePath)")
-                #endif*/
+                #if DEBUG
+                if let debugDumpDirectory = debugDumpDirectory {
+                    let tempFilePath = debugDumpDirectory.path + "/\(timestampMilliseconds).mp4"
+                    let _ = try? dataValue.subdata(in: 32 ..< dataValue.count).write(to: URL(fileURLWithPath: tempFilePath))
+                    print("Dump stream part: \(tempFilePath)")
+                }
+                #endif
                 part = OngoingGroupCallBroadcastPart(timestampMilliseconds: timestampIdMilliseconds, responseTimestamp: result.responseTimestamp, status: .success, oggData: dataValue)
             case .notReady:
                 part = OngoingGroupCallBroadcastPart(timestampMilliseconds: timestampIdMilliseconds, responseTimestamp: result.responseTimestamp, status: .notReady, oggData: Data())
@@ -359,6 +377,8 @@ public final class OngoingGroupCallContext {
         }
 
         public enum Buffer {
+            case argb(NativeBuffer)
+            case bgra(NativeBuffer)
             case native(NativeBuffer)
             case nv12(NV12Buffer)
             case i420(I420Buffer)
@@ -368,12 +388,19 @@ public final class OngoingGroupCallContext {
         public let width: Int
         public let height: Int
         public let orientation: OngoingCallVideoOrientation
+        public let deviceRelativeOrientation: OngoingCallVideoOrientation?
         public let mirrorHorizontally: Bool
         public let mirrorVertically: Bool
 
-        init(frameData: CallVideoFrameData) {
+        public init(frameData: CallVideoFrameData) {
             if let nativeBuffer = frameData.buffer as? CallVideoFrameNativePixelBuffer {
-                self.buffer = .native(NativeBuffer(pixelBuffer: nativeBuffer.pixelBuffer))
+                if CVPixelBufferGetPixelFormatType(nativeBuffer.pixelBuffer) == kCVPixelFormatType_32ARGB {
+                    self.buffer = .argb(NativeBuffer(pixelBuffer: nativeBuffer.pixelBuffer))
+                } else if CVPixelBufferGetPixelFormatType(nativeBuffer.pixelBuffer) == kCVPixelFormatType_32BGRA {
+                    self.buffer = .bgra(NativeBuffer(pixelBuffer: nativeBuffer.pixelBuffer))
+                } else {
+                    self.buffer = .native(NativeBuffer(pixelBuffer: nativeBuffer.pixelBuffer))
+                }
             } else if let nv12Buffer = frameData.buffer as? CallVideoFrameNV12Buffer {
                 self.buffer = .nv12(NV12Buffer(wrapped: nv12Buffer))
             } else if let i420Buffer = frameData.buffer as? CallVideoFrameI420Buffer {
@@ -385,6 +412,11 @@ public final class OngoingGroupCallContext {
             self.width = Int(frameData.width)
             self.height = Int(frameData.height)
             self.orientation = OngoingCallVideoOrientation(frameData.orientation)
+            if frameData.hasDeviceRelativeOrientation {
+                self.deviceRelativeOrientation = OngoingCallVideoOrientation(frameData.deviceRelativeOrientation)
+            } else {
+                self.deviceRelativeOrientation = nil
+            }
             self.mirrorHorizontally = frameData.mirrorHorizontally
             self.mirrorVertically = frameData.mirrorVertically
         }

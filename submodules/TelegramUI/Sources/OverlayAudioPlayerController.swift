@@ -59,7 +59,7 @@ final class OverlayAudioPlayerControllerImpl: ViewController, OverlayAudioPlayer
         }, requestShare: { [weak self] messageId in
             if let strongSelf = self {
                 let _ = (strongSelf.context.engine.data.get(TelegramEngine.EngineData.Item.Messages.Message(id: messageId))
-                |> deliverOnMainQueue).start(next: { message in
+                |> deliverOnMainQueue).startStandalone(next: { message in
                     if let strongSelf = self, let message = message {
                         let shareController = ShareController(context: strongSelf.context, subject: .messages([message._asMessage()]), showInChat: { message in
                             if let strongSelf = self {
@@ -74,7 +74,7 @@ final class OverlayAudioPlayerControllerImpl: ViewController, OverlayAudioPlayer
                                         peerIds.map(TelegramEngine.EngineData.Item.Peer.Peer.init)
                                     )
                                 )
-                                |> deliverOnMainQueue).start(next: { [weak self] peerList in
+                                |> deliverOnMainQueue).startStandalone(next: { [weak self] peerList in
                                     if let strongSelf = self {
                                         let peers = peerList.compactMap { $0 }
                                         let presentationData = strongSelf.context.sharedContext.currentPresentationData.with { $0 }
@@ -104,7 +104,21 @@ final class OverlayAudioPlayerControllerImpl: ViewController, OverlayAudioPlayer
                                             }
                                         }
                                         
-                                        strongSelf.present(UndoOverlayController(presentationData: presentationData, content: .forward(savedMessages: savedMessages, text: text), elevatedLayout: false, animateInAsReplacement: true, action: { _ in return false }), in: .current)
+                                        strongSelf.present(UndoOverlayController(presentationData: presentationData, content: .forward(savedMessages: savedMessages, text: text), elevatedLayout: false, animateInAsReplacement: true, action: { action in
+                                            if savedMessages, let self, action == .info {
+                                                let _ = (self.context.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: self.context.account.peerId))
+                                                |> deliverOnMainQueue).start(next: { [weak self] peer in
+                                                    guard let self, let peer else {
+                                                        return
+                                                    }
+                                                    guard let navigationController = self.navigationController as? NavigationController else {
+                                                        return
+                                                    }
+                                                    self.context.sharedContext.navigateToChatController(NavigateToChatControllerParams(navigationController: navigationController, context: self.context, chatLocation: .peer(peer), forceOpenChat: true))
+                                                })
+                                            }
+                                            return false
+                                        }), in: .current)
                                     }
                                 })
                             }

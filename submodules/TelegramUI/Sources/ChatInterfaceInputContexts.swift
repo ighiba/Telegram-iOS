@@ -26,7 +26,7 @@ func serviceTasksForChatPresentationIntefaceState(context: AccountContext, chatP
     for id in missingEmoji {
         result["emoji-\(id)"] = {
             return (context.engine.stickers.resolveInlineStickers(fileIds: [id])
-            |> deliverOnMainQueue).start(next: { result in
+            |> deliverOnMainQueue).startStrict(next: { result in
                 if let file = result[id] {
                     updateState({ state -> ChatPresentationInterfaceState in
                         return state.updatedInterfaceState { interfaceState -> ChatInterfaceState in
@@ -55,6 +55,15 @@ func serviceTasksForChatPresentationIntefaceState(context: AccountContext, chatP
 }
 
 func inputContextQueriesForChatPresentationIntefaceState(_ chatPresentationInterfaceState: ChatPresentationInterfaceState) -> [ChatPresentationInputQuery] {
+    if case let .customChatContents(customChatContents) = chatPresentationInterfaceState.subject {
+        switch customChatContents.kind {
+        case .quickReplyMessageInput:
+            break
+        case .businessLinkSetup:
+            return []
+        }
+    }
+    
     let inputState = chatPresentationInterfaceState.interfaceState.effectiveInputState
     let inputString: NSString = inputState.inputText.string as NSString
     var result: [ChatPresentationInputQuery] = []
@@ -163,12 +172,18 @@ func inputTextPanelStateForChatPresentationInterfaceState(_ chatPresentationInte
                 let isTextEmpty = chatPresentationInterfaceState.interfaceState.composeInputState.inputText.length == 0
                 let hasForward = chatPresentationInterfaceState.interfaceState.forwardMessageIds != nil
                 
-                
                 if case .scheduledMessages = chatPresentationInterfaceState.subject {
                 } else {
                     let premiumConfiguration = PremiumConfiguration.with(appConfiguration: context.currentAppConfiguration.with { $0 })
-                    let giftIsEnabled = !premiumConfiguration.isPremiumDisabled && premiumConfiguration.showPremiumGiftInAttachMenu && premiumConfiguration.showPremiumGiftInTextField
-                    if isTextEmpty, giftIsEnabled, let peer = chatPresentationInterfaceState.renderedPeer?.peer as? TelegramUser, !peer.isDeleted && peer.botInfo == nil && !peer.flags.contains(.isSupport) && !peer.isPremium && !chatPresentationInterfaceState.premiumGiftOptions.isEmpty && chatPresentationInterfaceState.suggestPremiumGift {
+                    var showPremiumGift = false
+                    if !premiumConfiguration.isPremiumDisabled {
+                        if chatPresentationInterfaceState.hasBirthdayToday {
+                            showPremiumGift = true
+                        } else if premiumConfiguration.showPremiumGiftInAttachMenu && premiumConfiguration.showPremiumGiftInTextField {
+                            showPremiumGift = true
+                        }
+                    }
+                    if isTextEmpty, showPremiumGift, let peer = chatPresentationInterfaceState.renderedPeer?.peer as? TelegramUser, !peer.isDeleted && peer.botInfo == nil && !peer.flags.contains(.isSupport) && !peer.isPremium && !chatPresentationInterfaceState.premiumGiftOptions.isEmpty && chatPresentationInterfaceState.suggestPremiumGift {
                         accessoryItems.append(.gift)
                     }
                 }
@@ -201,11 +216,24 @@ func inputTextPanelStateForChatPresentationInterfaceState(_ chatPresentationInte
                     if isTextEmpty, case .broadcast = peer.info, canSendMessagesToPeer(peer) {
                         accessoryItems.append(.silentPost(chatPresentationInterfaceState.interfaceState.silentPosting))
                     }
-                    if peer.hasBannedPermission(.banSendStickers) != nil {
-                        stickersEnabled = false
+                    if let boostsToUnrestrict = chatPresentationInterfaceState.boostsToUnrestrict, boostsToUnrestrict > 0 {
+                        
+                    } else {
+                        if peer.hasBannedPermission(.banSendStickers) != nil {
+                            stickersEnabled = false
+                        }
                     }
                 } else if let peer = chatPresentationInterfaceState.renderedPeer?.peer as? TelegramGroup {
                     if peer.hasBannedPermission(.banSendStickers) {
+                        stickersEnabled = false
+                    }
+                }
+                
+                if case let .customChatContents(customChatContents) = chatPresentationInterfaceState.subject {
+                    switch customChatContents.kind {
+                    case .quickReplyMessageInput:
+                        break
+                    case .businessLinkSetup:
                         stickersEnabled = false
                     }
                 }

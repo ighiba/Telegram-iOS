@@ -21,11 +21,14 @@ public enum MessageContentKindKey {
     case liveLocation
     case expiredImage
     case expiredVideo
+    case expiredVoiceMessage
+    case expiredVideoMessage
     case poll
     case restricted
     case dice
     case invoice
     case story
+    case giveaway
 }
 
 public enum MessageContentKind: Equatable {
@@ -43,11 +46,14 @@ public enum MessageContentKind: Equatable {
     case liveLocation
     case expiredImage
     case expiredVideo
+    case expiredVoiceMessage
+    case expiredVideoMessage
     case poll(String)
     case restricted(String)
     case dice(String)
     case invoice(String)
     case story
+    case giveaway
     
     public func isSemanticallyEqual(to other: MessageContentKind) -> Bool {
         switch self {
@@ -135,6 +141,18 @@ public enum MessageContentKind: Equatable {
             } else {
                 return false
             }
+        case .expiredVoiceMessage:
+            if case .expiredVoiceMessage = other {
+                return true
+            } else {
+                return false
+            }
+        case .expiredVideoMessage:
+            if case .expiredVideoMessage = other {
+                return true
+            } else {
+                return false
+            }
         case .poll:
             if case .poll = other {
                 return true
@@ -161,6 +179,12 @@ public enum MessageContentKind: Equatable {
             }
         case .story:
             if case .story = other {
+                return true
+            } else {
+                return false
+            }
+        case .giveaway:
+            if case .giveaway = other {
                 return true
             } else {
                 return false
@@ -198,6 +222,10 @@ public enum MessageContentKind: Equatable {
             return .expiredImage
         case .expiredVideo:
             return .expiredVideo
+        case .expiredVoiceMessage:
+            return .expiredVoiceMessage
+        case .expiredVideoMessage:
+            return .expiredVideoMessage
         case .poll:
             return .poll
         case .restricted:
@@ -208,6 +236,8 @@ public enum MessageContentKind: Equatable {
             return .invoice
         case .story:
             return .story
+        case .giveaway:
+            return .giveaway
         }
     }
 }
@@ -270,6 +300,10 @@ public func mediaContentKind(_ media: EngineMedia, message: EngineMessage? = nil
             return .expiredImage
         case .file:
             return .expiredVideo
+        case .voiceMessage:
+            return .expiredVoiceMessage
+        case .videoMessage:
+            return .expiredVideoMessage
         }
     case .image:
         return .image
@@ -344,6 +378,14 @@ public func mediaContentKind(_ media: EngineMedia, message: EngineMessage? = nil
         }
     case .story:
         return .story
+    case .giveaway, .giveawayResults:
+        return .giveaway
+    case let .webpage(webpage):
+        if let message, message.text.isEmpty, case let .Loaded(content) = webpage.content {
+            return .text(NSAttributedString(string: content.displayUrl))
+        } else {
+            return nil
+        }
     default:
         return nil
     }
@@ -387,6 +429,10 @@ public func stringForMediaKind(_ kind: MessageContentKind, strings: Presentation
         return (NSAttributedString(string: strings.Message_ImageExpired), true)
     case .expiredVideo:
         return (NSAttributedString(string: strings.Message_VideoExpired), true)
+    case .expiredVoiceMessage:
+        return (NSAttributedString(string: strings.Message_VoiceMessageExpired), true)
+    case .expiredVideoMessage:
+        return (NSAttributedString(string: strings.Message_VideoMessageExpired), true)
     case let .poll(text):
         return (NSAttributedString(string: "📊 \(text)"), false)
     case let .restricted(text):
@@ -397,6 +443,8 @@ public func stringForMediaKind(_ kind: MessageContentKind, strings: Presentation
         return (NSAttributedString(string: text), true)
     case .story:
         return (NSAttributedString(string: strings.Message_Story), true)
+    case .giveaway:
+        return (NSAttributedString(string: strings.Message_Giveaway), true)
     }
 }
 

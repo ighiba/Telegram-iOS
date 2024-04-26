@@ -28,6 +28,9 @@ swift_library(
         "//submodules/TelegramUI/Components/EmojiTextAttachmentView",
         "//submodules/ContextUI",
         "//submodules/TextFormat",
+        "//submodules/PhotoResources",
+        "//submodules/TelegramUI/Components/ListSectionComponent",
+        "//submodules/TelegramUI/Components/ListItemSwipeOptionContainer",
     ],
     visibility = [
         "//visibility:public",

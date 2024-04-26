@@ -10,11 +10,14 @@ objc_library(
     hdrs = glob([
         "Public/**/*.h",
     ]),
+    copts = [
+        "-Werror",
+    ],
     includes = [
         "Public",
     ],
     deps = [
-        "//submodules/ffmpeg:ffmpeg",
+        "//submodules/ffmpeg",
     ],
     visibility = [
         "//visibility:public",

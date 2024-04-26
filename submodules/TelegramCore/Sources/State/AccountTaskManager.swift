@@ -18,6 +18,7 @@ final class AccountTaskManager {
         
         private var stateDisposable: Disposable?
         private let tasksDisposable = MetaDisposable()
+        private let configurationDisposable = MetaDisposable()
         
         private let managedTopReactionsDisposable = MetaDisposable()
         
@@ -69,7 +70,8 @@ final class AccountTaskManager {
                     tasks.add(managedSynchronizeGroupMessageStats(network: self.stateManager.network, postbox: self.stateManager.postbox, stateManager: self.stateManager).start())
                     
                     tasks.add(managedGlobalNotificationSettings(postbox: self.stateManager.postbox, network: self.stateManager.network).start())
-                    tasks.add(managedSynchronizePinnedChatsOperations(postbox: self.stateManager.postbox, network: self.stateManager.network, accountPeerId: self.stateManager.accountPeerId, stateManager: self.stateManager).start())
+                    tasks.add(managedSynchronizePinnedChatsOperations(postbox: self.stateManager.postbox, network: self.stateManager.network, accountPeerId: self.stateManager.accountPeerId, stateManager: self.stateManager, tag: OperationLogTags.SynchronizePinnedChats).start())
+                    tasks.add(managedSynchronizePinnedChatsOperations(postbox: self.stateManager.postbox, network: self.stateManager.network, accountPeerId: self.stateManager.accountPeerId, stateManager: self.stateManager, tag: OperationLogTags.SynchronizePinnedSavedChats).start())
                     tasks.add(managedSynchronizeGroupedPeersOperations(postbox: self.stateManager.postbox, network: self.stateManager.network, stateManager: self.stateManager).start())
                     tasks.add(managedSynchronizeInstalledStickerPacksOperations(postbox: self.stateManager.postbox, network: self.stateManager.network, stateManager: self.stateManager, namespace: .stickers).start())
                     tasks.add(managedSynchronizeInstalledStickerPacksOperations(postbox: self.stateManager.postbox, network: self.stateManager.network, stateManager: self.stateManager, namespace: .masks).start())
@@ -102,27 +104,33 @@ final class AccountTaskManager {
                     tasks.add(managedAllPremiumStickers(postbox: self.stateManager.postbox, network: self.stateManager.network).start())
                     tasks.add(managedRecentStatusEmoji(postbox: self.stateManager.postbox, network: self.stateManager.network).start())
                     tasks.add(managedFeaturedStatusEmoji(postbox: self.stateManager.postbox, network: self.stateManager.network).start())
+                    tasks.add(managedFeaturedChannelStatusEmoji(postbox: self.stateManager.postbox, network: self.stateManager.network).start())
                     tasks.add(managedProfilePhotoEmoji(postbox: self.stateManager.postbox, network: self.stateManager.network).start())
                     tasks.add(managedGroupPhotoEmoji(postbox: self.stateManager.postbox, network: self.stateManager.network).start())
+                    tasks.add(managedBackgroundIconEmoji(postbox: self.stateManager.postbox, network: self.stateManager.network).start())
                     tasks.add(managedRecentReactions(postbox: self.stateManager.postbox, network: self.stateManager.network).start())
+                    tasks.add(managedDefaultTagReactions(postbox: self.stateManager.postbox, network: self.stateManager.network).start())
                     tasks.add(_internal_loadedStickerPack(postbox: self.stateManager.postbox, network: self.stateManager.network, reference: .iconStatusEmoji, forceActualized: true).start())
+                    tasks.add(_internal_loadedStickerPack(postbox: self.stateManager.postbox, network: self.stateManager.network, reference: .iconChannelStatusEmoji, forceActualized: true).start())
+                    tasks.add(managedDisabledChannelStatusIconEmoji(postbox: self.stateManager.postbox, network: self.stateManager.network).start())
                     tasks.add(_internal_loadedStickerPack(postbox: self.stateManager.postbox, network: self.stateManager.network, reference: .iconTopicEmoji, forceActualized: true).start())
+                    tasks.add(managedPeerColorUpdates(postbox: self.stateManager.postbox, network: self.stateManager.network).start())
                     
                     self.managedTopReactionsDisposable.set(managedTopReactions(postbox: self.stateManager.postbox, network: self.stateManager.network).start())
                     
                     //tasks.add(managedVoipConfigurationUpdates(postbox: self.stateManager.postbox, network: self.stateManager.network).start())
-                    tasks.add(managedAppConfigurationUpdates(postbox: self.stateManager.postbox, network: self.stateManager.network).start())
+                    self.reloadAppConfiguration()
                     tasks.add(managedPremiumPromoConfigurationUpdates(accountPeerId: self.accountPeerId, postbox: self.stateManager.postbox, network: self.stateManager.network).start())
                     tasks.add(managedAutodownloadSettingsUpdates(accountManager: self.accountManager, network: self.stateManager.network).start())
                     tasks.add(managedTermsOfServiceUpdates(postbox: self.stateManager.postbox, network: self.stateManager.network, stateManager: self.stateManager).start())
                     tasks.add(managedAppUpdateInfo(network: self.stateManager.network, stateManager: self.stateManager).start())
-                    tasks.add(managedAppChangelog(postbox: self.stateManager.postbox, network: self.stateManager.network, stateManager: self.stateManager, appVersion: self.networkArguments.appVersion).start())
                     tasks.add(managedPromoInfoUpdates(accountPeerId: self.accountPeerId, postbox: self.stateManager.postbox, network: self.stateManager.network, viewTracker: self.viewTracker).start())
                     tasks.add(managedLocalizationUpdatesOperations(accountManager: self.accountManager, postbox: self.stateManager.postbox, network: self.stateManager.network).start())
                     tasks.add(managedPendingPeerNotificationSettings(postbox: self.stateManager.postbox, network: self.stateManager.network).start())
                     tasks.add(managedSynchronizeAppLogEventsOperations(postbox: self.stateManager.postbox, network: self.stateManager.network).start())
                     tasks.add(managedNotificationSettingsBehaviors(postbox: self.stateManager.postbox).start())
                     tasks.add(managedThemesUpdates(accountManager: self.accountManager, postbox: self.stateManager.postbox, network: self.stateManager.network).start())
+                    tasks.add(managedContactBirthdays(stateManager: self.stateManager).start())
                     
                     if !self.testingEnvironment {
                         tasks.add(managedChatThemesUpdates(accountManager: self.accountManager, network: self.stateManager.network).start())
@@ -136,7 +144,12 @@ final class AccountTaskManager {
         deinit {
             self.stateDisposable?.dispose()
             self.tasksDisposable.dispose()
+            self.configurationDisposable.dispose()
             self.managedTopReactionsDisposable.dispose()
+        }
+        
+        func reloadAppConfiguration() {
+            self.configurationDisposable.set(managedAppConfigurationUpdates(postbox: self.stateManager.postbox, network: self.stateManager.network).start())
         }
     }
     
@@ -150,5 +163,11 @@ final class AccountTaskManager {
         self.impl = QueueLocalObject(queue: queue, generate: {
             return Impl(queue: queue, accountPeerId: stateManager.accountPeerId, stateManager: stateManager, accountManager: accountManager, networkArguments: networkArguments, viewTracker: viewTracker, mediaReferenceRevalidationContext: mediaReferenceRevalidationContext, isMainApp: isMainApp, testingEnvironment: testingEnvironment)
         })
+    }
+    
+    func reloadAppConfiguration() {
+        self.impl.with { impl in
+            impl.reloadAppConfiguration()
+        }
     }
 }

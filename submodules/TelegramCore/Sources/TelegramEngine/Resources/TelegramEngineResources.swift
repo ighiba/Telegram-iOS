@@ -65,8 +65,17 @@ func bufferedFetch(_ signal: Signal<EngineMediaResource.Fetch.Result, EngineMedi
                     state.isCompleted = true
                 }
                 subscriber.putNext(.moveTempFile(file: file))
-            case .resourceSizeUpdated:
-                break
+            case let .resourceSizeUpdated(size):
+                if size == 0 {
+                    let _ = state.with { state in
+                        state.data.removeAll()
+                        state.isCompleted = true
+                    }
+                    let tempFile = TempBox.shared.tempFile(fileName: "file")
+                    let _ = try? Data().write(to: URL(fileURLWithPath: tempFile.path), options: .atomic)
+                    subscriber.putNext(.moveTempFile(file: tempFile))
+                    subscriber.putCompletion()
+                }
             default:
                 assert(false)
                 break
@@ -402,6 +411,10 @@ public extension TelegramEngine {
         
         public func pushPriorityDownload(resourceId: String, priority: Int = 1) -> Disposable {
             return self.account.network.multiplexedRequestManager.pushPriority(resourceId: resourceId, priority: priority)
+        }
+        
+        public func applicationIcons() -> Signal<TelegramApplicationIcons, NoError> {
+            return _internal_applicationIcons(account: account)
         }
     }
 }

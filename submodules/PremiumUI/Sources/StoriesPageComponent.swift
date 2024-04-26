@@ -12,6 +12,7 @@ import TelegramPresentationData
 import BundleIconComponent
 import AvatarNode
 import AvatarStoryIndicatorComponent
+import ScrollComponent
 
 private final class AvatarComponent: Component {
     let context: AccountContext
@@ -312,13 +313,14 @@ private final class StoriesListComponent: CombinedComponent {
             let strings = context.component.context.sharedContext.currentPresentationData.with { $0 }.strings
             
             let colors = [
-                UIColor(rgb: 0x0275f3),
-                UIColor(rgb: 0x8698ff),
-                UIColor(rgb: 0xc871ff),
-                UIColor(rgb: 0xc356ad),
-                UIColor(rgb: 0xe85c44),
-                UIColor(rgb: 0xff932b),
-                UIColor(rgb: 0xe9af18)
+                UIColor(rgb: 0x007aff),
+                UIColor(rgb: 0x798aff),
+                UIColor(rgb: 0xac64f3),
+                UIColor(rgb: 0xc456ae),
+                UIColor(rgb: 0xe95d44),
+                UIColor(rgb: 0xf2822a),
+                UIColor(rgb: 0xe79519),
+                UIColor(rgb: 0xe7ad19)
             ]
             
             let titleColor = theme.list.itemPrimaryTextColor
@@ -369,6 +371,20 @@ private final class StoriesListComponent: CombinedComponent {
             
             items.append(
                 AnyComponentWithIdentity(
+                    id: "quality",
+                    component: AnyComponent(ParagraphComponent(
+                        title: strings.Premium_Stories_Quality_Title,
+                        titleColor: titleColor,
+                        text: strings.Premium_Stories_Quality_Text,
+                        textColor: textColor,
+                        iconName: "Premium/Stories/Quality",
+                        iconColor: colors[2]
+                    ))
+                )
+            )
+            
+            items.append(
+                AnyComponentWithIdentity(
                     id: "views",
                     component: AnyComponent(ParagraphComponent(
                         title: strings.Premium_Stories_Views_Title,
@@ -376,7 +392,7 @@ private final class StoriesListComponent: CombinedComponent {
                         text: strings.Premium_Stories_Views_Text,
                         textColor: textColor,
                         iconName: "Premium/Stories/Views",
-                        iconColor: colors[2]
+                        iconColor: colors[3]
                     ))
                 )
             )
@@ -390,7 +406,7 @@ private final class StoriesListComponent: CombinedComponent {
                         text: strings.Premium_Stories_Expiration_Text,
                         textColor: textColor,
                         iconName: "Premium/Stories/Expire",
-                        iconColor: colors[3]
+                        iconColor: colors[4]
                     ))
                 )
             )
@@ -404,7 +420,7 @@ private final class StoriesListComponent: CombinedComponent {
                         text: strings.Premium_Stories_Save_Text,
                         textColor: textColor,
                         iconName: "Premium/Stories/Save",
-                        iconColor: colors[4]
+                        iconColor: colors[5]
                     ))
                 )
             )
@@ -418,7 +434,7 @@ private final class StoriesListComponent: CombinedComponent {
                         text: strings.Premium_Stories_Captions_Text,
                         textColor: textColor,
                         iconName: "Premium/Stories/Caption",
-                        iconColor: colors[5]
+                        iconColor: colors[6]
                     ))
                 )
             )
@@ -432,7 +448,7 @@ private final class StoriesListComponent: CombinedComponent {
                         text: strings.Premium_Stories_Format_Text,
                         textColor: textColor,
                         iconName: "Premium/Stories/Format",
-                        iconColor: colors[6]
+                        iconColor: colors[7]
                     ))
                 )
             )
@@ -567,7 +583,6 @@ final class StoriesPageComponent: CombinedComponent {
         let topPanel = Child(BlurredBackgroundComponent.self)
         let topSeparator = Child(Rectangle.self)
         let title = Child(MultilineTextComponent.self)
-        let secondaryTitle = Child(MultilineTextComponent.self)
         
         let resetScroll = ActionSlot<Void>()
         
@@ -609,9 +624,9 @@ final class StoriesPageComponent: CombinedComponent {
                 availableSize: context.availableSize,
                 transition: context.transition
             )
-                        
+                                    
             let background = background.update(
-                component: Rectangle(color: theme.list.plainBackgroundColor),
+                component: Rectangle(color: theme.overallDarkAppearance ? theme.list.blocksBackgroundColor : theme.list.plainBackgroundColor),
                 availableSize: scroll.size,
                 transition: context.transition
             )
@@ -649,17 +664,6 @@ final class StoriesPageComponent: CombinedComponent {
                 availableSize: context.availableSize,
                 transition: context.transition
             )
-            
-            let secondaryTitle = secondaryTitle.update(
-                component: MultilineTextComponent(
-                    text: .plain(NSAttributedString(string: strings.Premium_Stories_AdditionalTitle, font: Font.semibold(17.0), textColor: theme.rootController.navigationBar.primaryTextColor)),
-                    horizontalAlignment: .center,
-                    truncationType: .end,
-                    maximumNumberOfLines: 1
-                ),
-                availableSize: context.availableSize,
-                transition: context.transition
-            )
                   
             let topPanelAlpha: CGFloat
             if state.topContentOffset > 78.0 {
@@ -684,23 +688,9 @@ final class StoriesPageComponent: CombinedComponent {
             let titleOriginY: CGFloat = titleBottomOriginY + fraction * titleOriginDelta
             let titleScale = 1.0 - max(0.0, fraction * 0.2)
 
-            let titleAlpha: CGFloat
-            if fraction > 0.78 {
-                titleAlpha = max(0.0, 1.0 - (fraction - 0.78) / 0.16)
-            } else {
-                titleAlpha = 1.0
-            }
-            let secondaryTitleAlpha: CGFloat = 1.0 - titleAlpha
-            
             context.add(title
                 .position(CGPoint(x: context.availableSize.width / 2.0, y: titleOriginY))
                 .scale(titleScale)
-                .opacity(titleAlpha)
-            )
-            
-            context.add(secondaryTitle
-                .position(CGPoint(x: context.availableSize.width / 2.0, y: titleOriginY))
-                .opacity(secondaryTitleAlpha)
             )
                         
             return scroll.size

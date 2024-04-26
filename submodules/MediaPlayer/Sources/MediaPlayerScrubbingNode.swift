@@ -63,7 +63,7 @@ public func parseMediaPlayerChapters(_ string: NSAttributedString) -> [MediaPlay
     return chapters
 }
 
-private final class MediaPlayerScrubbingNodeButton: ASDisplayNode, UIGestureRecognizerDelegate {
+private final class MediaPlayerScrubbingNodeButton: ASDisplayNode, ASGestureRecognizerDelegate {
     var beginScrubbing: (() -> Void)?
     var endScrubbing: ((Bool) -> Void)?
     var updateScrubbing: ((CGFloat, Double) -> Void)?
@@ -83,7 +83,7 @@ private final class MediaPlayerScrubbingNodeButton: ASDisplayNode, UIGestureReco
         self.view.disablesInteractiveTransitionGestureRecognizer = true
         
         let gestureRecognizer = UIPanGestureRecognizer(target: self, action: #selector(self.panGesture(_:)))
-        gestureRecognizer.delegate = self
+        gestureRecognizer.delegate = self.wrappedGestureRecognizerDelegate
         self.view.addGestureRecognizer(gestureRecognizer)
     }
     
@@ -566,11 +566,13 @@ public final class MediaPlayerScrubbingNode: ASDisplayNode {
                 node.containerNode.addSubnode(node.bufferingNode)
                 node.foregroundNode.addSubnode(node.foregroundContentNode)
                 node.containerNode.addSubnode(node.foregroundNode)
+            
+                let highlightedHandleNode = node.highlightedHandleNode
                 
                 if let handleNodeContainer = node.handleNodeContainer {
                     self.addSubnode(handleNodeContainer)
                     handleNodeContainer.highlighted = { [weak self] highlighted in
-                        if let strongSelf = self, let highlightedHandleNode = node.highlightedHandleNode, let statusValue = strongSelf.statusValue, Double(0.0).isLess(than: statusValue.duration) {
+                        if let strongSelf = self, let highlightedHandleNode, let statusValue = strongSelf.statusValue, Double(0.0).isLess(than: statusValue.duration) {
                             if highlighted {
                                 strongSelf.displayLink?.isPaused = true
                                 
@@ -811,7 +813,7 @@ public final class MediaPlayerScrubbingNode: ASDisplayNode {
         
         if needsAnimation {
             if self.displayLink == nil {
-                let displayLink = SharedDisplayLinkDriver.shared.add { [weak self] in
+                let displayLink = SharedDisplayLinkDriver.shared.add { [weak self] _ in
                     self?.updateProgress()
                 }
                 self.displayLink = displayLink

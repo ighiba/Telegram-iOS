@@ -11,68 +11,77 @@ import AccountContext
 import TelegramStringFormatting
 import UIKitRuntimeUtils
 import MediaResources
+import LegacyMessageInputPanel
+import LegacyMessageInputPanelInputView
 import AttachmentTextInputPanelNode
 
 public enum AttachmentButtonType: Equatable {
     case gallery
     case file
     case location
+    case quickReply
     case contact
     case poll
-    case app(Peer, String, [AttachMenuBots.Bot.IconName: TelegramMediaFile])
+    case app(AttachMenuBot)
     case gift
     case standalone
     
     public static func ==(lhs: AttachmentButtonType, rhs: AttachmentButtonType) -> Bool {
         switch lhs {
-            case .gallery:
-                if case .gallery = rhs {
-                    return true
-                } else {
-                    return false
-                }
-            case .file:
-                if case .file = rhs {
-                    return true
-                } else {
-                    return false
-                }
-            case .location:
-                if case .location = rhs {
-                    return true
-                } else {
-                    return false
-                }
-            case .contact:
-                if case .contact = rhs {
-                    return true
-                } else {
-                    return false
-                }
-            case .poll:
-                if case .poll = rhs {
-                    return true
-                } else {
-                    return false
-                }
-            case let .app(lhsPeer, lhsTitle, lhsIcons):
-                if case let .app(rhsPeer, rhsTitle, rhsIcons) = rhs, arePeersEqual(lhsPeer, rhsPeer), lhsTitle == rhsTitle, lhsIcons == rhsIcons {
-                    return true
-                } else {
-                    return false
-                }
-            case .gift:
-                if case .gift = rhs {
-                    return true
-                } else {
-                    return false
-                }
-            case .standalone:
-                if case .standalone = rhs {
-                    return true
-                } else {
-                    return false
-                }
+        case .gallery:
+            if case .gallery = rhs {
+                return true
+            } else {
+                return false
+            }
+        case .file:
+            if case .file = rhs {
+                return true
+            } else {
+                return false
+            }
+        case .location:
+            if case .location = rhs {
+                return true
+            } else {
+                return false
+            }
+        case .quickReply:
+            if case .quickReply = rhs {
+                return true
+            } else {
+                return false
+            }
+        case .contact:
+            if case .contact = rhs {
+                return true
+            } else {
+                return false
+            }
+        case .poll:
+            if case .poll = rhs {
+                return true
+            } else {
+                return false
+            }
+        case let .app(lhsBot):
+            if case let .app(rhsBot) = rhs, lhsBot.peer.id == rhsBot.peer.id {
+                return true
+            } else {
+                return false
+            }
+        case .gift:
+            if case .gift = rhs {
+                return true
+            } else {
+                return false
+            }
+        case .standalone:
+            if case .standalone = rhs {
+                return true
+            } else {
+                return false
+            }
         }
     }
 }
@@ -179,6 +188,7 @@ public class AttachmentController: ViewController {
     private let context: AccountContext
     private let updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)?
     private let chatLocation: ChatLocation?
+    private let isScheduledMessages: Bool
     private let buttons: [AttachmentButtonType]
     private let initialButton: AttachmentButtonType
     private let fromMenu: Bool
@@ -230,19 +240,19 @@ public class AttachmentController: ViewController {
             didSet {
                 if let mediaPickerContext = self.mediaPickerContext {
                     self.captionDisposable.set((mediaPickerContext.caption
-                    |> deliverOnMainQueue).start(next: { [weak self] caption in
+                    |> deliverOnMainQueue).startStrict(next: { [weak self] caption in
                         if let strongSelf = self {
                             strongSelf.panel.updateCaption(caption ?? NSAttributedString())
                         }
                     }))
                     self.mediaSelectionCountDisposable.set((mediaPickerContext.selectionCount
-                    |> deliverOnMainQueue).start(next: { [weak self] count in
+                    |> deliverOnMainQueue).startStrict(next: { [weak self] count in
                         if let strongSelf = self {
                             strongSelf.updateSelectionCount(count)
                         }
                     }))
                     self.loadingProgressDisposable.set((mediaPickerContext.loadingProgress
-                    |> deliverOnMainQueue).start(next: { [weak self] progress in
+                    |> deliverOnMainQueue).startStrict(next: { [weak self] progress in
                         if let strongSelf = self {
                             strongSelf.panel.updateLoadingProgress(progress)
                             if let layout = strongSelf.validLayout {
@@ -251,13 +261,13 @@ public class AttachmentController: ViewController {
                         }
                     }))
                     self.mainButtonStateDisposable.set((mediaPickerContext.mainButtonState
-                    |> deliverOnMainQueue).start(next: { [weak self] mainButtonState in
+                    |> deliverOnMainQueue).startStrict(next: { [weak self] mainButtonState in
                         if let strongSelf = self {
                             let _ = (strongSelf.panel.animatingTransitionPromise.get()
                             |> filter { value in
                                 return !value
                             }
-                            |> take(1)).start(next: { [weak self] _ in
+                            |> take(1)).startStandalone(next: { [weak self] _ in
                                 if let strongSelf = self {
                                     strongSelf.panel.updateMainButtonState(mainButtonState)
                                     if let layout = strongSelf.validLayout {
@@ -294,7 +304,7 @@ public class AttachmentController: ViewController {
             
             self.container = AttachmentContainer()
             self.container.canHaveKeyboardFocus = true
-            self.panel = AttachmentPanel(context: controller.context, chatLocation: controller.chatLocation, updatedPresentationData: controller.updatedPresentationData, makeEntityInputView: makeEntityInputView)
+            self.panel = AttachmentPanel(context: controller.context, chatLocation: controller.chatLocation, isScheduledMessages: controller.isScheduledMessages, updatedPresentationData: controller.updatedPresentationData, makeEntityInputView: makeEntityInputView)
             self.panel.fromMenu = controller.fromMenu
             self.panel.isStandalone = controller.isStandalone
             
@@ -432,6 +442,8 @@ public class AttachmentController: ViewController {
         deinit {
             self.captionDisposable.dispose()
             self.mediaSelectionCountDisposable.dispose()
+            self.loadingProgressDisposable.dispose()
+            self.mainButtonStateDisposable.dispose()
         }
         
         private var inputContainerHeight: CGFloat?
@@ -445,9 +457,9 @@ public class AttachmentController: ViewController {
             
             if let controller = self.controller {
                 let _ = self.switchToController(controller.initialButton)
-                if case let .app(bot, _, _) = controller.initialButton {
+                if case let .app(bot) = controller.initialButton {
                     if let index = controller.buttons.firstIndex(where: {
-                        if case let .app(otherBot, _, _) = $0, otherBot.id == bot.id {
+                        if case let .app(otherBot) = $0, otherBot.peer.id == bot.peer.id {
                             return true
                         } else {
                             return false
@@ -590,7 +602,7 @@ public class AttachmentController: ViewController {
                 $0
             }
             |> take(1)
-            |> deliverOnMainQueue).start(next: { [weak self, weak snapshotView] _ in
+            |> deliverOnMainQueue).startStandalone(next: { [weak self, weak snapshotView] _ in
                 guard let strongSelf = self, let layout = strongSelf.validLayout else {
                     return
                 }
@@ -907,10 +919,11 @@ public class AttachmentController: ViewController {
     
     public var getSourceRect: (() -> CGRect?)?
     
-    public init(context: AccountContext, updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)? = nil, chatLocation: ChatLocation?, buttons: [AttachmentButtonType], initialButton: AttachmentButtonType = .gallery, fromMenu: Bool = false, hasTextInput: Bool = true, makeEntityInputView: @escaping () -> AttachmentTextInputPanelInputView? = { return nil}) {
+    public init(context: AccountContext, updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>)? = nil, chatLocation: ChatLocation?, isScheduledMessages: Bool = false, buttons: [AttachmentButtonType], initialButton: AttachmentButtonType = .gallery, fromMenu: Bool = false, hasTextInput: Bool = true, makeEntityInputView: @escaping () -> AttachmentTextInputPanelInputView? = { return nil}) {
         self.context = context
         self.updatedPresentationData = updatedPresentationData
         self.chatLocation = chatLocation
+        self.isScheduledMessages = isScheduledMessages
         self.buttons = buttons
         self.initialButton = initialButton
         self.fromMenu = fromMenu
@@ -1037,10 +1050,10 @@ public class AttachmentController: ViewController {
         let disposableSet = DisposableSet()
         let _ = (context.engine.messages.attachMenuBots()
         |> take(1)
-        |> deliverOnMainQueue).start(next: { bots in
+        |> deliverOnMainQueue).startStandalone(next: { bots in
             for bot in bots {
                 for (name, file) in bot.icons {
-                    if [.iOSAnimated, .placeholder].contains(name), let peer = PeerReference(bot.peer) {
+                    if [.iOSAnimated, .placeholder].contains(name), let peer = PeerReference(bot.peer._asPeer()) {
                         if case .placeholder = name {
                             let path = context.account.postbox.mediaBox.cachedRepresentationCompletePath(file.resource.id, representation: CachedPreparedSvgRepresentation())
                             if !FileManager.default.fileExists(atPath: path) {

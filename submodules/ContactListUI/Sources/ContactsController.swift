@@ -21,6 +21,8 @@ import ContextUI
 import QrCodeUI
 import StoryContainerScreen
 import ChatListHeaderComponent
+import TelegramIntents
+import UndoUI
 
 private final class HeaderContextReferenceContentSource: ContextReferenceContentSource {
     private let controller: ViewController
@@ -116,6 +118,8 @@ public class ContactsController: ViewController {
     private var presentationData: PresentationData
     private var presentationDataDisposable: Disposable?
     private var authorizationDisposable: Disposable?
+    private var selectionDisposable: Disposable?
+    private var actionDisposable = MetaDisposable()
     private let sortOrderPromise = Promise<ContactsSortOrder>()
     private let isInVoiceOver = ValuePromise<Bool>(false)
     
@@ -184,7 +188,7 @@ public class ContactsController: ViewController {
                     strongSelf.updateThemeAndStrings()
                 }
             }
-        })
+        }).strict()
         
         if #available(iOSApplicationExtension 10.0, iOS 10.0, *) {
             self.authorizationDisposable = (combineLatest(DeviceAccess.authorizationStatus(subject: .contacts), combineLatest(context.sharedContext.accountManager.noticeEntry(key: ApplicationSpecificNotice.permissionWarningKey(permission: .contacts)!), context.account.postbox.preferencesView(keys: [PreferencesKeys.contactsSettings]), context.sharedContext.accountManager.sharedData(keys: [ApplicationSpecificSharedDataKeys.contactSynchronizationSettings]))
@@ -211,7 +215,7 @@ public class ContactsController: ViewController {
                     strongSelf.tabBarItem.badgeValue = status != .allowed && !suppressed ? "!" : nil
                     strongSelf.sortOrderPromise.set(.single(sortOrder))
                 }
-            })
+            }).strict()
         } else {
             self.sortOrderPromise.set(context.sharedContext.accountManager.sharedData(keys: [ApplicationSpecificSharedDataKeys.contactSynchronizationSettings])
             |> map { sharedData -> ContactsSortOrder in
@@ -230,6 +234,8 @@ public class ContactsController: ViewController {
     deinit {
         self.presentationDataDisposable?.dispose()
         self.authorizationDisposable?.dispose()
+        self.actionDisposable.dispose()
+        self.selectionDisposable?.dispose()
     }
     
     private func updateThemeAndStrings() {
@@ -339,8 +345,21 @@ public class ContactsController: ViewController {
             self?.activateSearch()
         }
         
-        self.contactsNode.contactListNode.openPeer = { peer, _ in
-            openPeer(peer, false)
+        self.contactsNode.contactListNode.openPeer = { [weak self] peer, _ in
+            guard let self else {
+                return
+            }
+            if let _ = self.contactsNode.contactListNode.selectionState {
+                self.contactsNode.contactListNode.updateSelectionState({ current in
+                    if let updatedState = current?.withToggledPeerId(peer.id), !updatedState.selectedPeerIndices.isEmpty {
+                        return updatedState
+                    } else {
+                        return nil
+                    }
+                })
+            } else {
+                openPeer(peer, false)
+            }
         }
         
         self.contactsNode.requestAddContact = { [weak self] phoneNumber in
@@ -449,7 +468,7 @@ public class ContactsController: ViewController {
                             let _ = (strongSelf.context.account.postbox.loadedPeerWithId(strongSelf.context.account.peerId)
                             |> deliverOnMainQueue).start(next: { [weak self, weak controller] peer in
                                 if let strongSelf = self, let controller = controller {
-                                    controller.present(strongSelf.context.sharedContext.makeChatQrCodeScreen(context: strongSelf.context, peer: peer, threadId: nil), in: .window(.root))
+                                    controller.present(strongSelf.context.sharedContext.makeChatQrCodeScreen(context: strongSelf.context, peer: peer, threadId: nil, temporary: false), in: .window(.root))
                                 }
                             })
                         }
@@ -467,7 +486,44 @@ public class ContactsController: ViewController {
             self?.presentSortMenu(sourceView: sourceNode.view, gesture: gesture)
         }
         
+        let previousToolbarValue = Atomic<Toolbar?>(value: nil)
+        self.selectionDisposable = (self.contactsNode.contactListNode.selectionStateSignal
+        |> deliverOnMainQueue).start(next: { [weak self] state in
+            guard let self, let layout = self.validLayout else {
+                return
+            }
+            
+            let toolbar: Toolbar?
+            if let state, state.selectedPeerIndices.count > 0 {
+                toolbar = Toolbar(leftAction: nil, rightAction: nil, middleAction: ToolbarAction(title: self.presentationData.strings.ContactList_DeleteConfirmation(Int32(state.selectedPeerIndices.count)), isEnabled: true, color: .custom(self.presentationData.theme.actionSheet.destructiveActionTextColor)))
+            } else {
+                toolbar = nil
+            }
+            
+            let _ = self.contactsNode.updateNavigationBar(layout: layout, transition: .animated(duration: 0.2, curve: .easeInOut))
+            
+            var transition: ContainedViewLayoutTransition = .immediate
+            let previousToolbar = previousToolbarValue.swap(toolbar)
+            if (previousToolbar == nil) != (toolbar == nil) {
+                transition = .animated(duration: 0.4, curve: .spring)
+            }
+            self.setToolbar(toolbar, transition: transition)
+        })
+        
         self.displayNodeDidLoad()
+    }
+    
+    override public func toolbarActionSelected(action: ToolbarActionOption) {
+        guard case .middle = action, let selectionState = self.contactsNode.contactListNode.selectionState else {
+            return
+        }
+        var peerIds: [EnginePeer.Id] = []
+        for contactPeerId in selectionState.selectedPeerIndices.keys {
+            if case let .peer(peerId) = contactPeerId {
+                peerIds.append(peerId)
+            }
+        }
+        self.requestDeleteContacts(peerIds: peerIds)
     }
     
     override public func viewWillAppear(_ animated: Bool) {
@@ -572,8 +628,105 @@ public class ContactsController: ViewController {
             })))
             return items
         }
-        let contextController = ContextController(account: self.context.account, presentationData: self.presentationData, source: .reference(HeaderContextReferenceContentSource(controller: self, sourceView: sourceView)), items: items |> map { ContextController.Items(content: .list($0)) }, gesture: gesture)
+        let contextController = ContextController(presentationData: self.presentationData, source: .reference(HeaderContextReferenceContentSource(controller: self, sourceView: sourceView)), items: items |> map { ContextController.Items(content: .list($0)) }, gesture: gesture)
         self.presentInGlobalOverlay(contextController)
+    }
+    
+    public func beginSelection(peerId: EnginePeer.Id) {
+        self.contactsNode.contactListNode.updateSelectionState { _ in
+            return ContactListNodeGroupSelectionState().withToggledPeerId(.peer(peerId))
+        }
+    }
+    
+    public func requestDeleteContacts(peerIds: [EnginePeer.Id]) {
+        guard !peerIds.isEmpty else {
+            return
+        }
+        let actionSheet = ActionSheetController(presentationData: self.presentationData)
+        var items: [ActionSheetItem] = []
+        
+        let actionTitle: String
+        if peerIds.count > 1 {
+            actionTitle = self.presentationData.strings.ContactList_DeleteConfirmation(Int32(peerIds.count))
+        } else {
+            actionTitle = self.presentationData.strings.ContactList_DeleteConfirmationSingle
+        }
+        
+        items.append(ActionSheetButtonItem(title: actionTitle, color: .destructive, action: { [weak self, weak actionSheet] in
+            actionSheet?.dismissAnimated()
+            
+            guard let self else {
+                return
+            }
+            
+            self.contactsNode.contactListNode.updateSelectionState { _ in
+                return nil
+            }
+            
+            self.contactsNode.contactListNode.updatePendingRemovalPeerIds { state in
+                var state = state
+                for peerId in peerIds {
+                    state.insert(peerId)
+                }
+                return state
+            }
+            
+            let text = self.presentationData.strings.ContactList_DeletedContacts(Int32(peerIds.count))
+            
+            self.present(UndoOverlayController(presentationData: self.context.sharedContext.currentPresentationData.with { $0 }, content: .removedChat(title: text, text: nil), elevatedLayout: false, animateInAsReplacement: true, action: { [weak self] value in
+                guard let self else {
+                    return false
+                }
+                if value == .commit {
+                    let deleteContactsFromDevice: Signal<Never, NoError>
+                    if let contactDataManager = self.context.sharedContext.contactDataManager {
+                        deleteContactsFromDevice = combineLatest(peerIds.map { contactDataManager.deleteContactWithAppSpecificReference(peerId: $0) }
+                        )
+                        |> ignoreValues
+                    } else {
+                        deleteContactsFromDevice = .complete()
+                    }
+                    
+                    let deleteSignal = self.context.engine.contacts.deleteContacts(peerIds: peerIds)
+                    |> then(deleteContactsFromDevice)
+                    
+                    for peerId in peerIds {
+                        deleteSendMessageIntents(peerId: peerId)
+                    }
+                    
+                    self.contactsNode.contactListNode.updatePendingRemovalPeerIds { state in
+                        var state = state
+                        for peerId in peerIds {
+                            state.remove(peerId)
+                        }
+                        return state
+                    }
+                    
+                    let _ = deleteSignal.start()
+                    
+                    return true
+                } else if value == .undo {
+                    self.contactsNode.contactListNode.updatePendingRemovalPeerIds { state in
+                        var state = state
+                        for peerId in peerIds {
+                            state.remove(peerId)
+                        }
+                        return state
+                    }
+                    return true
+                }
+                return false
+            }), in: .current)
+        }))
+        actionSheet.setItemGroups([
+            ActionSheetItemGroup(items: items),
+            ActionSheetItemGroup(items: [
+                ActionSheetButtonItem(title: self.presentationData.strings.Common_Cancel, color: .accent, font: .bold, action: { [weak actionSheet] in
+                    actionSheet?.dismissAnimated()
+                })
+            ])
+        ])
+        self.present(actionSheet, in: .window(.root))
     }
     
     @objc func addPressed() {
@@ -644,7 +797,7 @@ public class ContactsController: ViewController {
             })
         })))
         
-        let controller = ContextController(account: self.context.account, presentationData: self.presentationData, source: .extracted(ContactsTabBarContextExtractedContentSource(controller: self, sourceNode: sourceNode)), items: .single(ContextController.Items(content: .list(items))), recognizer: nil, gesture: gesture)
+        let controller = ContextController(presentationData: self.presentationData, source: .extracted(ContactsTabBarContextExtractedContentSource(controller: self, sourceNode: sourceNode)), items: .single(ContextController.Items(content: .list(items))), recognizer: nil, gesture: gesture)
         self.context.sharedContext.mainWindow?.presentInGlobalOverlay(controller)
     }
 }

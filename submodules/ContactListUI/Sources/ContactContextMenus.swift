@@ -125,7 +125,7 @@ func contactContextMenuItems(context: AccountContext, peerId: EnginePeer.Id, con
         if canStartSecretChat {
             items.append(.action(ContextMenuActionItem(text: strings.ContactList_Context_StartSecretChat, icon: { theme in generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Timer"), color: theme.contextMenu.primaryColor) }, action: { _, f in
                 let _ = (context.engine.peers.mostRecentSecretChat(id: peerId)
-                |> deliverOnMainQueue).start(next: { currentPeerId in
+                |> deliverOnMainQueue).start(next: { [weak contactsController] currentPeerId in
                     if let currentPeerId = currentPeerId {
                         let _ = (context.engine.data.get(
                             TelegramEngine.EngineData.Item.Peer.Peer(id: currentPeerId)
@@ -188,10 +188,12 @@ func contactContextMenuItems(context: AccountContext, peerId: EnginePeer.Id, con
                                 let presentationData = context.sharedContext.currentPresentationData.with { $0 }
                                 let text: String
                                 switch error {
-                                    case .limitExceeded:
-                                        text = presentationData.strings.TwoStepAuth_FloodError
-                                    default:
-                                        text = presentationData.strings.Login_UnknownError
+                                case .limitExceeded:
+                                    text = presentationData.strings.TwoStepAuth_FloodError
+                                case .premiumRequired:
+                                    text = presentationData.strings.Conversation_SendMessageErrorNonPremiumForbidden(peer.compactDisplayTitle).string
+                                default:
+                                    text = presentationData.strings.Login_UnknownError
                                 }
                                 contactsController.present(textAlertController(context: context, title: nil, text: text, actions: [TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {})]), in: .window(.root))
                             }
@@ -228,6 +230,25 @@ func contactContextMenuItems(context: AccountContext, peerId: EnginePeer.Id, con
                 f(.default)
             })))
         }
+        
+        items.append(.action(ContextMenuActionItem(text: strings.ContactList_Context_Delete, textColor: .destructive, icon: { theme in generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Delete"), color: theme.contextMenu.destructiveColor)
+        }, action: { [weak contactsController] _, f in
+            if let contactsController {
+                contactsController.requestDeleteContacts(peerIds: [peerId])
+            }
+            f(.dismissWithoutContent)
+        })))
+        
+        items.append(.separator)
+        
+        items.append(.action(ContextMenuActionItem(text: strings.ContactList_Context_Select, icon: { theme in generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Select"), color: theme.contextMenu.primaryColor)
+        }, action: { [weak contactsController] _, f in
+            if let contactsController {
+                contactsController.beginSelection(peerId: peerId)
+            }
+            f(.default)
+        })))
+        
         return items
     }
 }

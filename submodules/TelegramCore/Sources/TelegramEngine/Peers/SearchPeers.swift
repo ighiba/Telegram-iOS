@@ -4,7 +4,6 @@ import SwiftSignalKit
 import TelegramApi
 import MtProtoKit
 
-
 public struct FoundPeer: Equatable {
     public let peer: Peer
     public let subscribers: Int32?
@@ -19,10 +18,13 @@ public struct FoundPeer: Equatable {
     }
 }
 
-func _internal_searchPeers(account: Account, query: String) -> Signal<([FoundPeer], [FoundPeer]), NoError> {
-    let accountPeerId = account.peerId
-    
-    let searchResult = account.network.request(Api.functions.contacts.search(q: query, limit: 20), automaticFloodWait: false)
+public enum TelegramSearchPeersScope {
+    case everywhere
+    case channels
+}
+
+public func _internal_searchPeers(accountPeerId: PeerId, postbox: Postbox, network: Network, query: String, scope: TelegramSearchPeersScope) -> Signal<([FoundPeer], [FoundPeer]), NoError> {
+    let searchResult = network.request(Api.functions.contacts.search(q: query, limit: 20), automaticFloodWait: false)
     |> map(Optional.init)
     |> `catch` { _ in
         return Signal<Api.contacts.Found?, NoError>.single(nil)
@@ -32,7 +34,7 @@ func _internal_searchPeers(account: Account, query: String) -> Signal<([FoundPee
         if let result = result {
             switch result {
             case let .found(myResults, results, chats, users):
-                return account.postbox.transaction { transaction -> ([FoundPeer], [FoundPeer]) in
+                return postbox.transaction { transaction -> ([FoundPeer], [FoundPeer]) in
                     var subscribers: [PeerId: Int32] = [:]
                     
                     let parsedPeers = AccumulatedPeers(transaction: transaction, chats: chats, users: users)
@@ -40,7 +42,7 @@ func _internal_searchPeers(account: Account, query: String) -> Signal<([FoundPee
                     for chat in chats {
                         if let groupOrChannel = parseTelegramGroupOrChannel(chat: chat) {
                             switch chat {
-                            case let .channel(_, _, _, _, _, _, _, _, _, _, _, _, participantsCount, _):
+                            case let .channel(_, _, _, _, _, _, _, _, _, _, _, _, participantsCount, _, _, _, _, _, _):
                                 if let participantsCount = participantsCount {
                                     subscribers[groupOrChannel.id] = participantsCount
                                 }
@@ -74,6 +76,26 @@ func _internal_searchPeers(account: Account, query: String) -> Signal<([FoundPee
                         }
                     }
                     
+                    switch scope {
+                    case .everywhere:
+                        break
+                    case .channels:
+                        renderedMyPeers = renderedMyPeers.filter { item in
+                            if let channel = item.peer as? TelegramChannel, case .broadcast = channel.info {
+                                return true
+                            } else {
+                                return false
+                            }
+                        }
+                        renderedPeers = renderedPeers.filter { item in
+                            if let channel = item.peer as? TelegramChannel, case .broadcast = channel.info {
+                                return true
+                            } else {
+                                return false
+                            }
+                        }
+                    }
+                    
                     return (renderedMyPeers, renderedPeers)
                 }
             }
@@ -85,3 +107,8 @@ func _internal_searchPeers(account: Account, query: String) -> Signal<([FoundPee
     return processedSearchResult
 }
 
+func _internal_searchLocalSavedMessagesPeers(account: Account, query: String, indexNameMapping: [EnginePeer.Id: [PeerIndexNameRepresentation]]) -> Signal<[EnginePeer], NoError> {
+    return account.postbox.transaction { transaction -> [EnginePeer] in
+        return transaction.searchSubPeers(peerId: account.peerId, query: query, indexNameMapping: indexNameMapping).map(EnginePeer.init)
+    }
+}

@@ -62,7 +62,7 @@ public class ComposeControllerImpl: ViewController, ComposeController {
         }
         
         self.presentationDataDisposable = (context.sharedContext.presentationData
-        |> deliverOnMainQueue).start(next: { [weak self] presentationData in
+        |> deliverOnMainQueue).startStrict(next: { [weak self] presentationData in
             if let strongSelf = self {
                 let previousTheme = strongSelf.presentationData.theme
                 let previousStrings = strongSelf.presentationData.strings
@@ -124,14 +124,14 @@ public class ComposeControllerImpl: ViewController, ComposeController {
 
         self.contactsNode.openCreateNewGroup = { [weak self] in
             if let strongSelf = self {
-                let controller = strongSelf.context.sharedContext.makeContactMultiselectionController(ContactMultiselectionControllerParams(context: strongSelf.context, mode: .groupCreation, options: []))
+                let controller = strongSelf.context.sharedContext.makeContactMultiselectionController(ContactMultiselectionControllerParams(context: strongSelf.context, mode: .groupCreation, options: [], onlyWriteable: true))
                 (strongSelf.navigationController as? NavigationController)?.pushViewController(controller, completion: { [weak self] in
                     if let strongSelf = self {
                         strongSelf.contactsNode.contactListNode.listNode.clearHighlightAnimated(true)
                     }
                 })
                 strongSelf.createActionDisposable.set((controller.result
-                |> deliverOnMainQueue).start(next: { [weak controller] result in
+                |> deliverOnMainQueue).startStrict(next: { [weak controller] result in
                     var peerIds: [ContactListPeerId] = []
                     if case let .result(peerIdsValue, _) = result {
                         peerIds = peerIdsValue
@@ -156,11 +156,11 @@ public class ComposeControllerImpl: ViewController, ComposeController {
                 let controller = ContactSelectionControllerImpl(ContactSelectionControllerParams(context: strongSelf.context, autoDismiss: false, title: { $0.Compose_NewEncryptedChatTitle }))
                 strongSelf.createActionDisposable.set((controller.result
                     |> take(1)
-                    |> deliverOnMainQueue).start(next: { [weak controller] result in
+                    |> deliverOnMainQueue).startStrict(next: { [weak controller] result in
                     if let strongSelf = self, let (contactPeers, _, _, _, _) = result, case let .peer(peer, _, _) = contactPeers.first {
                         controller?.dismissSearch()
                         controller?.displayNavigationActivity = true
-                        strongSelf.createActionDisposable.set((strongSelf.context.engine.peers.createSecretChat(peerId: peer.id) |> deliverOnMainQueue).start(next: { peerId in
+                        strongSelf.createActionDisposable.set((strongSelf.context.engine.peers.createSecretChat(peerId: peer.id) |> deliverOnMainQueue).startStrict(next: { peerId in
                             if let strongSelf = self, let controller = controller {
                                 controller.displayNavigationActivity = false
                                 (controller.navigationController as? NavigationController)?.replaceAllButRootController(ChatControllerImpl(context: strongSelf.context, chatLocation: .peer(id: peerId)), animated: true)
@@ -192,7 +192,7 @@ public class ComposeControllerImpl: ViewController, ComposeController {
         self.contactsNode.openCreateContact = { [weak self] in
             let _ = (DeviceAccess.authorizationStatus(subject: .contacts)
             |> take(1)
-            |> deliverOnMainQueue).start(next: { status in
+            |> deliverOnMainQueue).startStandalone(next: { status in
                 guard let strongSelf = self else {
                     return
                 }

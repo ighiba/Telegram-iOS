@@ -311,6 +311,7 @@ public func folderInviteLinkListController(context: AccountContext, updatedPrese
     var presentInGlobalOverlayImpl: ((ViewController) -> Void)?
     var dismissImpl: (() -> Void)?
     var attemptNavigationImpl: ((@escaping () -> Void) -> Bool)?
+    var navigationController: (() -> NavigationController?)?
     
     var dismissTooltipsImpl: (() -> Void)?
     
@@ -385,7 +386,21 @@ public func folderInviteLinkListController(context: AccountContext, updatedPrese
                     }
                 }
                 
-                presentControllerImpl?(UndoOverlayController(presentationData: presentationData, content: .forward(savedMessages: savedMessages, text: text), elevatedLayout: false, animateInAsReplacement: true, action: { _ in return false }), nil)
+                presentControllerImpl?(UndoOverlayController(presentationData: presentationData, content: .forward(savedMessages: savedMessages, text: text), elevatedLayout: false, animateInAsReplacement: true, action: { action in
+                    if savedMessages, action == .info {
+                        let _ = (context.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: context.account.peerId))
+                        |> deliverOnMainQueue).start(next: { peer in
+                            guard let peer else {
+                                return
+                            }
+                            guard let navigationController = navigationController?() else {
+                                return
+                            }
+                            context.sharedContext.navigateToChatController(NavigateToChatControllerParams(navigationController: navigationController, context: context, chatLocation: .peer(peer), forceOpenChat: true))
+                        })
+                    }
+                    return false
+                }), nil)
             })
         }
         shareController.actionCompleted = {
@@ -465,7 +480,7 @@ public func folderInviteLinkListController(context: AccountContext, updatedPrese
             })
         })))
 
-        let contextController = ContextController(account: context.account, presentationData: presentationData, source: .reference(InviteLinkContextReferenceContentSource(controller: controller, sourceNode: node)), items: .single(ContextController.Items(content: .list(items))), gesture: gesture)
+        let contextController = ContextController(presentationData: presentationData, source: .reference(InviteLinkContextReferenceContentSource(controller: controller, sourceNode: node)), items: .single(ContextController.Items(content: .list(items))), gesture: gesture)
         presentInGlobalOverlayImpl?(contextController)
     }, peerAction: { peer, isEnabled in
         let presentationData = context.sharedContext.currentPresentationData.with { $0 }
@@ -492,7 +507,7 @@ public func folderInviteLinkListController(context: AccountContext, updatedPrese
                 didDisplayAddPeerNotice = true
                 
                 dismissTooltipsImpl?()
-                displayTooltipImpl?(.info(title: nil, text: presentationData.strings.FolderLinkScreen_ToastNewChatAdded, timeout: 8), true)
+                displayTooltipImpl?(.info(title: nil, text: presentationData.strings.FolderLinkScreen_ToastNewChatAdded, timeout: 8, customUndoText: nil), true)
             }
         } else {
             let text: String
@@ -592,11 +607,11 @@ public func folderInviteLinkListController(context: AccountContext, updatedPrese
                     
                     dismissTooltipsImpl?()
                     let presentationData = context.sharedContext.currentPresentationData.with { $0 }
-                    presentControllerImpl?(UndoOverlayController(presentationData: presentationData, content: .info(title: nil, text: presentationData.strings.FolderLinkScreen_SaveUnknownError, timeout: nil), elevatedLayout: false, animateInAsReplacement: false, action: { _ in return false }), nil)
+                    presentControllerImpl?(UndoOverlayController(presentationData: presentationData, content: .info(title: nil, text: presentationData.strings.FolderLinkScreen_SaveUnknownError, timeout: nil, customUndoText: nil), elevatedLayout: false, animateInAsReplacement: false, action: { _ in return false }), nil)
                 }, completed: {
                     let presentationData = context.sharedContext.currentPresentationData.with { $0 }
                     linkUpdated(ExportedChatFolderLink(title: state.title ?? "", link: currentLink.link, peerIds: Array(state.selectedPeerIds), isRevoked: false))
-                    displayTooltipImpl?(.info(title: nil, text: presentationData.strings.FolderLinkScreen_ToastLinkUpdated, timeout: 3), false)
+                    displayTooltipImpl?(.info(title: nil, text: presentationData.strings.FolderLinkScreen_ToastLinkUpdated, timeout: 3, customUndoText: nil), false)
                     
                     dismissImpl?()
                 }))
@@ -745,6 +760,9 @@ public func folderInviteLinkListController(context: AccountContext, updatedPrese
             f()
             return true
         }
+    }
+    navigationController = { [weak controller] in
+        return controller?.navigationController as? NavigationController
     }
     pushControllerImpl = { [weak controller] c in
         if let controller = controller {

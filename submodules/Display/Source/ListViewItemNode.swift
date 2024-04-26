@@ -52,17 +52,19 @@ public enum ListViewItemNodeVisibility: Equatable {
     case visible(CGFloat, CGRect)
 }
 
-public struct ListViewItemLayoutParams {
+public struct ListViewItemLayoutParams: Equatable {
     public let width: CGFloat
     public let leftInset: CGFloat
     public let rightInset: CGFloat
     public let availableHeight: CGFloat
+    public let isStandalone: Bool
     
-    public init(width: CGFloat, leftInset: CGFloat, rightInset: CGFloat, availableHeight: CGFloat) {
+    public init(width: CGFloat, leftInset: CGFloat, rightInset: CGFloat, availableHeight: CGFloat, isStandalone: Bool = false) {
         self.width = width
         self.leftInset = leftInset
         self.rightInset = rightInset
         self.availableHeight = availableHeight
+        self.isStandalone = isStandalone
     }
 }
 
@@ -237,7 +239,7 @@ open class ListViewItemNode: ASDisplayNode, AccessibilityFocusableNode {
         self.isLayerBacked = layerBacked
     }
     
-    var apparentHeight: CGFloat = 0.0
+    open var apparentHeight: CGFloat = 0.0
     public private(set) var apparentHeightTransition: (CGFloat, CGFloat)?
     private var _bounds: CGRect = CGRect()
     private var _position: CGPoint = CGPoint()
