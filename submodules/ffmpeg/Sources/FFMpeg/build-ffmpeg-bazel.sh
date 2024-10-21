@@ -19,7 +19,7 @@ done
 BUILD_DIR=$3
 SOURCE_DIR=$4
 
-FF_VERSION="4.1"
+FF_VERSION="4.3.1"
 SOURCE="$SOURCE_DIR/ffmpeg-$FF_VERSION"
 
 GAS_PREPROCESSOR_PATH="$SOURCE_DIR/gas-preprocessor.pl"
@@ -50,9 +50,9 @@ CONFIGURE_FLAGS="--enable-cross-compile --disable-programs \
                  --enable-bsf=aac_adtstoasc,vp9_superframe,h264_mp4toannexb \
                  --enable-decoder=h264,libvpx_vp9,hevc,libopus,mp3,aac,flac,alac_at,pcm_s16le,pcm_s24le,pcm_f32le,gsm_ms_at \
                  --enable-encoder=libvpx_vp9,aac_at \
-                 --enable-demuxer=aac,mov,m4v,mp3,ogg,libopus,flac,wav,aiff,matroska,mpegts \
+                 --enable-demuxer=aac,mov,m4v,mp3,ogg,libopus,flac,wav,aiff,matroska,mpegts,hls,mp4 \
                  --enable-parser=aac,h264,mp3,libopus \
-                 --enable-protocol=file \
+                 --enable-protocol=file,http,https,hls \
                  --enable-muxer=mp4,matroska,mpegts \
                  "
 

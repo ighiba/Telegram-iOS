@@ -100,6 +100,12 @@ ffmpeg_header_paths = [
     "libavcodec/vorbis_parser.h",
     "libavcodec/dxva2.h",
     "libavcodec/dv_profile.h",
+    "libavcodec/bsf.h",
+    "libavcodec/codec_id.h",
+    "libavcodec/codec_par.h",
+    "libavcodec/packet.h",
+    "libavcodec/codec.h",
+    "libavcodec/codec_desc.h",
     "libswresample/version.h",
     "libswresample/swresample.h",
 ]
