@@ -51,6 +51,21 @@ int FFMpegCodecIdVP9 = AV_CODEC_ID_VP9;
     return result >= 0;
 }
 
+- (bool)openInput:(const char *)url {
+    AVDictionary *options = nil;
+    av_dict_set(&options, "buffer_size", "50000000", 0);
+    avformat_network_init();
+    int result = avformat_open_input(&_impl, url, nil, &options);
+    NSLog(@"status %d", result);
+    av_dict_free(&options);
+    if (_impl != nil) {
+        _impl->flags |= AVFMT_FLAG_FAST_SEEK;
+        _impl->flags |= AVFMT_FLAG_AUTO_BSF;
+    }
+    
+    return result >= 0;
+}
+
 - (bool)findStreamInfo {
     int result = avformat_find_stream_info(_impl, nil);
     return result >= 0;
@@ -67,6 +82,10 @@ int FFMpegCodecIdVP9 = AV_CODEC_ID_VP9;
 - (bool)readFrameIntoPacket:(FFMpegPacket *)packet {
     int result = av_read_frame(_impl, (AVPacket *)[packet impl]);
     return result >= 0;
+}
+
+- (int)readFrameWithResultIntoPacket:(FFMpegPacket *)packet {
+    return av_read_frame(_impl, (AVPacket *)[packet impl]);
 }
 
 - (NSArray<NSNumber *> *)streamIndicesForType:(FFMpegAVFormatStreamType)type {
@@ -105,6 +124,10 @@ int FFMpegCodecIdVP9 = AV_CODEC_ID_VP9;
 
 - (int64_t)durationAtStreamIndex:(int32_t)streamIndex {
     return _impl->streams[streamIndex]->duration;
+}
+
+- (int64_t)startTimeAtStreamIndex:(int32_t)streamIndex {
+    return _impl->streams[streamIndex]->start_time;
 }
 
 - (bool)codecParamsAtStreamIndex:(int32_t)streamIndex toContext:(FFMpegAVCodecContext *)context {

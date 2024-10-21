@@ -9,7 +9,8 @@ typedef NS_ENUM(NSUInteger, FFMpegAVFrameColorRange) {
 
 typedef NS_ENUM(NSUInteger, FFMpegAVFramePixelFormat) {
     FFMpegAVFramePixelFormatYUV,
-    FFMpegAVFramePixelFormatYUVA
+    FFMpegAVFramePixelFormatYUVA,
+    FFMpegAVFramePixelFormatVIDEOTOOLBOX
 };
 
 @interface FFMpegAVFrame : NSObject

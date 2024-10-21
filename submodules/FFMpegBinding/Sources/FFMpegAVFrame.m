@@ -29,6 +29,9 @@
             case FFMpegAVFramePixelFormatYUVA:
                 _impl->format = AV_PIX_FMT_YUVA420P;
                 break;
+            case FFMpegAVFramePixelFormatVIDEOTOOLBOX:
+                _impl->format = AV_PIX_FMT_VIDEOTOOLBOX;
+                break;
         }
         _impl->width = width;
         _impl->height = height;
@@ -90,6 +93,8 @@
     switch (_impl->format) {
         case AV_PIX_FMT_YUVA420P:
             return FFMpegAVFramePixelFormatYUVA;
+        case AV_PIX_FMT_VIDEOTOOLBOX:
+            return FFMpegAVFramePixelFormatVIDEOTOOLBOX;
         default:
             return FFMpegAVFramePixelFormatYUV;
     }
