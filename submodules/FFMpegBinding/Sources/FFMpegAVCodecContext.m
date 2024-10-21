@@ -75,4 +75,14 @@
     avcodec_flush_buffers(_impl);
 }
 
+- (void)enableHardwareAcceleration {
+    AVBufferRef *hw_device_ctx = av_hwdevice_ctx_alloc(AV_HWDEVICE_TYPE_VIDEOTOOLBOX);
+    _impl->hw_device_ctx = hw_device_ctx;
+    av_hwdevice_ctx_init(hw_device_ctx);
+}
+
+- (void)disableHardwareAcceleration {
+    _impl->hw_device_ctx = nil;
+}
+
 @end
