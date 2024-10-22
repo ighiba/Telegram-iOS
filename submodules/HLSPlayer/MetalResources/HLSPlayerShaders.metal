@@ -22,7 +22,8 @@ fragment float4 fragmentShader(VertexOut in [[stage_in]],
                                texture2d<float, access::sample> yTexture [[texture(0)]],
                                texture2d<float, access::sample> uvTexture [[texture(1)]],
                                sampler textureSampler [[sampler(0)]]) {
-    float Y = yTexture.sample(textureSampler, in.texCoord.xy).r;
+    float Y = clamp((yTexture.sample(textureSampler, in.texCoord.xy).r - 16.0 / 255.0) / (225.0 / 255.0), 0.0, 1.0);
+
     float U = uvTexture.sample(textureSampler, in.texCoord.xy).r - 0.5;
     float V = uvTexture.sample(textureSampler, in.texCoord.xy).g - 0.5;
     
