@@ -120,6 +120,10 @@ public final class HLSMediaDecoder {
         self.taskQueue = SimpleQueue()
     }
     
+    deinit {
+        print("\(Self.self) deinit")
+    }
+    
     public func openMediaSource(_ mediaSource: HLSMediaSource) {
         self.mediaSource = mediaSource
         

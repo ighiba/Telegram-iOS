@@ -22,15 +22,23 @@ public final class HLSPlayerItem {
         }
     }
     
-    public let url: URL
+    public var presentationSize: CGSize {
+        streamManager.currentStreamPresentationSize()
+    }
     
     private let streamManager: HLSStreamManager
     var mediaSource: HLSMediaSource?
     
-    init(url: URL) {
+    public let url: URL
+    
+    public init(url: URL) {
         self.url = url
         self.streamManager = HLSStreamManager()
         self.prepareMediaSourceForPlayback()
+    }
+    
+    deinit {
+        print("\(Self.self) deinit")
     }
     
     func downgradeStreamQuality() {

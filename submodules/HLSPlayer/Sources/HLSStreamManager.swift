@@ -44,6 +44,10 @@ final class HLSStreamManager {
     private var currentStream: HLSStream?
     private var currentMediaSource: HLSMediaSource?
     
+    deinit {
+        print("\(Self.self) deinit")
+    }
+    
     func fetchMediaSource(masterPlaylistUrl: URL, initOnQueue queue: DispatchQueue, completion: @escaping (Result<HLSMediaSource, HLSStreamManager.Error>) -> Void) {
         URLSession.shared.dataTask(with: createRequestGET(url: masterPlaylistUrl)) { [weak self] data, response, error in
             if let error {
@@ -136,6 +140,11 @@ final class HLSStreamManager {
             }
             completion(optimalStream)
         }
+    }
+    
+    func currentStreamPresentationSize() -> CGSize {
+        guard let currentStream else { return .zero }
+        return CGSize(width: currentStream.resolution.width, height: currentStream.resolution.height)
     }
     
     private func streamWithOptimalQuality(

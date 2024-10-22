@@ -65,6 +65,10 @@ public class HLSBufferManager<Item> {
         self.isLoggingEnabled = isLoggingEnabled
     }
     
+    deinit {
+        print("\(label) \(Self.self) deinit")
+    }
+    
     public func addItem(_ item: Item) {
         bufferLock.lock()
         buffer.append(item)

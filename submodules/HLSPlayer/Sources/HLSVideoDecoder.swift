@@ -32,6 +32,10 @@ public final class HLSVideoDecoder: HLSDecoder {
 //        self.pixelBufferPool = pool
     }
     
+    deinit {
+        print("\(Self.self) deinit")
+    }
+    
     public func setup(codecContext: FFMpegAVCodecContext) {
         self.codecContext = codecContext
     }

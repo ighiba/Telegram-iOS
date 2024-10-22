@@ -1,10 +1,6 @@
 #include <metal_stdlib>
 using namespace metal;
 
-struct Uniforms {
-    int textureFormat;
-};
-
 struct VertexIn {
     float4 position [[attribute(0)]];
     float2 texCoord [[attribute(1)]];
@@ -24,7 +20,7 @@ vertex VertexOut vertexShader(VertexIn in [[stage_in]]) {
 
 fragment float4 fragmentShader(VertexOut in [[stage_in]],
                                texture2d<float, access::sample> yTexture [[texture(0)]],
-                               texture2d<float, access::sample> uvTexture [[texture(3)]],
+                               texture2d<float, access::sample> uvTexture [[texture(1)]],
                                sampler textureSampler [[sampler(0)]]) {
     float Y = yTexture.sample(textureSampler, in.texCoord.xy).r;
     float U = uvTexture.sample(textureSampler, in.texCoord.xy).r - 0.5;

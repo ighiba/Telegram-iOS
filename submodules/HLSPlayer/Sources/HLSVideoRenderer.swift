@@ -78,6 +78,10 @@ public final class HLSVideoRenderer: NSObject, HLSRenderer {
         self.setup()
     }
     
+    deinit {
+        print("\(Self.self) deinit")
+    }
+    
     private func setup() {
         device = MTLCreateSystemDefaultDevice()
         commandQueue = device.makeCommandQueue()
@@ -86,7 +90,7 @@ public final class HLSVideoRenderer: NSObject, HLSRenderer {
         metalView.delegate = self
         metalView.isPaused = true
         
-        pipelineState = try! configurePipelaneState()
+        pipelineState = configurePipelaneState()
         samplerState = configureSamplerState()
         
         setupVertexBuffer()
@@ -104,10 +108,31 @@ public final class HLSVideoRenderer: NSObject, HLSRenderer {
         }
     }
     
-    private func configurePipelaneState() throws -> any MTLRenderPipelineState {
-        let library = device.makeDefaultLibrary()!
-        let pipelineDescriptor = configurePipelineDescriptor(library: library, pixelFormat: metalView.colorPixelFormat)
-        return try device.makeRenderPipelineState(descriptor: pipelineDescriptor)
+    private func configurePipelaneState() -> MTLRenderPipelineState? {
+        let mainBundle = Bundle(for: HLSPlayer.self)
+        
+        guard let path = mainBundle.path(forResource: "HLSPlayerBundle", ofType: "bundle") else {
+            return nil
+        }
+        guard let bundle = Bundle(path: path) else {
+            return nil
+        }
+        
+        guard let device = MTLCreateSystemDefaultDevice() else {
+            return nil
+        }
+
+        guard let defaultLibrary = try? device.makeDefaultLibrary(bundle: bundle) else {
+            return nil
+        }
+
+        guard let commandQueue = device.makeCommandQueue() else {
+            return nil
+        }
+        self.commandQueue = commandQueue
+        
+        let pipelineDescriptor = configurePipelineDescriptor(library: defaultLibrary, pixelFormat: metalView.colorPixelFormat)
+        return try? device.makeRenderPipelineState(descriptor: pipelineDescriptor)
     }
     
     private func configurePipelineDescriptor(library: MTLLibrary?, pixelFormat: MTLPixelFormat) -> MTLRenderPipelineDescriptor {
@@ -202,8 +227,8 @@ public final class HLSVideoRenderer: NSObject, HLSRenderer {
         let sampleBuffer = decodedFrame.sampleBuffer
         guard let cvPixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return nil }
         
-        var yMetalTexture: CVMetalTexture?
-        var uvMetalTexture: CVMetalTexture?
+        var yCVMetalTexture: CVMetalTexture?
+        var uvCVMetalTexture: CVMetalTexture?
         
         var textureCache: CVMetalTextureCache?
         CVMetalTextureCacheCreate(kCFAllocatorDefault, nil, device, nil, &textureCache)
@@ -218,15 +243,15 @@ public final class HLSVideoRenderer: NSObject, HLSRenderer {
         let uvWidth = width / 2
         let uvHeight = height / 2
         
-        CVMetalTextureCacheCreateTextureFromImage(kCFAllocatorDefault, textureCache, cvPixelBuffer, nil, yPixelFormat, width, height, 0, &yMetalTexture)
-        CVMetalTextureCacheCreateTextureFromImage(kCFAllocatorDefault, textureCache, cvPixelBuffer, nil, uvPixelFormat, uvWidth, uvHeight, 1, &uvMetalTexture)
+        CVMetalTextureCacheCreateTextureFromImage(kCFAllocatorDefault, textureCache, cvPixelBuffer, nil, yPixelFormat, width, height, 0, &yCVMetalTexture)
+        CVMetalTextureCacheCreateTextureFromImage(kCFAllocatorDefault, textureCache, cvPixelBuffer, nil, uvPixelFormat, uvWidth, uvHeight, 1, &uvCVMetalTexture)
         
-        guard let yMetalTexture, let uvMetalTexture else {
+        guard let yCVMetalTexture, let uvCVMetalTexture else {
             return nil
         }
 
-        let yTexture = CVMetalTextureGetTexture(yMetalTexture)
-        let uvTexture = CVMetalTextureGetTexture(uvMetalTexture)
+        let yTexture = CVMetalTextureGetTexture(yCVMetalTexture)
+        let uvTexture = CVMetalTextureGetTexture(uvCVMetalTexture)
         
         guard let yTexture, let uvTexture else {
             return nil
@@ -264,7 +289,6 @@ extension HLSVideoRenderer: MTKViewDelegate {
                 while let nextTexture = nextTexture() {
                     let presentationTimeState = nextTexture.presentationTimeState(forTime: timebaseTime)
                     if presentationTimeState == .behindTime {
-                        print("frame drop? \(nextTexture.pts.seconds); \(firstTexture.pts.value); \(timebaseTime.seconds)")
                         continue
                     } else if presentationTimeState != .behindTime, nextTexture.pts >= firstTexture.pts {
                         textureForRender = nextTexture
@@ -300,7 +324,7 @@ extension HLSVideoRenderer: MTKViewDelegate {
     
     private func setFragments(texture: HLSTexture, encoder: MTLRenderCommandEncoder) {
         encoder.setFragmentTexture(texture.y, index: 0)
-        encoder.setFragmentTexture(texture.uv, index: 3)
+        encoder.setFragmentTexture(texture.uv, index: 1)
         encoder.setFragmentSamplerState(samplerState, index: 0)
         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: vertexCount)
         lastTexture = texture

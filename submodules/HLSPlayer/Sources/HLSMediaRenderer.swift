@@ -10,7 +10,8 @@ public enum HLSRendererState {
 
 public protocol HLSMediaRendererDelegate: AnyObject {
     func didRenderFrame(withPts pts: CMTime)
-    func didEndBuffering(bufferingCount: Int, totalBufferingTime: TimeInterval, playbackTime: TimeInterval)
+    func didChangeIsBuffering(_ isBuffering: Bool)
+    func didUpdateBufferingStatistics(bufferingCount: Int, totalBufferingTime: TimeInterval, playbackTime: TimeInterval)
 }
 
 public protocol HLSRenderer: AnyObject {
@@ -98,13 +99,13 @@ public final class HLSMediaRenderer {
         }
         
         bufferManagersContext.textureBufferManager.didEmptiedBuffer = { [weak self] in
-            print("TEXTURE EMPTY")
+            // print("TEXTURE EMPTY")
             guard let self else { return }
             handleBufferEmptied(isBufferReadyFlag: &self.videoRenderer.isBufferReady)
         }
         
         bufferManagersContext.pcmBufferManager.didEmptiedBuffer = { [weak self] in
-            print("PCM EMPTY")
+            // print("PCM EMPTY")
             guard let self else { return }
             guard audioRenderer.isAudioPlayerNeedsBuffering else { return }
             handleBufferEmptied(isBufferReadyFlag: &self.audioRenderer.isBufferReady)
@@ -147,7 +148,7 @@ public final class HLSMediaRenderer {
         if let bufferingStartTime {
             let bufferingTime = Date().timeIntervalSince(bufferingStartTime)
             totalBufferingTime += bufferingTime
-            delegate?.didEndBuffering(
+            delegate?.didUpdateBufferingStatistics(
                 bufferingCount: bufferingCount,
                 totalBufferingTime: totalBufferingTime,
                 playbackTime: CMTimebaseGetTime(playerContext.controlTimebase).seconds
@@ -237,12 +238,6 @@ public final class HLSMediaRenderer {
     }
     
     private func didChangeIsBuffering(_ isBuffering: Bool) {
-        #if DEBUG
-        if isBuffering {
-            print("BUFFERING...")
-        } else {
-            print("BUFFERING DONE")
-        }
-        #endif
+        delegate?.didChangeIsBuffering(isBuffering)
     }
 }

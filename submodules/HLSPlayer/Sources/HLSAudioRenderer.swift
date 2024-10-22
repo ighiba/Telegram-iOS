@@ -55,6 +55,10 @@ public final class HLSAudioRenderer: NSObject, HLSRenderer, HLSAudioRendererDele
         self.setup()
     }
     
+    deinit {
+        print("\(Self.self) deinit")
+    }
+    
     private func setup() {
         taskQueue.didStartQueue = { [weak self] in
             self?.startAudioBufferization()
@@ -78,9 +82,9 @@ public final class HLSAudioRenderer: NSObject, HLSRenderer, HLSAudioRendererDele
             }
         }
         
-        audioPlayer.didFreedScheduleBuffer = {
-            self.audioRenderQueue.async {
-                self.updatePlayerScheduleBuffer()
+        audioPlayer.didFreedScheduleBuffer = { [weak self] in
+            self?.audioRenderQueue.async {
+                self?.updatePlayerScheduleBuffer()
             }
         }
     }
@@ -116,7 +120,6 @@ public final class HLSAudioRenderer: NSObject, HLSRenderer, HLSAudioRendererDele
     }
     
     public func didRenderAudioBuffer(withPts pts: CMTime) {
-        CMTimebaseSetTime(timebase, time: pts)
         didRenderAudioBufferWithPts?(pts)
     }
     
@@ -210,6 +213,10 @@ final class HLSAudioPlayer {
         self.timePitch = AVAudioUnitTimePitch()
         self.audioMixerNode = AVAudioMixerNode()
         self.setup()
+    }
+    
+    deinit {
+        print("\(Self.self) deinit")
     }
     
     private func setup() {
