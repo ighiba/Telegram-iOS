@@ -107,7 +107,9 @@ public class HLSBufferManager<Item> {
     func flush() {
         bufferLock.lock()
         buffer = []
-        print("\(label) buffer flush")
+        if isLoggingEnabled {
+            print("\(label) buffer flush")
+        }
         bufferLock.unlock()
     }
     

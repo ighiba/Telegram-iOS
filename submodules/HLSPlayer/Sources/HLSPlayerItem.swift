@@ -16,6 +16,8 @@ public final class HLSPlayerItem {
         }
     }
     
+    public var startsOnFirstEligibleVariant: Bool = true
+    
     public var preferredPeakBitRate: Double = 0 {
         didSet {
             didSetPreferredPeakBitRate(preferredPeakBitRate)

@@ -250,9 +250,8 @@ private final class HLSVideoContentNode: ASDisplayNode, UniversalVideoContentNod
     private let playbackCompletedListeners = Bag<() -> Void>()
     
     private var initializedStatus = false
-    private var statusValue = MediaPlayerStatus(generationTimestamp: 0.0, duration: 0.0, dimensions: CGSize(), timestamp: 0.0, baseRate: 1.0, seekId: 0, status: .paused, soundEnabled: true)
+    private var statusValue = MediaPlayerStatus(generationTimestamp: 0.0, duration: 0.0, dimensions: CGSize(), timestamp: 0.0, baseRate: 1.0, seekId: 0, status: .playing, soundEnabled: true)
     private var baseRate: Double = 1.0
-    private var isBuffering = false
     private var seekId: Int = 0
     private let _status = ValuePromise<MediaPlayerStatus>()
     var status: Signal<MediaPlayerStatus, NoError> {
@@ -429,10 +428,7 @@ private final class HLSVideoContentNode: ASDisplayNode, UniversalVideoContentNod
                     print("HLSVideoContentNode: playing \(assetUrl)")
                     #endif
                     playerItem = HLSPlayerItem(url: URL(string: assetUrl)!)
-                    
-                    if #available(iOS 14.0, *) {
-                        //playerItem.startsOnFirstEligibleVariant = true
-                    }
+                    playerItem.startsOnFirstEligibleVariant = true
                     
                     self.setPlayerItem(playerItem)
                 }
@@ -440,14 +436,14 @@ private final class HLSVideoContentNode: ASDisplayNode, UniversalVideoContentNod
         }
         
         self.player?.isPlayingDidChange = { [weak self] isPlaying in
-            if isPlaying {
-                self?.isBuffering = false
-            }
+//            if isPlaying {
+//                self?.isBuffering = false
+//            }
             self?.updateStatus()
         }
         
         self.player?.isBufferingDidChange = { [weak self] isBuffering in
-            self?.isBuffering = isBuffering
+//            self?.isBuffering = isBuffering
             self?.updateStatus()
         }
         
@@ -573,7 +569,7 @@ private final class HLSVideoContentNode: ASDisplayNode, UniversalVideoContentNod
         }
         let isPlaying = player.isPlaying
         let status: MediaPlayerPlaybackStatus
-        if self.isBuffering {
+        if player.isBuffering || player.isSeeking {
             status = .buffering(initial: false, whilePlaying: isPlaying, progress: 0.0, display: true)
         } else {
             status = isPlaying ? .playing : .paused
@@ -606,15 +602,15 @@ private final class HLSVideoContentNode: ASDisplayNode, UniversalVideoContentNod
             if let player = self.player {
                 let isPlaying = !player.rate.isZero
                 if isPlaying {
-                    self.isBuffering = false
+//                    self.isBuffering = false
                 }
             }
             self.updateStatus()
         } else if keyPath == "playbackBufferEmpty" {
-            self.isBuffering = true
+//            self.isBuffering = true
             self.updateStatus()
         } else if keyPath == "playbackLikelyToKeepUp" || keyPath == "playbackBufferFull" {
-            self.isBuffering = false
+//            self.isBuffering = false
             self.updateStatus()
         } else if keyPath == "presentationSize" {
             if let currentItem = self.player?.currentItem {

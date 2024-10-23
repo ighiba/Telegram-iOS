@@ -39,27 +39,29 @@ public final class HLSPlayer {
     private(set) var isPlaybackStarted: Bool = false
     
     public var isPlaying: Bool { _isPlaying }
-    private var _isPlaying: Bool = false {
+    private var _isPlaying: Bool = true {
         didSet {
+            guard _isPlaying != oldValue else { return }
             DispatchQueue.main.async { [weak self] in
-                guard let _isPlaying = self?._isPlaying, _isPlaying != oldValue else { return }
-                print("--isPlaying \(_isPlaying)")
+                guard let _isPlaying = self?._isPlaying else { return }
                 self?.isPlayingDidChange?(_isPlaying)
             }
         }
     }
     
-    private var isBuffering: Bool = false {
+    public var isBuffering: Bool { _isBuffering }
+    private var _isBuffering: Bool = false {
         didSet {
+            guard _isBuffering != oldValue else { return }
             DispatchQueue.main.async { [weak self] in
-                guard let isBuffering = self?.isBuffering, isBuffering != oldValue else { return }
-                print("--isBuffering \(isBuffering)")
-                self?.isBufferingDidChange?(isBuffering)
+                guard let _isBuffering = self?._isBuffering else { return }
+                self?.isBufferingDidChange?(_isBuffering)
             }
         }
     }
 
-    private var isSeeking: Bool = false
+    public var isSeeking: Bool { _isSeeking }
+    private var _isSeeking: Bool = false
     
     public var actionAtItemEnd: HLSPlayer.ActionAtItemEnd = .pause
     
@@ -181,9 +183,9 @@ public final class HLSPlayer {
         mediaRenderer.delegate = self
         
         mediaRenderer.didPreparedForRendering = { [weak self] in
-            if self?._isPlaying != false {
-                self?.mediaRenderer.startRendering()
-            }
+            guard let self else { return }
+            guard self._isPlaying || self.currentItem?.startsOnFirstEligibleVariant == true else { return }
+            self.mediaRenderer.startRendering()
         }
         
         videoFrameBufferManager.didFreedBuffer = { [weak self] availableBufferSize in
@@ -221,7 +223,7 @@ public final class HLSPlayer {
         mediaDecoder.didSeekStart = { [weak self] seekType in
             print("DID SEEK START with type: \(seekType)")
             if seekType == .default {
-                self?.isSeeking = true
+                self?._isSeeking = true
                 self?.isMuted = true
                 self?.mediaRenderer.stopRendering()
                 self?.bufferManagersContext.flushBuffers()
@@ -235,7 +237,7 @@ public final class HLSPlayer {
                 self.mediaRenderer.videoRenderer.shouldIgnoreAheadOfTimeNextFrame = true
                 self.play()
                 self.isMuted = false
-                self.isSeeking = false
+                self._isSeeking = false
             }
             print("DID SEEK END with type: \(seekType)")
         }
@@ -301,7 +303,7 @@ public final class HLSPlayer {
     }
     
     public func seek(toTimestamp timestamp: Double) {
-        isSeeking = true
+        _isSeeking = true
         pause()
         mediaRenderer.audioRenderer.restartPlayer()
         let timescale = CMTimebaseGetTime(playerContext.controlTimebase).timescale
@@ -417,7 +419,7 @@ public final class HLSPlayer {
 
 extension HLSPlayer: HLSMediaRendererDelegate {
     public func didChangeIsBuffering(_ isBuffering: Bool) {
-        self.isBuffering = isBuffering
+        self._isBuffering = isBuffering
     }
     
     public func didUpdateBufferingStatistics(bufferingCount: Int, totalBufferingTime: TimeInterval, playbackTime: TimeInterval) {
