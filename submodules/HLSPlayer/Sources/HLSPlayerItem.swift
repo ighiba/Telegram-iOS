@@ -7,7 +7,7 @@ public final class HLSPlayerItem {
         case failed(Error)
     }
     
-    var didPreparedMediaSource: ((HLSMediaSource) -> Void)?
+    var didPrepareMediaSource: ((HLSMediaSource) -> Void)?
     var didSwitchSelectedStream: ((HLSStream) -> Void)?
     
     private(set) var status: HLSPlayerItem.Status = .unknown {
@@ -58,7 +58,7 @@ public final class HLSPlayerItem {
                 case .success(let mediaSource):
                     self.mediaSource = mediaSource
                     self.status = .readyToPlay
-                    self.didPreparedMediaSource?(mediaSource)
+                    self.didPrepareMediaSource?(mediaSource)
                 case .failure(let error):
                     self.status = .failed(error)
                 }

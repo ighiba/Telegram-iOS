@@ -263,10 +263,16 @@ public final class HLSPlayer {
             endPlayback()
             currentItem = nil
         }
+        
         guard let item else { return }
+        
         currentItem = item
         currentItem?.didSwitchSelectedStream = { [weak self] newStream in
             self?.didSwitchSelectedStream(newStream)
+        }
+        currentItem?.didPrepareMediaSource = { [weak self] mediaSource in
+            self?.openMediaSource(mediaSource)
+            self?.isPlaybackStarted = true
         }
     }
     
@@ -298,7 +304,6 @@ public final class HLSPlayer {
     
     public func currentTime() -> CMTime {
         let currenTime = CMTimebaseGetTime(playerContext.controlTimebase)
-//        print(currenTime.seconds)
         return currenTime > playerContext.startTime ? currenTime : playerContext.startTime
     }
     
@@ -323,16 +328,11 @@ public final class HLSPlayer {
         
         print("startPlayback")
         
-        enqueueDefaultDecodeTasks()
-        
         if let mediaSource = currentItem.mediaSource {
             openMediaSource(mediaSource)
             isPlaybackStarted = true
         } else {
-            currentItem.didPreparedMediaSource = { [weak self] mediaSource in
-                self?.openMediaSource(mediaSource)
-                self?.isPlaybackStarted = true
-            }
+            enqueueDefaultDecodeTasks()
         }
     }
     
@@ -362,6 +362,7 @@ public final class HLSPlayer {
             self?.mediaDecoder.openMediaSource(mediaSource)
             self?.mediaDecoder.startDecoding()
             self?.mediaRenderer.startRendering()
+            self?.enqueueDefaultDecodeTasks()
         }
     }
     
@@ -456,14 +457,10 @@ extension HLSPlayer: HLSMediaRendererDelegate {
         let tolerance: Double = 0.1
         if let endOfStreamPosition = endOfStreamPosition {
             guard abs(pts.seconds - endOfStreamPosition.seconds) <= tolerance else { return }
-            DispatchQueue.main.async {
-                self.debounceEndOfStreamTimer()
-            }
+            debounceEndOfStreamTimer()
         } else if playerContext.duration.seconds > 0 {
             guard abs(pts.seconds - playerContext.duration.seconds) <= tolerance else { return }
-            DispatchQueue.main.async {
-                self.debounceEndOfStreamTimer()
-            }
+            debounceEndOfStreamTimer()
         }
     }
     
@@ -474,10 +471,9 @@ extension HLSPlayer: HLSMediaRendererDelegate {
     private func debounceEndOfStreamTimer() {
         endOfStreamDebounceTimer?.invalidate()
         endOfStreamDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: false) { [weak self] _ in
-            guard let self else { return }
-            if self.isBuffersEmpty() {
+            if self?.isBuffersEmpty() == true {
                 print("END OF STREAM - No more frames in buffers")
-                self.didStreamEnd()
+                self?.didStreamEnd()
             }
         }
     }

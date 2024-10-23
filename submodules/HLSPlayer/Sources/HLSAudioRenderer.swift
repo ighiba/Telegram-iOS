@@ -206,7 +206,6 @@ final class HLSAudioPlayer {
     fileprivate var playerNode: AVAudioPlayerNode
     fileprivate let audioEngine: AVAudioEngine
     fileprivate let audioFormat: AVAudioFormat
-    fileprivate let audioSession: AVAudioSession
     fileprivate let timePitch: AVAudioUnitTimePitch
     fileprivate let audioMixerNode: AVAudioMixerNode
     
@@ -215,7 +214,6 @@ final class HLSAudioPlayer {
         self.playerNode = AVAudioPlayerNode()
         self.audioEngine = AVAudioEngine()
         self.audioFormat = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: channelCount)!
-        self.audioSession = .sharedInstance()
         self.timePitch = AVAudioUnitTimePitch()
         self.audioMixerNode = AVAudioMixerNode()
         self.setup()
@@ -238,14 +236,7 @@ final class HLSAudioPlayer {
         audioEngine.connect(audioMixerNode, to: audioEngine.mainMixerNode, format: audioFormat)
         
         timePitch.pitch = 0.0
-
-//        do {
-//            try audioSession.setCategory(.playback, options: .mixWithOthers)
-//            try audioSession.setActive(true)
-//        } catch {
-//            print("Error creating audio session: \(error)")
-//        }
-
+        
         do {
             try audioEngine.start()
         } catch {
@@ -284,9 +275,19 @@ final class HLSAudioPlayer {
     public func play() {
         audioBufferSize = 60
         audioEngine.prepare()
-        try? audioEngine.start()
-        playerNode.play()
-        isEnabled = true
+        
+        if false {
+            playerNode.play()
+            isEnabled = true
+        } else {
+            do {
+                try audioEngine.start()
+                playerNode.play()
+                isEnabled = true
+            } catch {
+                print("\(Self.self) can't start AudioEngine: \(error)")
+            }
+        }
     }
     
     public func pause() {

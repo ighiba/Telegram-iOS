@@ -61,6 +61,10 @@ public final class HLSMediaRenderer {
         self.setup()
     }
     
+    deinit {
+        print("\(Self.self) deinit")
+    }
+    
     private func setup() {
         videoRenderer.didBufferBecomeReady = { [weak self] in
             guard let self else { return }
