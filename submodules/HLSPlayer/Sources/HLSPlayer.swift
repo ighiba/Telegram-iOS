@@ -231,7 +231,7 @@ public final class HLSPlayer {
         mediaDecoder.didSeekEnd = { [weak self] seekType in
             guard let self else { return }
             if seekType == .default {
-                self.mediaRenderer.audioRenderer.resetPlayer()
+                self.mediaRenderer.audioRenderer.restartPlayer()
                 self.mediaRenderer.videoRenderer.shouldIgnoreAheadOfTimeNextFrame = true
                 self.play()
                 self.isMuted = false
@@ -268,6 +268,11 @@ public final class HLSPlayer {
         }
     }
     
+    public func reset() {
+        mediaRenderer.reset()
+        mediaDecoder.reset()
+    }
+    
     public func play() {
         if !isPlaybackStarted {
             let timebaseTime = CMTimebaseGetTime(playerContext.controlTimebase)
@@ -298,7 +303,7 @@ public final class HLSPlayer {
     public func seek(toTimestamp timestamp: Double) {
         isSeeking = true
         pause()
-        mediaRenderer.audioRenderer.resetPlayer()
+        mediaRenderer.audioRenderer.restartPlayer()
         let timescale = CMTimebaseGetTime(playerContext.controlTimebase).timescale
         CMTimebaseSetTime(playerContext.controlTimebase, time: CMTime(seconds: timestamp, preferredTimescale: timescale))
         decodeQueue.async { [weak self] in

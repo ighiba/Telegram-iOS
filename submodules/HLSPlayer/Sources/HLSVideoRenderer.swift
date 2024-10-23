@@ -108,6 +108,11 @@ public final class HLSVideoRenderer: NSObject, HLSRenderer {
         }
     }
     
+    public func reset() {
+        requestVideoFrames = nil
+        didBufferBecomeReady = nil
+    }
+    
     private func configurePipelaneState() -> MTLRenderPipelineState? {
         let mainBundle = Bundle(for: HLSPlayer.self)
         

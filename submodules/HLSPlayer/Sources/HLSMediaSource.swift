@@ -18,6 +18,10 @@ public final class HLSMediaSource {
         try? openMediaSource(url: url)
     }
     
+    deinit {
+        print("\(Self.self) deinit")
+    }
+    
     public func switchStream(url: URL) {
         try? openMediaSource(url: url)
         print("SWITCHED")

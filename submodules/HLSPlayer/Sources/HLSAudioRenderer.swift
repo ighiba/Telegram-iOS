@@ -89,9 +89,15 @@ public final class HLSAudioRenderer: NSObject, HLSRenderer, HLSAudioRendererDele
         }
     }
     
-    public func resetPlayer() {
+    public func reset() {
+        requestAudioFrames = nil
+        didRenderAudioBufferWithPts = nil
+        didBufferBecomeReady = nil
+    }
+    
+    public func restartPlayer() {
         audioRenderQueue.async { [weak self] in
-            self?.audioPlayer.reset()
+            self?.audioPlayer.restart()
         }
     }
     
@@ -216,6 +222,9 @@ final class HLSAudioPlayer {
     }
     
     deinit {
+        playerNode.stop()
+        audioEngine.stop()
+        audioEngine.reset()
         print("\(Self.self) deinit")
     }
     
@@ -230,12 +239,12 @@ final class HLSAudioPlayer {
         
         timePitch.pitch = 0.0
 
-        do {
-            try audioSession.setCategory(.playback, options: .mixWithOthers)
-            try audioSession.setActive(true)
-        } catch {
-            print("Error creating audio session: \(error)")
-        }
+//        do {
+//            try audioSession.setCategory(.playback, options: .mixWithOthers)
+//            try audioSession.setActive(true)
+//        } catch {
+//            print("Error creating audio session: \(error)")
+//        }
 
         do {
             try audioEngine.start()
@@ -244,7 +253,7 @@ final class HLSAudioPlayer {
         }
     }
     
-    public func reset() {
+    public func restart() {
         isEnabled = false
         
         playerNode.stop()

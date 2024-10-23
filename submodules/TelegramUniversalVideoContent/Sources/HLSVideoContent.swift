@@ -469,6 +469,7 @@ private final class HLSVideoContentNode: ASDisplayNode, UniversalVideoContentNod
 //        self.player?.removeObserver(self, forKeyPath: "rate")
         
         self.setPlayerItem(nil)
+        self.player?.reset()
         
         self.audioSessionDisposable.dispose()
         

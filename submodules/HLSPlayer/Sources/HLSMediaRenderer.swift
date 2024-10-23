@@ -112,6 +112,14 @@ public final class HLSMediaRenderer {
         }
     }
     
+    public func reset() {
+        stopBuffering()
+        bufferingTimer?.invalidate()
+        bufferingTimer = nil
+        videoRenderer.reset()
+        audioRenderer.reset()
+    }
+    
     public func startRendering() {
         print("START RENDERING")
         guard rendererState != .unprepared else { return }

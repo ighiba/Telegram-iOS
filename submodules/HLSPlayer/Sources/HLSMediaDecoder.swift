@@ -124,6 +124,12 @@ public final class HLSMediaDecoder {
         print("\(Self.self) deinit")
     }
     
+    public func reset() {
+        mediaSource = nil
+        decoderState = .noSource
+        taskQueue.reset()
+    }
+    
     public func openMediaSource(_ mediaSource: HLSMediaSource) {
         self.mediaSource = mediaSource
         
