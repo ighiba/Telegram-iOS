@@ -7,12 +7,15 @@ public final class HLSPlayerItem {
         case failed(Error)
     }
     
+    public var didChangeStatus: ((HLSPlayerItem.Status) -> Void)?
+    public var didChangePresentationSize: ((CGSize) -> Void)?
+    
     var didPrepareMediaSource: ((HLSMediaSource) -> Void)?
     var didSwitchSelectedStream: ((HLSStream) -> Void)?
     
     private(set) var status: HLSPlayerItem.Status = .unknown {
         didSet {
-            NotificationCenter.default.post(name: HLSPlayerItem.statusDidChangeNotification, object: self, userInfo: ["newStatus": status])
+            didChangeStatus?(status)
         }
     }
     
@@ -73,12 +76,14 @@ public final class HLSPlayerItem {
                 DispatchQueue.main.async {
                     self?.streamManager.setCurrentStream(optimalStream)
                     self?.didSwitchSelectedStream?(optimalStream)
+                    self?.didChangePresentationSize?(optimalStream.presentationSize)
                 }
             }
         } else {
             guard let optimalStream = streamManager.streamWithOptimalQuality(forBitrate: bitrate) else { return }
             streamManager.setCurrentStream(optimalStream)
             didSwitchSelectedStream?(optimalStream)
+            didChangePresentationSize?(optimalStream.presentationSize)
         }
     }
 }

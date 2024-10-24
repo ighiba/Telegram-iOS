@@ -411,8 +411,6 @@ private final class HLSVideoContentNode: ASDisplayNode, UniversalVideoContentNod
             self?._ready.set(.single(Void()))
         }
         
-        //self.player?.addObserver(self, forKeyPath: "rate", options: [], context: nil)
-        
         self._bufferingStatus.set(.single(nil))
         
         if let playerSource = self.playerSource {
@@ -435,16 +433,12 @@ private final class HLSVideoContentNode: ASDisplayNode, UniversalVideoContentNod
             })
         }
         
-        self.player?.isPlayingDidChange = { [weak self] isPlaying in
-//            if isPlaying {
-//                self?.isBuffering = false
-//            }
+        self.player?.didChangePlayerStatus = { [weak self] in
             self?.updateStatus()
         }
         
-        self.player?.isBufferingDidChange = { [weak self] isBuffering in
-//            self?.isBuffering = isBuffering
-            self?.updateStatus()
+        self.player?.didPlayToEndTime = { [weak self] in
+            self?.performActionAtEnd()
         }
         
 //        self.didBecomeActiveObserver = NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: nil, using: { [weak self] _ in
@@ -523,42 +517,19 @@ private final class HLSVideoContentNode: ASDisplayNode, UniversalVideoContentNod
         
         self.playerItem = item
         
-//        if let item {
-//            self.didPlayToEndTimeObserver = NotificationCenter.default.addObserver(forName: NSNotification.Name.AVPlayerItemDidPlayToEndTime, object: item, queue: nil, using: { [weak self] notification in
-//                self?.performActionAtEnd()
-//            })
-//            
-//            self.failureObserverId = NotificationCenter.default.addObserver(forName: AVPlayerItem.failedToPlayToEndTimeNotification, object: item, queue: .main, using: { notification in
-//#if DEBUG
-//                print("Player Error: \(notification.description)")
-//#endif
-//            })
-//            self.errorObserverId = NotificationCenter.default.addObserver(forName: AVPlayerItem.newErrorLogEntryNotification, object: item, queue: .main, using: { [weak item] notification in
-//                if let item {
-//                    let event = item.errorLog()?.events.last
-//                    if let event {
-//                        let _ = event
-//#if DEBUG
-//                        print("Player Error: \(event.errorComment ?? "<no comment>")")
-//#endif
-//                    }
-//                }
-//            })
-//            item.addObserver(self, forKeyPath: "presentationSize", options: [], context: nil)
-//        }
+        item?.didChangeStatus = { status in
+            if case .failed(let error) = status {
+                #if DEBUG
+                print("Player item Error: \(error.localizedDescription)")
+                #endif
+            }
+        }
         
-//        if let playerItem = self.playerItem {
-//            playerItem.addObserver(self, forKeyPath: "playbackBufferEmpty", options: .new, context: nil)
-//            playerItem.addObserver(self, forKeyPath: "playbackLikelyToKeepUp", options: .new, context: nil)
-//            playerItem.addObserver(self, forKeyPath: "playbackBufferFull", options: .new, context: nil)
-//            playerItem.addObserver(self, forKeyPath: "status", options: .new, context: nil)
-//            self.playerItemFailedToPlayToEndTimeObserver = NotificationCenter.default.addObserver(forName: NSNotification.Name.AVPlayerItemFailedToPlayToEndTime, object: playerItem, queue: OperationQueue.main, using: { [weak self] _ in
-//                guard let self else {
-//                    return
-//                }
-//                let _ = self
-//            })
-//        }
+        item?.didChangePresentationSize = { presentationSize in
+            #if DEBUG
+            print("Presentation size: \(Int(presentationSize.height))")
+            #endif
+        }
         
         self.player?.replaceCurrentItem(with: self.playerItem)
     }
@@ -594,28 +565,6 @@ private final class HLSVideoContentNode: ASDisplayNode, UniversalVideoContentNod
         } else if let statusTimer = self.statusTimer {
             self.statusTimer = nil
             statusTimer.invalidate()
-        }
-    }
-    
-    override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
-        if keyPath == "rate" {
-            if let player = self.player {
-                let isPlaying = !player.rate.isZero
-                if isPlaying {
-//                    self.isBuffering = false
-                }
-            }
-            self.updateStatus()
-        } else if keyPath == "playbackBufferEmpty" {
-//            self.isBuffering = true
-            self.updateStatus()
-        } else if keyPath == "playbackLikelyToKeepUp" || keyPath == "playbackBufferFull" {
-//            self.isBuffering = false
-            self.updateStatus()
-        } else if keyPath == "presentationSize" {
-            if let currentItem = self.player?.currentItem {
-                print("Presentation size: \(Int(currentItem.presentationSize.height))")
-            }
         }
     }
     

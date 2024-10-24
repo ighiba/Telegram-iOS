@@ -193,7 +193,6 @@ public final class HLSVideoRenderer: NSObject, HLSRenderer {
     }
     
     public func setPreferredFramesPerSecond(_ frameRate: Int) {
-        textureBufferManager.maxBufferSize = 10
         metalView.preferredFramesPerSecond = frameRate
     }
     

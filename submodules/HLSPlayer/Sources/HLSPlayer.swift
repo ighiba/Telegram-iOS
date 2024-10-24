@@ -31,20 +31,24 @@ public final class HLSPlayer {
         case none
     }
     
+    private enum PlaybackStatus {
+        case notStarted
+        case started
+        case needRestart
+    }
+    
     // MARK: - Properties
     
-    public var isPlayingDidChange: ((Bool) -> Void)?
-    public var isBufferingDidChange: ((Bool) -> Void)?
+    public var didChangePlayerStatus: (() -> Void)?
+    public var didPlayToEndTime: (() -> Void)?
     
-    private(set) var isPlaybackStarted: Bool = false
+    private var playbackStatus: PlaybackStatus = PlaybackStatus.notStarted
     
     public var isPlaying: Bool { _isPlaying }
     private var _isPlaying: Bool = true {
         didSet {
-//            guard _isPlaying != oldValue else { return }
             DispatchQueue.main.async { [weak self] in
-                guard let _isPlaying = self?._isPlaying else { return }
-                self?.isPlayingDidChange?(_isPlaying)
+                self?.didChangePlayerStatus?()
             }
         }
     }
@@ -52,10 +56,8 @@ public final class HLSPlayer {
     public var isBuffering: Bool { _isBuffering }
     private var _isBuffering: Bool = false {
         didSet {
-//            guard _isBuffering != oldValue else { return }
             DispatchQueue.main.async { [weak self] in
-                guard let _isBuffering = self?._isBuffering else { return }
-                self?.isBufferingDidChange?(_isBuffering)
+                self?.didChangePlayerStatus?()
             }
         }
     }
@@ -235,18 +237,17 @@ public final class HLSPlayer {
         }
         
         mediaDecoder.didSeekEnd = { [weak self] seekType in
-            guard let self else { return }
             if seekType == .default {
-                if self.hasAudioStream {
-                    self.mediaRenderer.audioRenderer.restartPlayer()
+                if self?.hasAudioStream == true {
+                    self?.mediaRenderer.audioRenderer.restartPlayer()
                 }
-                self.isMuted = false
-                self._isSeeking = false
-                self.mediaRenderer.videoRenderer.shouldIgnoreAheadOfTimeNextFrame = true
-                if self._isPlaying {
-                    self.play()
-                    //self.mediaRenderer.startRendering()
+                self?.isMuted = false
+                self?._isSeeking = false
+                self?.mediaRenderer.videoRenderer.shouldIgnoreAheadOfTimeNextFrame = true
+                if self?._isPlaying == true {
+                    self?.play()
                 }
+                self?.didChangePlayerStatus?()
             }
             print("DID SEEK END with type: \(seekType)")
         }
@@ -272,7 +273,7 @@ public final class HLSPlayer {
         currentItem?.didPrepareMediaSource = { [weak self] mediaSource in
             self?.mediaRenderer.hasAudioStream = mediaSource.hasAudioStream
             self?.openMediaSource(mediaSource)
-            self?.isPlaybackStarted = true
+            self?.playbackStatus = .started
         }
     }
     
@@ -282,19 +283,17 @@ public final class HLSPlayer {
     }
     
     public func play() {
-        if !isPlaybackStarted {
-            let timebaseTime = CMTimebaseGetTime(playerContext.controlTimebase)
-            if timebaseTime > playerContext.startTime {
-                restartPlayback()
-            } else {
-                _isPlaying = true
-                startPlayback()
-            }
-            isPlaybackStarted = true
-        } else {
+        switch playbackStatus {
+        case .notStarted:
+            _isPlaying = true
+            startPlayback()
+        case .started:
             _isPlaying = true
             mediaRenderer.startRendering()
+        case .needRestart:
+            restartPlayback()
         }
+        playbackStatus = .started
     }
     
     public func pause() {
@@ -309,13 +308,15 @@ public final class HLSPlayer {
     
     public func seek(toTimestamp timestamp: Double) {
         _isSeeking = true
-        mediaRenderer.pauseRendering()
-        mediaRenderer.audioRenderer.restartPlayer()
         let timescale = CMTimebaseGetTime(playerContext.controlTimebase).timescale
         CMTimebaseSetTime(playerContext.controlTimebase, time: CMTime(seconds: timestamp, preferredTimescale: timescale))
+        didChangePlayerStatus?()
+        mediaRenderer.pauseRendering()
+        mediaRenderer.audioRenderer.restartPlayer()
         decodeQueue.async { [weak self] in
             self?.mediaDecoder.seekTo(timestamp: timestamp)
             self?.bufferManagersContext.flushBuffers()
+            self?.mediaDecoder.startDecoding()
             self?.enqueueDefaultDecodeTasks()
         }
     }
@@ -330,7 +331,6 @@ public final class HLSPlayer {
         
         if let mediaSource = currentItem.mediaSource {
             openMediaSource(mediaSource)
-            isPlaybackStarted = true
         } else {
             enqueueDefaultDecodeTasks()
         }
@@ -341,13 +341,14 @@ public final class HLSPlayer {
         enqueueDefaultDecodeTasks()
         seek(toTimestamp: 0)
         mediaRenderer.videoRenderer.renderFirstTexture()
+        playbackStatus = .started
     }
     
     private func endPlayback() {
         print("endPlayback")
         CMTimebaseSetTime(playerContext.controlTimebase, time: .zero)
         _isPlaying = false
-        isPlaybackStarted = false
+        playbackStatus = .needRestart
         mediaDecoder.stopDecoding()
         mediaRenderer.stopRendering()
         bufferManagersContext.flushBuffers()
@@ -470,7 +471,6 @@ extension HLSPlayer: HLSMediaRendererDelegate {
     
     private func handleEndOfStream(currentPosiotion: CMTime, endOfStreamPosition: CMTime, tolerance: Double = 0.1) {
         let difference = max(0.0, endOfStreamPosition.seconds - currentPosiotion.seconds)
-        print(difference)
         if difference.isZero {
             didStreamEnd()
         } else if difference <= tolerance {
@@ -483,6 +483,7 @@ extension HLSPlayer: HLSMediaRendererDelegate {
         endOfStreamDebounceTimer = nil
         endPlayback()
         restartPlayback()
+        didPlayToEndTime?()
     }
     
     private func debounceEndOfStreamTimer() {

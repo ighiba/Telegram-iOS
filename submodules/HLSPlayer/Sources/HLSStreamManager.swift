@@ -9,6 +9,7 @@ struct HLSStream: Equatable {
     
     var bandwidth: Int
     var resolution: Resolution
+    var presentationSize: CGSize { CGSize(width: resolution.width, height: resolution.width) }
     var url: URL
 }
 
