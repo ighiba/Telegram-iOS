@@ -228,7 +228,6 @@ public final class HLSPlayer {
             print("DID SEEK START with type: \(seekType)")
             if seekType == .default {
                 self?._isSeeking = true
-                self?._isPlaying = false
                 self?.isMuted = true
                 self?.mediaRenderer.stopRendering()
                 self?.bufferManagersContext.flushBuffers()
@@ -241,12 +240,13 @@ public final class HLSPlayer {
                 if self.hasAudioStream {
                     self.mediaRenderer.audioRenderer.restartPlayer()
                 }
-
-                self.mediaRenderer.videoRenderer.shouldIgnoreAheadOfTimeNextFrame = true
-                self.play()
                 self.isMuted = false
                 self._isSeeking = false
-                self._isPlaying = true
+                self.mediaRenderer.videoRenderer.shouldIgnoreAheadOfTimeNextFrame = true
+                if self._isPlaying {
+                    self.play()
+                    //self.mediaRenderer.startRendering()
+                }
             }
             print("DID SEEK END with type: \(seekType)")
         }
@@ -309,7 +309,7 @@ public final class HLSPlayer {
     
     public func seek(toTimestamp timestamp: Double) {
         _isSeeking = true
-        pause()
+        mediaRenderer.pauseRendering()
         mediaRenderer.audioRenderer.restartPlayer()
         let timescale = CMTimebaseGetTime(playerContext.controlTimebase).timescale
         CMTimebaseSetTime(playerContext.controlTimebase, time: CMTime(seconds: timestamp, preferredTimescale: timescale))
@@ -340,10 +340,12 @@ public final class HLSPlayer {
         print("restartPlayback")
         enqueueDefaultDecodeTasks()
         seek(toTimestamp: 0)
+        mediaRenderer.videoRenderer.renderFirstTexture()
     }
     
     private func endPlayback() {
         print("endPlayback")
+        CMTimebaseSetTime(playerContext.controlTimebase, time: .zero)
         _isPlaying = false
         isPlaybackStarted = false
         mediaDecoder.stopDecoding()
@@ -479,13 +481,8 @@ extension HLSPlayer: HLSMediaRendererDelegate {
     private func didStreamEnd() {
         endOfStreamDebounceTimer?.invalidate()
         endOfStreamDebounceTimer = nil
-        isPlaybackStarted = false
-        switch actionAtItemEnd {
-        case .pause:
-            pause()
-        case .none:
-            endPlayback()
-        }
+        endPlayback()
+        restartPlayback()
     }
     
     private func debounceEndOfStreamTimer() {

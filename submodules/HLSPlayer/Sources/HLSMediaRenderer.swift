@@ -9,6 +9,7 @@ public enum HLSRendererState {
 }
 
 public protocol HLSMediaRendererDelegate: AnyObject {
+    var isPlaying: Bool { get }
     func didRenderFrame(withPts pts: CMTime)
     func didChangeIsBuffering(_ isBuffering: Bool)
     func didUpdateBufferingStatistics(bufferingCount: Int, totalBufferingTime: TimeInterval, playbackTime: TimeInterval)
@@ -142,16 +143,6 @@ public final class HLSMediaRenderer {
         pausePlayback()
     }
     
-    public func stopRendering() {
-        if hasAudioStream {
-            audioRenderer.stopPlayer()
-        } else {
-            CMTimebaseSetRate(playerContext.controlTimebase, rate: 0.0)
-        }
-        videoRenderer.metalView.isPaused = true
-        rendererState = .stopped
-    }
-    
     private func startPlayback() {
         if hasAudioStream {
             audioRenderer.startPlayer()
@@ -160,6 +151,16 @@ public final class HLSMediaRenderer {
         }
         videoRenderer.metalView.isPaused = false
         rendererState = .rendering
+    }
+    
+    public func stopRendering() {
+        if hasAudioStream {
+            audioRenderer.stopPlayer()
+        } else {
+            CMTimebaseSetRate(playerContext.controlTimebase, rate: 0.0)
+        }
+        videoRenderer.metalView.isPaused = true
+        rendererState = .stopped
     }
     
     private func pausePlayback() {
@@ -202,7 +203,9 @@ public final class HLSMediaRenderer {
         }
         
         bufferingStartTime = nil
-        startPlayback()
+        if delegate?.isPlaying == true {
+            startPlayback()
+        }
     }
     
     private func startBufferingTimer() {

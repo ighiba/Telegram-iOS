@@ -59,6 +59,7 @@ public final class HLSVideoRenderer: NSObject, HLSRenderer {
     private var pipelineState: MTLRenderPipelineState!
     
     private let textureBufferManager: HLSBufferManager<HLSTexture>
+    private var firstTexture: HLSTexture?
     private var lastTexture: HLSTexture?
     
     private var taskQueue: SimpleQueue<HLSVideoBufferTask>
@@ -324,6 +325,12 @@ extension HLSVideoRenderer: MTKViewDelegate {
         commandBuffer.commit()
     }
     
+    public func renderFirstTexture() {
+        lastTexture = firstTexture
+        firstTexture = nil
+        draw(in: metalView)
+    }
+    
     public func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
 
     }
@@ -334,6 +341,9 @@ extension HLSVideoRenderer: MTKViewDelegate {
         encoder.setFragmentSamplerState(samplerState, index: 0)
         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: vertexCount)
         lastTexture = texture
+        if firstTexture == nil {
+            firstTexture = texture
+        }
         didRenderTextureWithPts?(texture.pts)
     }
 }

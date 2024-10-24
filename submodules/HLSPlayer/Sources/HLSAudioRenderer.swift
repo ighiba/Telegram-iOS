@@ -275,7 +275,7 @@ final class HLSAudioPlayer {
         audioBufferSize = 60
         audioEngine.prepare()
         
-        if false {
+        if audioEngine.isRunning {
             playerNode.play()
             isEnabled = true
         } else {
@@ -286,6 +286,10 @@ final class HLSAudioPlayer {
             } catch {
                 print("\(Self.self) can't start AudioEngine: \(error)")
             }
+        }
+        
+        if scheduledBufferCount == 0 {
+            didFreedScheduleBuffer?()
         }
     }
     

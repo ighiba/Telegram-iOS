@@ -569,7 +569,7 @@ private final class HLSVideoContentNode: ASDisplayNode, UniversalVideoContentNod
         }
         let isPlaying = player.isPlaying
         let status: MediaPlayerPlaybackStatus
-        if player.isBuffering || player.isSeeking {
+        if player.isBuffering {
             status = .buffering(initial: false, whilePlaying: isPlaying, progress: 0.0, display: true)
         } else {
             status = isPlaying ? .playing : .paused
