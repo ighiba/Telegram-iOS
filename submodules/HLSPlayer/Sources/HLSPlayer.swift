@@ -41,7 +41,7 @@ public final class HLSPlayer {
     public var isPlaying: Bool { _isPlaying }
     private var _isPlaying: Bool = true {
         didSet {
-            guard _isPlaying != oldValue else { return }
+//            guard _isPlaying != oldValue else { return }
             DispatchQueue.main.async { [weak self] in
                 guard let _isPlaying = self?._isPlaying else { return }
                 self?.isPlayingDidChange?(_isPlaying)
@@ -52,7 +52,7 @@ public final class HLSPlayer {
     public var isBuffering: Bool { _isBuffering }
     private var _isBuffering: Bool = false {
         didSet {
-            guard _isBuffering != oldValue else { return }
+//            guard _isBuffering != oldValue else { return }
             DispatchQueue.main.async { [weak self] in
                 guard let _isBuffering = self?._isBuffering else { return }
                 self?.isBufferingDidChange?(_isBuffering)
@@ -62,6 +62,10 @@ public final class HLSPlayer {
 
     public var isSeeking: Bool { _isSeeking }
     private var _isSeeking: Bool = false
+    
+    private var hasAudioStream: Bool {
+        currentItem?.mediaSource?.hasAudioStream ?? true
+    }
     
     public var actionAtItemEnd: HLSPlayer.ActionAtItemEnd = .pause
     
@@ -224,6 +228,7 @@ public final class HLSPlayer {
             print("DID SEEK START with type: \(seekType)")
             if seekType == .default {
                 self?._isSeeking = true
+                self?._isPlaying = false
                 self?.isMuted = true
                 self?.mediaRenderer.stopRendering()
                 self?.bufferManagersContext.flushBuffers()
@@ -233,11 +238,15 @@ public final class HLSPlayer {
         mediaDecoder.didSeekEnd = { [weak self] seekType in
             guard let self else { return }
             if seekType == .default {
-                self.mediaRenderer.audioRenderer.restartPlayer()
+                if self.hasAudioStream {
+                    self.mediaRenderer.audioRenderer.restartPlayer()
+                }
+
                 self.mediaRenderer.videoRenderer.shouldIgnoreAheadOfTimeNextFrame = true
                 self.play()
                 self.isMuted = false
                 self._isSeeking = false
+                self._isPlaying = true
             }
             print("DID SEEK END with type: \(seekType)")
         }
@@ -245,16 +254,6 @@ public final class HLSPlayer {
         mediaDecoder.didFoundEndOfFilePosition = { [weak self] endOfStreamPosition in
             self?.playerContext.isDecondingEnded = true
             self?.endOfStreamPosition = endOfStreamPosition
-        }
-        
-        DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
-//            self.stopPlayback()
-//            self.currentItem?.preferredPeakBitRate = 14000000
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-//                self.startPlayback()
-//                print("TO AUTO QUALITY")
-//                self.currentItem?.preferredPeakBitRate = 0
-            }
         }
     }
     
@@ -271,6 +270,7 @@ public final class HLSPlayer {
             self?.didSwitchSelectedStream(newStream)
         }
         currentItem?.didPrepareMediaSource = { [weak self] mediaSource in
+            self?.mediaRenderer.hasAudioStream = mediaSource.hasAudioStream
             self?.openMediaSource(mediaSource)
             self?.isPlaybackStarted = true
         }
@@ -398,7 +398,7 @@ public final class HLSPlayer {
     
     private func didSetRate(_ rate: Float) {
         playerContext.rate = rate
-        mediaRenderer.setAudioPlaybackRate(rate)
+        mediaRenderer.setPlaybackRate(rate)
         mediaRenderer.setVideoPlaybackFrameRate(videoPlaybackFrameRateActual)
     }
     
@@ -448,24 +448,44 @@ extension HLSPlayer: HLSMediaRendererDelegate {
     }
     
     public func didRenderFrame(withPts pts: CMTime) {
-        guard !isSeeking else { return }
-        CMTimebaseSetTime(playerContext.controlTimebase, time: pts)
+        guard !isSeeking, playerContext.lastPresentationTimestamp != pts else { return }
         playerContext.lastPresentationTimestamp = pts
         
+        if hasAudioStream {
+            CMTimebaseSetTime(playerContext.controlTimebase, time: pts)
+        }
+        
 //        print("lastPts: \(pts.seconds), duration: \(playerContext.duration.seconds)")
-
-        let tolerance: Double = 0.1
+        
+        //guard !CMTimebaseGetTime(playerContext.controlTimebase).seconds.isZero else { return }
+        
         if let endOfStreamPosition = endOfStreamPosition {
-            guard abs(pts.seconds - endOfStreamPosition.seconds) <= tolerance else { return }
-            debounceEndOfStreamTimer()
+            handleEndOfStream(currentPosiotion: pts, endOfStreamPosition: endOfStreamPosition)
         } else if playerContext.duration.seconds > 0 {
-            guard abs(pts.seconds - playerContext.duration.seconds) <= tolerance else { return }
+            handleEndOfStream(currentPosiotion: pts, endOfStreamPosition: playerContext.duration)
+        }
+    }
+    
+    private func handleEndOfStream(currentPosiotion: CMTime, endOfStreamPosition: CMTime, tolerance: Double = 0.1) {
+        let difference = max(0.0, endOfStreamPosition.seconds - currentPosiotion.seconds)
+        print(difference)
+        if difference.isZero {
+            didStreamEnd()
+        } else if difference <= tolerance {
             debounceEndOfStreamTimer()
         }
     }
     
-    private func isBuffersEmpty() -> Bool {
-        return bufferManagersContext.isBuffersEmpty()
+    private func didStreamEnd() {
+        endOfStreamDebounceTimer?.invalidate()
+        endOfStreamDebounceTimer = nil
+        isPlaybackStarted = false
+        switch actionAtItemEnd {
+        case .pause:
+            pause()
+        case .none:
+            endPlayback()
+        }
     }
     
     private func debounceEndOfStreamTimer() {
@@ -478,13 +498,7 @@ extension HLSPlayer: HLSMediaRendererDelegate {
         }
     }
     
-    private func didStreamEnd() {
-        isPlaybackStarted = false
-        switch actionAtItemEnd {
-        case .pause:
-            pause()
-        case .none:
-            endPlayback()
-        }
+    private func isBuffersEmpty() -> Bool {
+        return bufferManagersContext.isBuffersEmpty()
     }
 }

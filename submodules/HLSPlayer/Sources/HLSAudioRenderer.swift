@@ -248,7 +248,6 @@ final class HLSAudioPlayer {
         isEnabled = false
         
         playerNode.stop()
-        print("stop")
         audioEngine.pause()
         audioEngine.reset()
         

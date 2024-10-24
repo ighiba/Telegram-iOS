@@ -37,6 +37,8 @@ public final class HLSMediaRenderer {
         }
     }
     
+    public var hasAudioStream: Bool = true
+    
     private var bufferingCount: Int = 0
     private var totalBufferingTime: Double = 0.0
     private var bufferingStartTime: Date?
@@ -68,9 +70,10 @@ public final class HLSMediaRenderer {
     private func setup() {
         videoRenderer.didBufferBecomeReady = { [weak self] in
             guard let self else { return }
+            let isAudioBufferReady = self.hasAudioStream ? self.audioRenderer.isBufferReady : true
             self.handleBufferReady(
                 isVideoBufferReady: true,
-                isAudioBufferReady: self.audioRenderer.isBufferReady
+                isAudioBufferReady: isAudioBufferReady
             )
         }
         
@@ -98,18 +101,22 @@ public final class HLSMediaRenderer {
             return self?.audioFrameBufferManager.getNextItems(count: requestFramesCount) ?? []
         }
         
+        videoRenderer.didRenderTextureWithPts = { [weak self] lastRenderPts in
+            guard self?.hasAudioStream == false else { return }
+            self?.delegate?.didRenderFrame(withPts: lastRenderPts)
+        }
+        
         audioRenderer.didRenderAudioBufferWithPts = { [weak self] lastRenderPts in
+            guard self?.hasAudioStream == true else { return }
             self?.delegate?.didRenderFrame(withPts: lastRenderPts)
         }
         
         bufferManagersContext.textureBufferManager.didEmptiedBuffer = { [weak self] in
-            // print("TEXTURE EMPTY")
             guard let self else { return }
             handleBufferEmptied(isBufferReadyFlag: &self.videoRenderer.isBufferReady)
         }
         
         bufferManagersContext.pcmBufferManager.didEmptiedBuffer = { [weak self] in
-            // print("PCM EMPTY")
             guard let self else { return }
             guard audioRenderer.isAudioPlayerNeedsBuffering else { return }
             handleBufferEmptied(isBufferReadyFlag: &self.audioRenderer.isBufferReady)
@@ -136,9 +143,33 @@ public final class HLSMediaRenderer {
     }
     
     public func stopRendering() {
+        if hasAudioStream {
+            audioRenderer.stopPlayer()
+        } else {
+            CMTimebaseSetRate(playerContext.controlTimebase, rate: 0.0)
+        }
         videoRenderer.metalView.isPaused = true
-        audioRenderer.stopPlayer()
         rendererState = .stopped
+    }
+    
+    private func startPlayback() {
+        if hasAudioStream {
+            audioRenderer.startPlayer()
+        } else {
+            CMTimebaseSetRate(playerContext.controlTimebase, rate: Float64(playerContext.rate))
+        }
+        videoRenderer.metalView.isPaused = false
+        rendererState = .rendering
+    }
+    
+    private func pausePlayback() {
+        if hasAudioStream {
+            audioRenderer.pausePlayer()
+        } else {
+            CMTimebaseSetRate(playerContext.controlTimebase, rate: 0.0)
+        }
+        videoRenderer.metalView.isPaused = true
+        rendererState = .paused
     }
     
     private func startBuffering() {
@@ -174,18 +205,6 @@ public final class HLSMediaRenderer {
         startPlayback()
     }
     
-    private func startPlayback() {
-        audioRenderer.startPlayer()
-        videoRenderer.metalView.isPaused = false
-        rendererState = .rendering
-    }
-    
-    private func pausePlayback() {
-        videoRenderer.metalView.isPaused = true
-        audioRenderer.pausePlayer()
-        rendererState = .paused
-    }
-    
     private func startBufferingTimer() {
         bufferingTimer?.invalidate()
         bufferingTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
@@ -202,9 +221,12 @@ public final class HLSMediaRenderer {
         totalBufferingTime = 0
     }
     
-    public func setAudioPlaybackRate(_ rate: Float) {
-        //guard !isBuffering, rendererState != .paused, rendererState != .stopped else { return }
-        audioRenderer.audioPlayer.setRate(rate)
+    public func setPlaybackRate(_ rate: Float) {
+        if hasAudioStream {
+            audioRenderer.audioPlayer.setRate(rate)
+        } else if !CMTimebaseGetRate(playerContext.controlTimebase).isZero {
+            CMTimebaseSetRate(playerContext.controlTimebase, rate: Float64(rate))
+        }
     }
     
     public func setVideoPlaybackFrameRate(_ frameRate: Int) {

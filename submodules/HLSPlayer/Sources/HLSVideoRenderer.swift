@@ -35,6 +35,7 @@ public final class HLSVideoRenderer: NSObject, HLSRenderer {
     }
     
     public var requestVideoFrames: ((Int) -> [HLSMediaFrame])?
+    public var didRenderTextureWithPts: ((CMTime) -> Void)?
     public var didBufferBecomeReady: (() -> Void)?
     
     public var isBufferReady: Bool = false {
@@ -333,5 +334,6 @@ extension HLSVideoRenderer: MTKViewDelegate {
         encoder.setFragmentSamplerState(samplerState, index: 0)
         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: vertexCount)
         lastTexture = texture
+        didRenderTextureWithPts?(texture.pts)
     }
 }

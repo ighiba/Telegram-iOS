@@ -8,6 +8,8 @@ public final class HLSMediaSource {
         case unknown
     }
     
+    public var hasAudioStream: Bool { audioStreamContext != nil }
+    
     public var url: URL
     public var formatContext: FFMpegAVFormatContext?
     public var videoStreamContext: HLSVideoStreamContext?

@@ -245,7 +245,9 @@ public final class HLSMediaDecoder {
                     }
                 }
                 
-                if lastSeekStatus.videoState == .seeked && lastSeekStatus.audioState == .seeked {
+                let isSeekedVideo = lastSeekStatus.videoState == .seeked
+                let isSeekedAudio = mediaSource.hasAudioStream ? lastSeekStatus.audioState == .seeked : true
+                if isSeekedVideo && isSeekedAudio {
                     print("seek reached for didSeek")
                     self.lastSeekStatus = nil
                     didSeekEnd?(lastSeekStatus.seekType)
