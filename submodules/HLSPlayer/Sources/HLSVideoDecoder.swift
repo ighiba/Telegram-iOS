@@ -4,43 +4,25 @@ import FFMpegBinding
 
 private let bufferCount = 32
 
-public final class HLSVideoDecoder: HLSDecoder {
+final class HLSVideoDecoder: HLSDecoder {
     private var videoFrame: FFMpegAVFrame = FFMpegAVFrame()
     private var uvPlane: (UnsafeMutablePointer<UInt8>, Int)?
     
     private var codecContext: FFMpegAVCodecContext
     
-//    private var pixelBufferPool: CVPixelBufferPool?
-    
-    public init(codecContext: FFMpegAVCodecContext) {
+    init(codecContext: FFMpegAVCodecContext) {
         self.codecContext = codecContext
-        
-//        let width = Int32(1280)
-//        let height = Int32(720)
-//        
-//        let bufferOptions: [String: Any] = [
-//            kCVPixelBufferPoolMinimumBufferCountKey as String: 3 as NSNumber
-//        ]
-//        let pixelBufferOptions: [String: Any] = [
-//            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA as NSNumber,
-//            kCVPixelBufferWidthKey as String: UInt32(width),
-//            kCVPixelBufferHeightKey as String: UInt32(height)
-//        ]
-//        
-//        var pool: CVPixelBufferPool?
-//        CVPixelBufferPoolCreate(nil, bufferOptions as CFDictionary, pixelBufferOptions as CFDictionary, &pool)
-//        self.pixelBufferPool = pool
     }
     
     deinit {
         print("\(Self.self) deinit")
     }
     
-    public func setup(codecContext: FFMpegAVCodecContext) {
+    func setup(codecContext: FFMpegAVCodecContext) {
         self.codecContext = codecContext
     }
     
-    public func decode(frame: HLSMediaDecodableFrame) -> HLSMediaFrame? {
+    func decode(frame: HLSMediaDecodableFrame) -> HLSMediaFrame? {
         let status = frame.packet.send(toDecoder: codecContext)
         guard status >= 0 else {
             return nil
@@ -96,14 +78,6 @@ public final class HLSVideoDecoder: HLSDecoder {
                 pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
         }
         
-//        var pixelBufferRef: CVPixelBuffer?
-//        let auxAttributes: [String: Any] = [kCVPixelBufferPoolAllocationThresholdKey as String: bufferCount as NSNumber];
-//        let err = CVPixelBufferPoolCreatePixelBufferWithAuxAttributes(kCFAllocatorDefault, pixelBufferPool!, auxAttributes as CFDictionary, &pixelBufferRef)
-//        if err == kCVReturnWouldExceedAllocationThreshold {
-//            print("kCVReturnWouldExceedAllocationThreshold, dropping frame")
-//            return nil
-//        }
-        
         let ioSurfaceProperties = NSMutableDictionary()
         ioSurfaceProperties["IOSurfaceIsGlobal"] = true as NSNumber
         
@@ -148,27 +122,6 @@ public final class HLSVideoDecoder: HLSDecoder {
 
         let bytesPerRowY = CVPixelBufferGetBytesPerRowOfPlane(pixelBuffer, 0)
         let bytesPerRowUV = CVPixelBufferGetBytesPerRowOfPlane(pixelBuffer, 1)
-//        let bytesPerRowA = CVPixelBufferGetBytesPerRowOfPlane(pixelBuffer, 2)
-
-//        var requiresAlphaMultiplication = false
-//        
-//        if pixelFormat == kCVPixelFormatType_420YpCbCr8VideoRange_8A_TriPlanar {
-//            requiresAlphaMultiplication = true
-//            
-//            base = CVPixelBufferGetBaseAddressOfPlane(pixelBuffer, 2)!
-//            if bytesPerRowA == frame.lineSize[3] {
-//                memcpy(base, frame.data[3]!, bytesPerRowA * Int(frame.height))
-//            } else {
-//                var dest = base
-//                var src = frame.data[3]!
-//                let lineSize = Int(frame.lineSize[3])
-//                for _ in 0 ..< Int(frame.height) {
-//                    memcpy(dest, src, lineSize)
-//                    dest = dest.advanced(by: bytesPerRowA)
-//                    src = src.advanced(by: lineSize)
-//                }
-//            }
-//        }
         
         base = CVPixelBufferGetBaseAddressOfPlane(pixelBuffer, 0)!
         if bytesPerRowY == frame.lineSize[0] {

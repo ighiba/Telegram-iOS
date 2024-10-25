@@ -25,8 +25,12 @@ public final class HLSMediaSource {
     }
     
     public func switchStream(url: URL) {
-        try? openMediaSource(url: url)
-        print("SWITCHED")
+        do {
+            try openMediaSource(url: url)
+            print("Switched stream to: \(url)")
+        } catch let error {
+            print("Failed to switch stream \(error.localizedDescription)")
+        }
     }
     
     private func openMediaSource(url: URL) throws {

@@ -216,9 +216,9 @@ final class HLSStreamManager {
         switch latency {
         case 0...500:
             return .good
-        case 500...2500:
+        case 500...1500:
             return .moderate
-        case 2500...:
+        case 1500...:
             return .poor
         default:
             return .unknown

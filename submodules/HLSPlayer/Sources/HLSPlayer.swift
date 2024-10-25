@@ -160,7 +160,7 @@ public final class HLSPlayer {
         )
         let bufferManagersContext = HLSBufferManagersContext(
             videoFrameBufferManager: HLSBufferManager(maxBufferSize: 60, label: "Video", isLoggingEnabled: false),
-            textureBufferManager: HLSBufferManager(maxBufferSize: 60, label: "Texture", isLoggingEnabled: false),
+            textureBufferManager: HLSBufferManager(maxBufferSize: 30, label: "Texture", isLoggingEnabled: false),
             audioFrameBufferManager: HLSBufferManager(maxBufferSize: 60, label: "Audio", isLoggingEnabled: false),
             pcmBufferManager: HLSBufferManager(maxBufferSize: 60, label: "PCM", isLoggingEnabled: false)
         )
@@ -195,39 +195,19 @@ public final class HLSPlayer {
         }
         
         videoFrameBufferManager.didFreedBuffer = { [weak self] availableBufferSize in
-            guard let self else { return }
-            self.decodeQueue.async {
-                let pendingFrameCount = self.mediaDecoder.enqueuedFramesCount(withType: .video)
-                let videoBufferSize = self.videoFrameBufferManager.bufferSize
-                let videoBufferSizeMax = self.videoFrameBufferManager.maxBufferSize
-                guard pendingFrameCount + videoBufferSize < videoBufferSizeMax else { return }
-                let framesToDecodeCount = videoBufferSizeMax - pendingFrameCount - videoBufferSize
-                let videoDecodeTask = HLSDecodeTask(frameType: .video, decodeCount: framesToDecodeCount) { decodedFrames, remainingFrames in
-                    self.videoFrameBufferManager.addItems(decodedFrames)
-                    self.audioFrameBufferManager.addItems(remainingFrames)
-                }
-                self.mediaDecoder.enqueueDecodeTask(videoDecodeTask)
+            self?.decodeQueue.async {
+                self?.handleFreedBuffer(for: .video)
             }
         }
         
         audioFrameBufferManager.didFreedBuffer = { [weak self] availableBufferSize in
-            guard let self else { return }
-            self.decodeQueue.async {
-                let pendingFrameCount = self.mediaDecoder.enqueuedFramesCount(withType: .audio)
-                let audioBufferSize = self.audioFrameBufferManager.bufferSize
-                let audioBufferSizeMax = self.audioFrameBufferManager.maxBufferSize
-                guard pendingFrameCount + audioBufferSize < audioBufferSizeMax else { return }
-                let framesToDecodeCount = audioBufferSizeMax - pendingFrameCount - audioBufferSize
-                let audioDecodeTask = HLSDecodeTask(frameType: .audio, decodeCount: framesToDecodeCount) { decodedFrames, remainingFrames in
-                    self.audioFrameBufferManager.addItems(decodedFrames)
-                    self.videoFrameBufferManager.addItems(remainingFrames)
-                }
-                self.mediaDecoder.enqueueDecodeTask(audioDecodeTask)
+            self?.decodeQueue.async {
+                self?.handleFreedBuffer(for: .audio)
             }
         }
         
         mediaDecoder.didSeekStart = { [weak self] seekType in
-            print("DID SEEK START with type: \(seekType)")
+            print("Did seek start with type: \(seekType)")
             if seekType == .default {
                 self?._isSeeking = true
                 self?.isMuted = true
@@ -243,13 +223,14 @@ public final class HLSPlayer {
                 }
                 self?.isMuted = false
                 self?._isSeeking = false
+                self?.mediaRenderer.resetBufferingStatistics()
                 self?.mediaRenderer.videoRenderer.shouldIgnoreAheadOfTimeNextFrame = true
                 if self?._isPlaying == true {
                     self?.play()
                 }
                 self?.didChangePlayerStatus?()
             }
-            print("DID SEEK END with type: \(seekType)")
+            print("Did seek end with type: \(seekType)")
         }
         
         mediaDecoder.didFoundEndOfFilePosition = { [weak self] endOfStreamPosition in
@@ -383,17 +364,32 @@ public final class HLSPlayer {
         mediaDecoder.enqueueDecodeTask(audioDecodeTask)
     }
     
+    private func handleFreedBuffer(for frameType: HLSMediaFrameType) {
+        let frameBufferManager = frameType == .video ? videoFrameBufferManager : audioFrameBufferManager
+        let otherFrameBufferManager = frameType == .video ? audioFrameBufferManager : videoFrameBufferManager
+        let bufferSize = frameBufferManager.bufferSize
+        let bufferSizeMax = frameBufferManager.maxBufferSize
+        let pendingFrameCount = mediaDecoder.enqueuedFramesCount(withType: frameType)
+        
+        guard pendingFrameCount + bufferSize < bufferSizeMax else { return }
+        
+        let framesToDecodeCount = bufferSizeMax - pendingFrameCount - bufferSize
+        let audioDecodeTask = HLSDecodeTask(frameType: frameType, decodeCount: framesToDecodeCount) { decodedFrames, remainingFrames in
+            frameBufferManager.addItems(decodedFrames)
+            otherFrameBufferManager.addItems(remainingFrames)
+        }
+        mediaDecoder.enqueueDecodeTask(audioDecodeTask)
+    }
+    
     private func didSwitchSelectedStream(_ newStream: HLSStream) {
         mediaRenderer.resetBufferingStatistics()
         DispatchQueue.global().async { [weak self] in
-            print("LOAD NEW MEDIA SOURCE")
+            print("Load new media source")
             guard let newMediaSource = HLSMediaSource(url: newStream.url) else {
-                print("Failed to load new media source")
                 return
             }
-            print("LOADED")
             self?.decodeQueue.async {
-                print("START SEEK")
+                print("Start switch stream")
                 self?.mediaDecoder.switchStream(newMediaSource: newMediaSource)
             }
         }
@@ -436,8 +432,8 @@ extension HLSPlayer: HLSMediaRendererDelegate {
     func shouldDowngradeQuality(bufferingCount: Int, totalBufferingTime: TimeInterval, playbackTime: TimeInterval) -> Bool {
         guard playbackTime < playerContext.duration.seconds * 0.9 else { return false }
         
-        let bufferingFrequencyThreshold = 5
-        let bufferingTimeThresholdRatio = 0.3
+        let bufferingFrequencyThreshold = 3
+        let bufferingTimeThresholdRatio = 0.5
         
         let bufferingRatio = totalBufferingTime / playbackTime
         let bufferingFrequencyRatio = Double(bufferingCount) / playbackTime
@@ -457,10 +453,6 @@ extension HLSPlayer: HLSMediaRendererDelegate {
         if hasAudioStream {
             CMTimebaseSetTime(playerContext.controlTimebase, time: pts)
         }
-        
-//        print("lastPts: \(pts.seconds), duration: \(playerContext.duration.seconds)")
-        
-        //guard !CMTimebaseGetTime(playerContext.controlTimebase).seconds.isZero else { return }
         
         if let endOfStreamPosition = endOfStreamPosition {
             handleEndOfStream(currentPosiotion: pts, endOfStreamPosition: endOfStreamPosition)
