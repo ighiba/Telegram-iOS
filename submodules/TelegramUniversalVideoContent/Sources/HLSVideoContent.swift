@@ -285,13 +285,6 @@ private final class HLSVideoContentNode: ASDisplayNode, UniversalVideoContentNod
     private var loadProgressDisposable: Disposable?
     private var statusDisposable: Disposable?
     
-    private var didPlayToEndTimeObserver: NSObjectProtocol?
-    private var didBecomeActiveObserver: NSObjectProtocol?
-    private var willResignActiveObserver: NSObjectProtocol?
-    private var failureObserverId: NSObjectProtocol?
-    private var errorObserverId: NSObjectProtocol?
-    private var playerItemFailedToPlayToEndTimeObserver: NSObjectProtocol?
-    
     private let fetchDisposable = MetaDisposable()
     
     private var dimensions: CGSize?
@@ -440,24 +433,9 @@ private final class HLSVideoContentNode: ASDisplayNode, UniversalVideoContentNod
         self.player?.didPlayToEndTime = { [weak self] in
             self?.performActionAtEnd()
         }
-        
-//        self.didBecomeActiveObserver = NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: nil, using: { [weak self] _ in
-//            guard let strongSelf = self, let layer = strongSelf.playerNode.layer as? AVPlayerLayer else {
-//                return
-//            }
-//            layer.player = strongSelf.player
-//        })
-//        self.willResignActiveObserver = NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: nil, using: { [weak self] _ in
-//            guard let strongSelf = self, let layer = strongSelf.playerNode.layer as? AVPlayerLayer else {
-//                return
-//            }
-//            layer.player = nil
-//        })
     }
     
     deinit {
-//        self.player?.removeObserver(self, forKeyPath: "rate")
-        
         self.setPlayerItem(nil)
         self.player?.reset()
         
@@ -466,61 +444,18 @@ private final class HLSVideoContentNode: ASDisplayNode, UniversalVideoContentNod
         self.loadProgressDisposable?.dispose()
         self.statusDisposable?.dispose()
         
-        if let didBecomeActiveObserver = self.didBecomeActiveObserver {
-            NotificationCenter.default.removeObserver(didBecomeActiveObserver)
-        }
-        if let willResignActiveObserver = self.willResignActiveObserver {
-            NotificationCenter.default.removeObserver(willResignActiveObserver)
-        }
-        
-        if let didPlayToEndTimeObserver = self.didPlayToEndTimeObserver {
-            NotificationCenter.default.removeObserver(didPlayToEndTimeObserver)
-        }
-        if let failureObserverId = self.failureObserverId {
-            NotificationCenter.default.removeObserver(failureObserverId)
-        }
-        if let errorObserverId = self.errorObserverId {
-            NotificationCenter.default.removeObserver(errorObserverId)
-        }
-        
         self.serverDisposable?.dispose()
         
         self.statusTimer?.invalidate()
     }
     
     private func setPlayerItem(_ item: HLSPlayerItem?) {
-//        if let playerItem = self.playerItem {
-//            playerItem.removeObserver(self, forKeyPath: "playbackBufferEmpty")
-//            playerItem.removeObserver(self, forKeyPath: "playbackLikelyToKeepUp")
-//            playerItem.removeObserver(self, forKeyPath: "playbackBufferFull")
-//            playerItem.removeObserver(self, forKeyPath: "status")
-//            playerItem.removeObserver(self, forKeyPath: "presentationSize")
-//        }
-        
-        if let playerItemFailedToPlayToEndTimeObserver = self.playerItemFailedToPlayToEndTimeObserver {
-            self.playerItemFailedToPlayToEndTimeObserver = nil
-            NotificationCenter.default.removeObserver(playerItemFailedToPlayToEndTimeObserver)
-        }
-        
-        if let didPlayToEndTimeObserver = self.didPlayToEndTimeObserver {
-            self.didPlayToEndTimeObserver = nil
-            NotificationCenter.default.removeObserver(didPlayToEndTimeObserver)
-        }
-        if let failureObserverId = self.failureObserverId {
-            self.failureObserverId = nil
-            NotificationCenter.default.removeObserver(failureObserverId)
-        }
-        if let errorObserverId = self.errorObserverId {
-            self.errorObserverId = nil
-            NotificationCenter.default.removeObserver(errorObserverId)
-        }
-        
         self.playerItem = item
         
         item?.didChangeStatus = { status in
             if case .failed(let error) = status {
                 #if DEBUG
-                print("Player item Error: \(error.localizedDescription)")
+                print("Player item Error: \(error)")
                 #endif
             }
         }
