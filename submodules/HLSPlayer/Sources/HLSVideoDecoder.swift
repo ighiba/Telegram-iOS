@@ -2,8 +2,6 @@ import Foundation
 import VideoToolbox
 import FFMpegBinding
 
-private let bufferCount = 32
-
 final class HLSVideoDecoder: HLSDecoder {
     private var videoFrame: FFMpegAVFrame = FFMpegAVFrame()
     private var uvPlane: (UnsafeMutablePointer<UInt8>, Int)?

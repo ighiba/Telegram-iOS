@@ -243,13 +243,11 @@ public final class HLSMediaDecoder {
                     if lastSeekStatus.videoState == .notSeeked {
                         guard isFramePositionValid else { continue }
                         self.lastSeekStatus?.videoState = .seeked
-                        print("Video \(mediaFrame.position.seconds) seek reached for \(mediaFrame.type)")
                     }
                 case .audio:
                     if lastSeekStatus.audioState == .notSeeked {
                         guard isFramePositionValid else { continue }
                         self.lastSeekStatus?.audioState = .seeked
-                        print("Audio \(mediaFrame.position.seconds) seek reached for \(mediaFrame.type)")
                     }
                 }
                 
