@@ -44,18 +44,10 @@ public final class HLSAudioStreamContext: HLSStreamContext {
         self.channelCount = 1
         super.init(index: index, fps: fps, timebase: timebase, duration: duration, startTime: startTime, codecContext: codecContext)
     }
-    
-    deinit {
-        print("\(Self.self) deinit")
-    }
 }
 
 public final class HLSVideoStreamContext: HLSStreamContext {
     public required init(index: Int32, fps: CMTime, timebase: CMTime, duration: CMTime, startTime: CMTime, codecContext: FFMpegAVCodecContext) {
         super.init(index: index, fps: fps, timebase: timebase, duration: duration, startTime: startTime, codecContext: codecContext)
-    }
-    
-    deinit {
-        print("\(Self.self) deinit")
     }
 }

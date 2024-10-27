@@ -53,10 +53,11 @@ int FFMpegCodecIdVP9 = AV_CODEC_ID_VP9;
 
 - (bool)openInput:(const char *)url {
     AVDictionary *options = nil;
-    av_dict_set(&options, "buffer_size", "50000000", 0);
+//    av_dict_set(&options, "buffer_size", "50000000", 0);
+    av_dict_set(&options, "probesize", "32", 0);
+    av_dict_set(&options, "analyzeduration ", "1", 0);
     avformat_network_init();
     int result = avformat_open_input(&_impl, url, nil, &options);
-    NSLog(@"status %d", result);
     av_dict_free(&options);
     if (_impl != nil) {
         _impl->flags |= AVFMT_FLAG_FAST_SEEK;

@@ -42,13 +42,9 @@ public final class HLSPlayerItem {
         self.prepareMediaSourceForPlayback()
     }
     
-    deinit {
-        print("\(Self.self) deinit")
-    }
-    
     func downgradeStreamQuality() {
         if let downgradedStream = streamManager.streamWithDowngradedQuality() {
-            print("DOWNGRADE STREAM")
+            print("Downgrade stream quality")
             streamManager.setCurrentStream(downgradedStream)
             didSwitchSelectedStream?(downgradedStream)
         }
@@ -86,8 +82,4 @@ public final class HLSPlayerItem {
             didChangePresentationSize?(optimalStream.presentationSize)
         }
     }
-}
-
-extension HLSPlayerItem {
-    public static let statusDidChangeNotification = NSNotification.Name("statusDidChangeNotification")
 }

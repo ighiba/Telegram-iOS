@@ -14,10 +14,6 @@ final class HLSVideoDecoder: HLSDecoder {
         self.codecContext = codecContext
     }
     
-    deinit {
-        print("\(Self.self) deinit")
-    }
-    
     func setup(codecContext: FFMpegAVCodecContext) {
         self.codecContext = codecContext
     }

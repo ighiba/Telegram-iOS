@@ -14,10 +14,6 @@ final class HLSAudioDecoder: HLSDecoder {
         self.setup(codecContext: codecContext, destinationSampleRate: destinationSampleRate, destinationChannelCount: destinationChannelCount)
     }
     
-    deinit {
-        print("\(Self.self) deinit")
-    }
-    
     func setup(codecContext: FFMpegAVCodecContext, destinationSampleRate: Int = 44100, destinationChannelCount: Int = 1) {
         self.swResample = FFMpegSWResample(
             sourceChannelCount: Int(codecContext.channels()),

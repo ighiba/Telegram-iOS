@@ -45,7 +45,7 @@ CONFIGURE_FLAGS="--enable-cross-compile --disable-programs \
                  --enable-avformat \
                  --disable-xlib \
                  --enable-libopus \
-				 --enable-libvpx \
+                 --enable-libvpx \
                  --enable-audiotoolbox \
                  --enable-bsf=aac_adtstoasc,vp9_superframe,h264_mp4toannexb \
                  --enable-decoder=h264,libvpx_vp9,hevc,libopus,mp3,aac,flac,alac_at,pcm_s16le,pcm_s24le,pcm_f32le,gsm_ms_at \
@@ -54,8 +54,9 @@ CONFIGURE_FLAGS="--enable-cross-compile --disable-programs \
                  --enable-parser=aac,h264,mp3,libopus \
                  --enable-protocol=file,http,https,hls \
                  --enable-muxer=mp4,matroska,mpegts \
+                 --enable-videotoolbox \
+                 --enable-hwaccel=h264_videotoolbox \
                  "
-
 
 #--enable-hwaccel=h264_videotoolbox,hevc_videotoolbox \
 

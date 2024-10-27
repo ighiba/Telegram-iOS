@@ -48,15 +48,27 @@ class SimpleQueue<T> {
     }
     
     func count() -> Int {
-        return items.count
+        var count = 0
+        queueLock.lock()
+        count = items.count
+        queueLock.unlock()
+        return count
     }
     
     func filterCount(_ filter: (T) -> Bool) -> Int {
-        return items.filter(filter).count
+        var count = 0
+        queueLock.lock()
+        count = items.filter(filter).count
+        queueLock.unlock()
+        return count
     }
     
     func map<U>(_ transform: (T) -> U) -> [U] {
-        return items.map(transform)
+        var newItems = [U]()
+        queueLock.lock()
+        newItems = items.map(transform)
+        queueLock.unlock()
+        return newItems
     }
 }
 
@@ -118,10 +130,6 @@ public final class HLSMediaDecoder {
     
     public init() {
         self.taskQueue = SimpleQueue()
-    }
-    
-    deinit {
-        print("\(Self.self) deinit")
     }
     
     public func reset() {
@@ -235,20 +243,19 @@ public final class HLSMediaDecoder {
                     if lastSeekStatus.videoState == .notSeeked {
                         guard isFramePositionValid else { continue }
                         self.lastSeekStatus?.videoState = .seeked
-                        print("VIDEO \(mediaFrame.position.seconds) seek reached for \(mediaFrame.type)")
+                        print("Video \(mediaFrame.position.seconds) seek reached for \(mediaFrame.type)")
                     }
                 case .audio:
                     if lastSeekStatus.audioState == .notSeeked {
                         guard isFramePositionValid else { continue }
                         self.lastSeekStatus?.audioState = .seeked
-                        print("AUDIO \(mediaFrame.position.seconds) seek reached for \(mediaFrame.type)")
+                        print("Audio \(mediaFrame.position.seconds) seek reached for \(mediaFrame.type)")
                     }
                 }
                 
                 let isSeekedVideo = lastSeekStatus.videoState == .seeked
                 let isSeekedAudio = mediaSource.hasAudioStream ? lastSeekStatus.audioState == .seeked : true
                 if isSeekedVideo && isSeekedAudio {
-                    print("seek reached for didSeek")
                     self.lastSeekStatus = nil
                     didSeekEnd?(lastSeekStatus.seekType)
                 }
@@ -274,8 +281,8 @@ public final class HLSMediaDecoder {
         if result == 0 {
             return packet
         } else if result == FFMPEG_CONSTANT_AVERROR_EOF {
-            if let lastDecodedVideoFramePts {
-                didFoundEndOfFilePosition?(lastDecodedVideoFramePts)
+            if let lastDecodedAudioFramePts {
+                didFoundEndOfFilePosition?(lastDecodedAudioFramePts)
             } else if let lastDecodedVideoFramePts {
                 didFoundEndOfFilePosition?(lastDecodedVideoFramePts)
             }

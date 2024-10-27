@@ -46,17 +46,12 @@ public final class HLSAudioRenderer: NSObject, HLSRenderer, HLSAudioRendererDele
     
     init(timebase: CMTimebase, pcmBufferManager: HLSBufferManager<HLSAudioBuffer>) {
         self.timebase = timebase
-        self.audioPlayer = HLSAudioPlayer(audioBufferSize: 60)
+        self.audioPlayer = HLSAudioPlayer(audioBufferSize: 30)
         self.pcmBufferManager = pcmBufferManager
-//        self.pcmBufferManager.callbackQueue = audioRenderQueue
         self.taskQueue = SimpleQueue()
         super.init()
         self.audioPlayer.delegate = self
         self.setup()
-    }
-    
-    deinit {
-        print("\(Self.self) deinit")
     }
     
     private func setup() {
@@ -93,6 +88,7 @@ public final class HLSAudioRenderer: NSObject, HLSRenderer, HLSAudioRendererDele
         requestAudioFrames = nil
         didRenderAudioBufferWithPts = nil
         didBufferBecomeReady = nil
+        taskQueue.reset()
     }
     
     public func restartPlayer() {
@@ -223,7 +219,6 @@ final class HLSAudioPlayer {
         playerNode.stop()
         audioEngine.stop()
         audioEngine.reset()
-        print("\(Self.self) deinit")
     }
     
     private func setup() {

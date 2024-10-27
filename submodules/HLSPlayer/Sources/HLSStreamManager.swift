@@ -45,10 +45,6 @@ final class HLSStreamManager {
     private var currentStream: HLSStream?
     private var currentMediaSource: HLSMediaSource?
     
-    deinit {
-        print("\(Self.self) deinit")
-    }
-    
     func fetchMediaSource(masterPlaylistUrl: URL, initOnQueue queue: DispatchQueue, completion: @escaping (Result<HLSMediaSource, HLSStreamManager.Error>) -> Void) {
         URLSession.shared.dataTask(with: createRequestGET(url: masterPlaylistUrl)) { [weak self] data, response, error in
             if let error {
@@ -279,13 +275,3 @@ final class M3U8Parser {
         }
     }
 }
-
-private let testMasterPlaylist = """
-#EXTM3U
-#EXT-X-STREAM-INF:BANDWIDTH=2074088,RESOLUTION=1920x1080
-hls_level_1080.m3u8
-#EXT-X-STREAM-INF:BANDWIDTH=1015040,RESOLUTION=1280x720
-hls_level_720.m3u8
-#EXT-X-STREAM-INF:BANDWIDTH=527200,RESOLUTION=852x480
-hls_level_480.m3u8
-"""

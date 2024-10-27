@@ -64,10 +64,6 @@ public final class HLSMediaRenderer {
         self.setup()
     }
     
-    deinit {
-        print("\(Self.self) deinit")
-    }
-    
     private func setup() {
         videoRenderer.didBufferBecomeReady = { [weak self] in
             guard let self else { return }
@@ -133,17 +129,8 @@ public final class HLSMediaRenderer {
     }
     
     public func startRendering() {
-        print("START RENDERING")
         guard rendererState != .unprepared else { return }
-        startPlayback()
-    }
-    
-    public func pauseRendering() {
-        print("PAUSE RENDERING")
-        pausePlayback()
-    }
-    
-    private func startPlayback() {
+        print("Start rendering")
         if hasAudioStream {
             audioRenderer.startPlayer()
         } else {
@@ -154,6 +141,7 @@ public final class HLSMediaRenderer {
     }
     
     public func stopRendering() {
+        print("Stop rendering")
         if hasAudioStream {
             audioRenderer.stopPlayer()
         } else {
@@ -163,7 +151,8 @@ public final class HLSMediaRenderer {
         rendererState = .stopped
     }
     
-    private func pausePlayback() {
+    public func pauseRendering() {
+        print("Pause rendering")
         if hasAudioStream {
             audioRenderer.pausePlayer()
         } else {
@@ -175,16 +164,16 @@ public final class HLSMediaRenderer {
     
     private func startBuffering() {
         guard !isBuffering else { return }
-        print("START BUFFERING")
+        print("Start buffering")
         isBuffering = true
         bufferingCount += 1
         bufferingStartTime = Date()
-        pausePlayback()
+        pauseRendering()
         startBufferingTimer()
     }
     
     private func stopBuffering() {
-        print("STOP BUFFERING")
+        print("Stop buffering")
         isBuffering = false
         bufferingTimer?.invalidate()
         bufferingTimer = nil
@@ -204,7 +193,7 @@ public final class HLSMediaRenderer {
         
         bufferingStartTime = nil
         if delegate?.isPlaying == true {
-            startPlayback()
+            startRendering()
         }
     }
     
@@ -269,9 +258,7 @@ public final class HLSMediaRenderer {
     }
     
     private func didChangeRendererState(_ rendererState: HLSRendererState) {
-        #if DEBUG
-        print("-=RENDERER STATE: \(rendererState)=-")
-        #endif
+        
     }
     
     private func didChangeIsBuffering(_ isBuffering: Bool) {

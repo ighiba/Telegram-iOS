@@ -42,6 +42,7 @@ public final class HLSPlayer {
     public var didChangePlayerStatus: (() -> Void)?
     public var didPlayToEndTime: (() -> Void)?
     
+    public var actionAtItemEnd: HLSPlayer.ActionAtItemEnd = .pause
     private var playbackStatus: PlaybackStatus = PlaybackStatus.notStarted
     
     public var isPlaying: Bool { _isPlaying }
@@ -68,8 +69,6 @@ public final class HLSPlayer {
     private var hasAudioStream: Bool {
         currentItem?.mediaSource?.hasAudioStream ?? true
     }
-    
-    public var actionAtItemEnd: HLSPlayer.ActionAtItemEnd = .pause
     
     public var rate: Float = 1.0 {
         didSet {
@@ -103,7 +102,7 @@ public final class HLSPlayer {
         }
     }
     
-    private var preferAutoQuality: Bool {
+    private var isPreferAutoQuality: Bool {
         currentItem?.preferredPeakBitRate == 0
     }
     
@@ -162,7 +161,7 @@ public final class HLSPlayer {
             videoFrameBufferManager: HLSBufferManager(maxBufferSize: 60, label: "Video", isLoggingEnabled: false),
             textureBufferManager: HLSBufferManager(maxBufferSize: 30, label: "Texture", isLoggingEnabled: false),
             audioFrameBufferManager: HLSBufferManager(maxBufferSize: 60, label: "Audio", isLoggingEnabled: false),
-            pcmBufferManager: HLSBufferManager(maxBufferSize: 60, label: "PCM", isLoggingEnabled: false)
+            pcmBufferManager: HLSBufferManager(maxBufferSize: 30, label: "PCM", isLoggingEnabled: false)
         )
         let mediaRenderer = HLSMediaRenderer(
             playerContext: playerContext,
@@ -180,7 +179,6 @@ public final class HLSPlayer {
         endPlayback()
         endOfStreamDebounceTimer?.invalidate()
         endOfStreamDebounceTimer = nil
-        print("\(Self.self) deinit")
     }
     
     // MARK: - Methods
@@ -227,6 +225,8 @@ public final class HLSPlayer {
                 self?.mediaRenderer.videoRenderer.shouldIgnoreAheadOfTimeNextFrame = true
                 if self?._isPlaying == true {
                     self?.play()
+                } else {
+                    self?.mediaRenderer.audioRenderer.stopPlayer()
                 }
                 self?.didChangePlayerStatus?()
             }
@@ -282,15 +282,11 @@ public final class HLSPlayer {
         _isPlaying = false
     }
     
-    public func currentTime() -> CMTime {
-        let currenTime = CMTimebaseGetTime(playerContext.controlTimebase)
-        return currenTime > playerContext.startTime ? currenTime : playerContext.startTime
-    }
-    
     public func seek(toTimestamp timestamp: Double) {
         _isSeeking = true
         let timescale = CMTimebaseGetTime(playerContext.controlTimebase).timescale
-        CMTimebaseSetTime(playerContext.controlTimebase, time: CMTime(seconds: timestamp, preferredTimescale: timescale))
+        let time = CMTime(seconds: timestamp, preferredTimescale: timescale)
+        CMTimebaseSetTime(playerContext.controlTimebase, time: time)
         didChangePlayerStatus?()
         mediaRenderer.pauseRendering()
         mediaRenderer.audioRenderer.restartPlayer()
@@ -302,31 +298,34 @@ public final class HLSPlayer {
         }
     }
     
+    public func currentTime() -> CMTime {
+        let currenTime = CMTimebaseGetTime(playerContext.controlTimebase)
+        return currenTime > playerContext.startTime ? currenTime : playerContext.startTime
+    }
+    
     private func startPlayback() {
         guard let currentItem else {
             print("HLSPlayer.startPlayback: No currentItem")
             return
         }
         
-        print("startPlayback")
+        print("Start playback")
         
         if let mediaSource = currentItem.mediaSource {
             openMediaSource(mediaSource)
-        } else {
-            enqueueDefaultDecodeTasks()
         }
     }
     
-    func restartPlayback() {
-        print("restartPlayback")
+    private func restartPlayback() {
+        print("Restart playback")
+        _isPlaying = false
         enqueueDefaultDecodeTasks()
-        seek(toTimestamp: 0)
         mediaRenderer.videoRenderer.renderFirstTexture()
         playbackStatus = .started
     }
     
     private func endPlayback() {
-        print("endPlayback")
+        print("End playback")
         CMTimebaseSetTime(playerContext.controlTimebase, time: .zero)
         _isPlaying = false
         playbackStatus = .needRestart
@@ -339,7 +338,7 @@ public final class HLSPlayer {
     }
     
     private func openMediaSource(_ mediaSource: HLSMediaSource) {
-        videoPlaybackFrameRate = Int(mediaSource.videoStreamContext?.fps.value ?? 0)
+        videoPlaybackFrameRate = Int(mediaSource.videoStreamContext?.fps.value ?? .zero)
         playerContext.startTime = mediaSource.videoStreamContext?.startTime ?? .zero
         playerContext.duration = mediaSource.getMediaDuration() ?? .zero
         decodeQueue.async { [weak self] in
@@ -355,12 +354,15 @@ public final class HLSPlayer {
             self.videoFrameBufferManager.addItems(decodedVideoFrames)
             self.audioFrameBufferManager.addItems(remainingFrames)
         }
+        
+        mediaDecoder.enqueueDecodeTask(videoDecodeTask)
+        
+        guard hasAudioStream else { return }
+        
         let audioDecodeTask = HLSDecodeTask(frameType: .audio, decodeCount: 30) { decodedAudioFrames, remainingFrames in
             self.videoFrameBufferManager.addItems(remainingFrames)
             self.audioFrameBufferManager.addItems(decodedAudioFrames)
         }
-        
-        mediaDecoder.enqueueDecodeTask(videoDecodeTask)
         mediaDecoder.enqueueDecodeTask(audioDecodeTask)
     }
     
@@ -424,7 +426,7 @@ extension HLSPlayer: HLSMediaRendererDelegate {
     
     public func didUpdateBufferingStatistics(bufferingCount: Int, totalBufferingTime: TimeInterval, playbackTime: TimeInterval) {
         let shouldDowngradeQuality = shouldDowngradeQuality(bufferingCount: bufferingCount, totalBufferingTime: totalBufferingTime, playbackTime: playbackTime)
-        if shouldDowngradeQuality, preferAutoQuality {
+        if shouldDowngradeQuality, isPreferAutoQuality {
             currentItem?.downgradeStreamQuality()
         }
     }
@@ -438,9 +440,7 @@ extension HLSPlayer: HLSMediaRendererDelegate {
         let bufferingRatio = totalBufferingTime / playbackTime
         let bufferingFrequencyRatio = Double(bufferingCount) / playbackTime
 
-        print("bufferingCount \(bufferingCount)")
-        print("bufferingRatio \(bufferingRatio)")
-        print("bufferingFrequencyRatio \(bufferingFrequencyRatio)")
+        print("Buffering count: \(bufferingCount), ratio: \(bufferingRatio), frequency: \(bufferingFrequencyRatio)")
         
         return bufferingCount >= bufferingFrequencyThreshold &&
                bufferingRatio >= bufferingTimeThresholdRatio

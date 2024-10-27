@@ -70,7 +70,6 @@ public final class HLSVideoRenderer: NSObject, HLSRenderer {
     public init(timebase: CMTimebase, textureBufferManager: HLSBufferManager<HLSTexture>) {
         self.timebase = timebase
         self.textureBufferManager = textureBufferManager
-//        self.textureBufferManager.callbackQueue = videoRenderQueue
         self.taskQueue = SimpleQueue()
         let device = MTLCreateSystemDefaultDevice()
         self.metalView = MTKView(frame: .zero, device: device)
@@ -78,10 +77,6 @@ public final class HLSVideoRenderer: NSObject, HLSRenderer {
         self.commandQueue = device?.makeCommandQueue()
         super.init()
         self.setup()
-    }
-    
-    deinit {
-        print("\(Self.self) deinit")
     }
     
     private func setup() {
@@ -113,6 +108,7 @@ public final class HLSVideoRenderer: NSObject, HLSRenderer {
     public func reset() {
         requestVideoFrames = nil
         didBufferBecomeReady = nil
+        taskQueue.reset()
     }
     
     private func configurePipelaneState() -> MTLRenderPipelineState? {
@@ -239,7 +235,7 @@ public final class HLSVideoRenderer: NSObject, HLSRenderer {
         var textureCache: CVMetalTextureCache?
         CVMetalTextureCacheCreate(kCFAllocatorDefault, nil, device, nil, &textureCache)
         
-        guard let textureCache else {return nil }
+        guard let textureCache else { return nil }
         
         let yPixelFormat: MTLPixelFormat = .r8Unorm
         let uvPixelFormat: MTLPixelFormat = .rg8Unorm
