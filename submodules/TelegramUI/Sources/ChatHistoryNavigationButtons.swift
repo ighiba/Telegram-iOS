@@ -269,6 +269,13 @@ final class ChatHistoryNavigationButtons: ASDisplayNode {
         return completeSize
     }
     
+    func setCaptureHostView(_ view: UIView) {
+        self.reactionsButton.setCaptureHostView(view)
+        self.mentionsButton.setCaptureHostView(view)
+        self.downButton.setCaptureHostView(view)
+        self.upButton.setCaptureHostView(view)
+    }
+    
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         if let subnodes = self.subnodes {
             for subnode in subnodes {

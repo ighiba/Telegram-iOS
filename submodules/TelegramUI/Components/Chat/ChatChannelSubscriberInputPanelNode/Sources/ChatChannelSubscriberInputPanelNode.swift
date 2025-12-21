@@ -658,4 +658,10 @@ public final class ChatChannelSubscriberInputPanelNode: ChatInputPanelNode {
     override public func minimalHeight(interfaceState: ChatPresentationInterfaceState, metrics: LayoutMetrics) -> CGFloat {
         return defaultHeight(metrics: metrics)
     }
+
+    override public func setCaptureHostView(_ view: UIView) {
+        if let panelView = self.panel.view as? GlassControlPanelComponent.View {
+            panelView.setCaptureHostView(view)
+        }
+    }
 }

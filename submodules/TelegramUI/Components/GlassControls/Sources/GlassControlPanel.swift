@@ -268,6 +268,12 @@ public final class GlassControlPanelComponent: Component {
             
             return availableSize
         }
+
+        public func setCaptureHostView(_ view: UIView) {
+           self.leftItemView?.setCaptureHostView(view)
+           self.centerItemView?.setCaptureHostView(view)
+           self.rightItemView?.setCaptureHostView(view)
+        }
     }
 
     public func makeView() -> View {

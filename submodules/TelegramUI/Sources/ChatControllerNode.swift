@@ -261,6 +261,7 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
     private var inputMediaNodeStateContext = ChatEntityKeyboardInputNode.StateContext()
         
     let navigateButtons: ChatHistoryNavigationButtons
+    private let navigateContainerNode: ChatHistoryNavigationContainerNode
     
     private var ignoreUpdateHeight = false
     private var overrideUpdateTextInputHeightTransition: ContainedViewLayoutTransition?
@@ -751,6 +752,7 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
         }
         
         self.navigateButtons = ChatHistoryNavigationButtons(theme: self.chatPresentationInterfaceState.theme, dateTimeFormat: self.chatPresentationInterfaceState.dateTimeFormat, backgroundNode: self.backgroundNode, isChatRotated: historyNodeRotated)
+        self.navigateContainerNode = ChatHistoryNavigationContainerNode()
         self.navigateButtons.accessibilityElementsHidden = true
         
         super.init()
@@ -850,7 +852,8 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
         self.inputPanelClippingNode.addSubnode(self.inputPanelBackgroundNode)
 
         self.wrappingNode.contentNode.addSubnode(self.messageTransitionNode)
-        self.contentContainerNode.contentNode.addSubnode(self.navigateButtons)
+        self.wrappingNode.contentNode.addSubnode(self.navigateContainerNode)
+        self.navigateContainerNode.addSubnode(self.navigateButtons)
         self.wrappingNode.contentNode.addSubnode(self.presentationContextMarker)
         self.contentContainerNode.contentNode.addSubnode(self.contentDimNode)
         
@@ -945,6 +948,8 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
             }
             strongSelf.inputMediaNodeData = value
         })
+        
+        self.updateGlassCaptureHostView()
     }
     
     deinit {
@@ -1004,6 +1009,13 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
             
             return false
         }
+
+        self.updateGlassCaptureHostView()
+    }
+    
+    private func updateGlassCaptureHostView() {
+        self.textInputPanelNode?.setCaptureHostView(self.contentContainerNode.view)
+        self.navigateButtons.setCaptureHostView(self.contentContainerNode.view)
     }
     
     private func updateIsEmpty(_ emptyType: ChatHistoryNodeLoadState.EmptyType?, wasLoading: Bool, animated: Bool) {
@@ -1114,6 +1126,7 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
 
         self.messageTransitionNode.frame = CGRect(origin: CGPoint(), size: layout.size)
         self.contentContainerNode.frame = CGRect(origin: CGPoint(), size: layout.size)
+        self.navigateContainerNode.frame = CGRect(origin: CGPoint(), size: layout.size)
         
         let isOverlay: Bool
         switch self.chatPresentationInterfaceState.mode {
@@ -1639,6 +1652,7 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
                 if let viewForOverlayContent = inputPanelNode.viewForOverlayContent, viewForOverlayContent.superview == nil {
                     self.inputPanelOverlayNode.view.addSubview(viewForOverlayContent)
                 }
+                self.inputPanelNode?.setCaptureHostView(self.contentContainerNode.view)
             } else {
                 let inputPanelHeight = inputPanelNode.updateLayout(width: layout.size.width, leftInset: layout.safeInsets.left, rightInset: layout.safeInsets.right, bottomInset: inputPanelBottomInset, additionalSideInsets: layout.additionalInsets, maxHeight: layout.size.height - insets.top - inputPanelBottomInset - 120.0, maxOverlayHeight: layout.size.height - insets.top - inputPanelBottomInset, isSecondary: false, transition: transition, interfaceState: self.chatPresentationInterfaceState, metrics: layout.metrics, isMediaInputExpanded: self.inputPanelContainerNode.expansionFraction == 1.0)
                 inputPanelSize = CGSize(width: layout.size.width, height: inputPanelHeight)
@@ -1661,10 +1675,14 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
                 if let viewForOverlayContent = secondaryInputPanelNode.viewForOverlayContent, viewForOverlayContent.superview == nil {
                     self.inputPanelOverlayNode.view.addSubview(viewForOverlayContent)
                 }
+                self.secondaryInputPanelNode?.setCaptureHostView(self.contentContainerNode.view)
             } else {
                 let inputPanelHeight = secondaryInputPanelNode.updateLayout(width: layout.size.width, leftInset: layout.safeInsets.left, rightInset: layout.safeInsets.right, bottomInset: inputPanelBottomInset, additionalSideInsets: layout.additionalInsets, maxHeight: layout.size.height - insets.top - inputPanelBottomInset, maxOverlayHeight: layout.size.height - insets.top - inputPanelBottomInset, isSecondary: true, transition: transition, interfaceState: self.chatPresentationInterfaceState, metrics: layout.metrics, isMediaInputExpanded: self.inputPanelContainerNode.expansionFraction == 1.0)
                 secondaryInputPanelSize = CGSize(width: layout.size.width, height: inputPanelHeight)
             }
+            
+            secondaryInputPanelNode.setCaptureHostView(self.contentContainerNode.view)
+            
         } else {
             dismissedSecondaryInputPanelNode = self.secondaryInputPanelNode
             self.secondaryInputPanelNode = nil

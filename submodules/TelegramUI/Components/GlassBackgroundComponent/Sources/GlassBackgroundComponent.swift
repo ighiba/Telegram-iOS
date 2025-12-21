@@ -6,6 +6,7 @@ import ComponentDisplayAdapters
 import UIKitRuntimeUtils
 import CoreImage
 import AppBundle
+import LegacyGlass
 
 private final class ContentContainer: UIView {
     private let maskContentView: UIView
@@ -303,6 +304,8 @@ public class GlassBackgroundView: UIView {
     
     private let backgroundNode: NavigationBackgroundNode?
     
+    private let legacyGlassView: LegacyGlassView?
+    
     private let nativeView: UIVisualEffectView?
     private let nativeViewClippingContext: ClippingShapeContext?
     private let nativeParamsView: EffectSettingsContainerView?
@@ -331,6 +334,7 @@ public class GlassBackgroundView: UIView {
     public override init(frame: CGRect) {
         if #available(iOS 26.0, *), !GlassBackgroundView.useCustomGlassImpl {
             self.backgroundNode = nil
+            self.legacyGlassView = nil
             
             let glassEffect = UIGlassEffect(style: .regular)
             glassEffect.isInteractive = false
@@ -346,12 +350,36 @@ public class GlassBackgroundView: UIView {
             self.foregroundView = nil
             self.shadowView = nil
         } else {
-            let backgroundNode = NavigationBackgroundNode(color: .black, enableBlur: true, customBlurRadius: 8.0)
-            self.backgroundNode = backgroundNode
+//            let backgroundNode = NavigationBackgroundNode(color: .black, enableBlur: true, customBlurRadius: 8.0)
+//            self.backgroundNode = backgroundNode
+            self.backgroundNode = nil
+            let style = LegacyGlassStyle(
+                refractionStrength: -0.48,
+                refractionEdgeWidth: 0.75,
+                refractionCenterStrength: 0.0,
+                refractionEdgeStrength: 0.3,
+                refractionXScale: 1.0,
+                refractionYScale: 10.0,
+                dimmingStrength: 0.0,
+                rimHighlightWidth: 3.0,
+                rimHighlightStrength: 2.0,
+                chromaticAberrationStrength: 0.05,
+                coreRadius: 0.34,
+                idleOuterShadowWidth: 0.1,
+                idleOuterShadowOpacity: 0.15,
+                activeOuterShadowWidth: 0.0,
+                activeOuterShadowOpacity: 0.0,
+                isBlurEnabled: false,
+            )
+            
+            self.legacyGlassView = LegacyGlassView(style: style, qualityProfile: .automatic, allowsGroupSnapshotting: true)
+            self.legacyGlassView?.autoUpdatesOnScroll = true
+//            self.legacyGlassView?.setCaptureMode(.dynamicBackground(.fast))
+            
             self.nativeView = nil
             self.nativeViewClippingContext = nil
             self.nativeParamsView = nil
-            self.foregroundView = UIImageView()
+            self.foregroundView = nil//UIImageView()
             
             self.shadowView = UIImageView()
         }
@@ -377,6 +405,9 @@ public class GlassBackgroundView: UIView {
         }
         if let backgroundNode = self.backgroundNode {
             self.addSubview(backgroundNode.view)
+        }
+        if let legacyGlassView = self.legacyGlassView {
+            self.addSubview(legacyGlassView)
         }
         if let foregroundView = self.foregroundView {
             self.addSubview(foregroundView)
@@ -425,6 +456,15 @@ public class GlassBackgroundView: UIView {
                 backgroundNode.update(size: size, cornerRadius: cornerRadius, transition: transition.containedViewLayoutTransition)
             }
             transition.setFrame(view: backgroundNode.view, frame: CGRect(origin: CGPoint(), size: size))
+        }
+        if let legacyGlassView = self.legacyGlassView {
+            legacyGlassView.tintColor = tintColor.color
+            
+            switch shape {
+            case let .roundedRect(cornerRadius):
+                legacyGlassView.cornerRadius = cornerRadius
+            }
+            transition.setFrame(view: legacyGlassView, frame: CGRect(origin: CGPoint(), size: size))
         }
         
         let shadowInset: CGFloat = 32.0
@@ -536,6 +576,12 @@ public class GlassBackgroundView: UIView {
             transition.setFrame(view: shadowView, frame: CGRect(origin: CGPoint(), size: size).insetBy(dx: -shadowInset, dy: -shadowInset))
         }
         transition.setFrame(view: self.contentContainer, frame: CGRect(origin: CGPoint(), size: size))
+    }
+    
+    public func setCaptureHostView(_ view: UIView) {
+        if let legacyGlassView = self.legacyGlassView {
+            legacyGlassView.setCaptureHostView(view)
+        }
     }
 }
 

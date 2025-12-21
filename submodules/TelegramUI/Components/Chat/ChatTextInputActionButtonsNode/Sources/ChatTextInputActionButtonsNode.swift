@@ -434,6 +434,11 @@ public final class ChatTextInputActionButtonsNode: ASDisplayNode, ChatSendMessag
         
         return innerSize
     }
+
+    public func setCaptureHostView(_ view: UIView) {
+        self.micButtonBackgroundView.setCaptureHostView(view)
+        self.expandMediaInputButtonBackgroundView.setCaptureHostView(view)
+    }
     
     public func updateAccessibility() {
         self.accessibilityTraits = .button

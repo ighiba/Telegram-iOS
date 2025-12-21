@@ -332,6 +332,11 @@ open class TabBarControllerImpl: ViewController, TabBarController {
             }
             
             currentController.containerLayoutUpdated(updatedLayout, transition: transition)
+
+            NotificationCenter.default.post(
+                name: NSNotification.Name("TabBarControllerASDisplayViewChanged"),
+                object: currentController.displayNode.view
+            )
         }
     }
     

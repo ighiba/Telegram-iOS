@@ -217,10 +217,27 @@ public final class LiquidLensView: UIView {
             
             self.containerView.addSubview(self.liftedContainerView)
         }
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("TabBarControllerASDisplayViewChanged"),
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            if let captureView = notification.object as? UIView, let strongSelf = self {
+                strongSelf.setCaptureHostView(captureView)
+            }
+        }
     }
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    public func setCaptureHostView(_ view: UIView) {
+        self.backgroundView.setCaptureHostView(view)
     }
 
     public func update(size: CGSize, selectionX: CGFloat, selectionWidth: CGFloat, isDark: Bool, isLifted: Bool, transition: ComponentTransition) {

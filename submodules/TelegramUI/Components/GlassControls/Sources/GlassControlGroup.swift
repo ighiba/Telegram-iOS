@@ -224,6 +224,10 @@ public final class GlassControlGroupComponent: Component {
             
             return size
         }
+        
+        public func setCaptureHostView(_ view: UIView) {
+            self.backgroundView.setCaptureHostView(view)
+        }
     }
 
     public func makeView() -> View {

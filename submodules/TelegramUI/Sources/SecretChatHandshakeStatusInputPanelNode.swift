@@ -103,4 +103,8 @@ final class SecretChatHandshakeStatusInputPanelNode: ChatInputPanelNode {
     override func minimalHeight(interfaceState: ChatPresentationInterfaceState, metrics: LayoutMetrics) -> CGFloat {
         return defaultHeight(metrics: metrics)
     }
+    
+    override func setCaptureHostView(_ view: UIView) {
+        self.titleBackground.setCaptureHostView(view)
+    }
 }

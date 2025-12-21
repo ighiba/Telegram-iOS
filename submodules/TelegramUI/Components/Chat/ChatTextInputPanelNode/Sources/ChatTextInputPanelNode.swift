@@ -3507,6 +3507,16 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         return contentHeight
     }
     
+    override public func setCaptureHostView(_ view: UIView) {
+        self.textInputContainerBackgroundView.setCaptureHostView(view)
+        self.menuButtonBackgroundView.setCaptureHostView(view)
+        self.attachmentButtonBackground.setCaptureHostView(view)
+        self.viewOnceButton.setCaptureHostView(view)
+        self.recordMoreButton.setCaptureHostView(view)
+        self.sendActionButtons.setCaptureHostView(view)
+        self.mediaActionButtons.setCaptureHostView(view)
+    }
+    
     @objc private func slowModeButtonPressed() {
         self.interfaceInteraction?.openBoostToUnrestrict()
     }

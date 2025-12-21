@@ -102,4 +102,8 @@ public final class ChatRecordingViewOnceButtonNode: HighlightTrackingButtonNode 
         }
         return size
     }
+    
+    public func setCaptureHostView(_ view: UIView) {
+        self.backgroundView.setCaptureHostView(view)
+    }
 }

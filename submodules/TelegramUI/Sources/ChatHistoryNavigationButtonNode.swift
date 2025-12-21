@@ -138,6 +138,11 @@ class ChatHistoryNavigationButtonNode: ContextControllerSourceNode {
         }
     }
     
+    func setCaptureHostView(_ view: UIView) {
+        self.backgroundView.setCaptureHostView(view)
+        self.badgeBackgroundView.setCaptureHostView(view)
+    }
+    
     private var absoluteRect: (CGRect, CGSize)?
     func update(rect: CGRect, within containerSize: CGSize, transition: ContainedViewLayoutTransition) {
         self.absoluteRect = (rect, containerSize)

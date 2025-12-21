@@ -42,4 +42,8 @@ open class ChatInputPanelNode: ASDisplayNode {
     open func canHandleTransition(from prevInputPanelNode: ChatInputPanelNode?) -> Bool {
         return false
     }
+    
+    open func setCaptureHostView(_ view: UIView) {
+
+    }
 }

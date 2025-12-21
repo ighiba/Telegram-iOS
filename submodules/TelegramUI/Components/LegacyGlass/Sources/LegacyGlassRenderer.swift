@@ -1,0 +1,844 @@
+import UIKit
+import Metal
+import MetalKit
+import MetalPerformanceShaders
+import simd
+
+private let semaphoreValue: Int = 2
+
+public enum LegacyGlassCaptureMode: Equatable {
+    public enum Speed {
+        case fast
+        case slow
+    }
+    
+    case dynamicBackground(LegacyGlassCaptureMode.Speed)
+    case staticBackground
+}
+
+private struct LegacyGlassUniforms {
+    var tintColor: simd_float4
+    var canvasSize: simd_float2
+    var lensCenterCanvas: simd_float2
+    var lensRadiusCanvas: simd_float2
+    var cornerRadius: Float
+    var refractionStrength: Float
+    var dimmingMin: Float
+    var dimmingMax: Float
+    var dimmingStrength: Float
+    var averageBackgroundLuma: Float
+    var textureOriginHost: simd_float2
+    var textureSizeHost: simd_float2
+    var lensOriginHost: simd_float2
+    var lensSizeHost: simd_float2
+    var refractionEdgeWidth: Float
+    var refractionCenterStrength: Float
+    var refractionEdgeStrength: Float
+    var interactionScale: Float
+    var refractionYScale: Float
+    var chromaticAberrationStrength: Float
+    var rimHighlightWidth: Float
+    var rimHighlightStrength: Float
+    var coreRadius: Float
+    var glowProgress: Float
+    var glowCenter: simd_float2
+    var glowRadius: Float
+    var glowStrength: Float
+    var outerShadowWidth: Float
+    var outerShadowOpacity: Float
+    var fillColor: simd_float4
+    var fillProgress: Float
+    var padding0: UInt32
+}
+
+protocol LegacyGlassRendererDelegate: AnyObject {
+    var onCaptureBegan: (() -> Void)? { get set }
+    var onCaptureEnded: (() -> Void)? { get set }
+    
+    var isHidden: Bool { get set }
+    var lensSize: CGSize { get }
+
+    func updateContentViewTransform(scale: CGPoint, translation: CGPoint)
+}
+
+final class LegacyGlassRenderer: MTKView {
+
+    static let minRenderSize: CGSize = CGSize(width: 10, height: 10)
+
+    weak var glassDelegate: LegacyGlassRendererDelegate?
+    
+    var useLayerBaseRender: Bool = false
+    
+    let allowsGroupSnapshotting: Bool
+    var snapshotExclusionMode: LegacyGlassSnapshotExclusionMode = .overlayWindow {
+        didSet {
+            LegacyGlassSnapshotter.shared.snapshotExclusionMode = self.snapshotExclusionMode
+        }
+    }
+    
+    private var snapshotRequest: LegacyGlassSnapshotRequest?
+    private var snapshotRequestId: UUID?
+    
+    override var tintColor: UIColor? {
+        didSet {
+            self.tintColorVector = self.colorVector(from: self.tintColor)
+        }
+    }
+    private var tintColorVector: simd_float4 = .zero
+    
+    var fillColor: UIColor? {
+        didSet {
+            self.fillColorVector = self.colorVector(from: self.fillColor)
+        }
+    }
+    private var fillColorVector: simd_float4 = .zero
+    
+    private weak var captureHostView: UIView?
+    private var capturedFrame: CGRect = .zero
+    private var captureDebounceWorkItem: DispatchWorkItem?
+    private(set) var captureMode: LegacyGlassCaptureMode = .staticBackground {
+        didSet {
+            self.didUpdateCaptureMode(self.captureMode)
+        }
+    }
+
+    private var isBlurEnabled: Bool {
+        self.context.style.isBlurEnabled
+    }
+
+    private let inflightSemaphore: DispatchSemaphore
+    
+    private let textureLoader: MTKTextureLoader
+    private let commandQueue: MTLCommandQueue
+    private var pipelineState: MTLRenderPipelineState?
+    private var vertexBuffer: MTLBuffer?
+    private var samplerState: MTLSamplerState?
+    private var uniformsBuffer: MTLBuffer?
+    
+    var isTextureUpdateNeeded: Bool = false
+    private var texture: MTLTexture?
+    private var textureBlurred: MTLTexture?
+    private var lastTextureUpdateTimestamp: CFTimeInterval?
+    private var textureUpdateFPS: Double = 0.0
+    
+    private var isBlurredTextureValid: Bool = false
+    private var blurFilter: MPSImageGaussianBlur?
+    private var blurFilterSigma: Float = 1.0
+    
+    var dimmingMin: Float = 0.0
+    var dimmingMax: Float = 0.1
+    private var averageBackgroundLuma: Float = 0.5
+    
+    private var lensSize: CGSize {
+        self.glassDelegate?.lensSize ?? .zero
+    }
+    
+    private let context: LegacyGlassContext
+
+    init(context: LegacyGlassContext, allowsGroupSnapshotting: Bool) {
+        guard
+            let device = MTLCreateSystemDefaultDevice(),
+            let commandQueue = device.makeCommandQueue()
+        else {
+            fatalError("Metal device or command queue unavailable")
+        }
+        
+        self.context = context
+        self.allowsGroupSnapshotting = allowsGroupSnapshotting
+
+        self.inflightSemaphore = DispatchSemaphore(value: semaphoreValue)
+        
+        self.commandQueue = commandQueue
+        self.textureLoader = MTKTextureLoader(device: device)
+        
+        super.init(frame: .zero, device: device)
+
+        self.delegate = self
+        self.isOpaque = false
+        self.enableSetNeedsDisplay = false
+        self.isPaused = false
+        self.framebufferOnly = false
+        self.colorPixelFormat = .bgra8Unorm
+        self.clearColor = MTLClearColorMake(0.0, 0.0, 0.0, 0.0)
+        self.preferredFramesPerSecond = self.currentUpdateFrequency().renderFrameRate
+        self.pipelineState = self.makePipelineState(device: device)
+        self.vertexBuffer = self.makeQuadVertexBuffer(device: device)
+        self.samplerState = self.makeSamplerState(device: device)
+        self.uniformsBuffer = self.makeUniformsBuffer(device: device)
+        
+        if self.isBlurEnabled {
+            self.blurFilter = MPSImageGaussianBlur(device: device, sigma: self.blurFilterSigma)
+            self.isBlurredTextureValid = false
+        }
+    }
+
+    required init(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    override func didMoveToSuperview() {
+        super.didMoveToSuperview()
+        
+        if self.superview != nil && self.allowsGroupSnapshotting {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                LegacyGlassSnapshotter.shared.forceVisibilityCheck()
+            }
+        }
+    }
+    
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+
+        if self.window != nil && self.allowsGroupSnapshotting {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                LegacyGlassSnapshotter.shared.forceVisibilityCheck()
+            }
+        }
+    }
+    
+    deinit {
+        self.isPaused = true
+        for _ in 0..<semaphoreValue {
+            _ = self.inflightSemaphore.wait(timeout: .now() + 0.1)
+            self.inflightSemaphore.signal()
+        }
+        
+        self.snapshotRequest?.invalidate()
+        self.snapshotRequest = nil
+        self.snapshotRequestId = nil
+        self.captureDebounceWorkItem?.cancel()
+    }
+    
+    private func makePipelineState(device: MTLDevice) -> MTLRenderPipelineState? {
+        guard
+            let library = metalLibrary(device: device),
+            let vertexFunction = library.makeFunction(name: "legacyGlassVertex"),
+            let fragmentFunction = library.makeFunction(name: "legacyGlassFragment")
+        else {
+            assertionFailure("Failed to make pipeline state")
+            return nil
+        }
+        
+        let vertexDescriptor = MTLVertexDescriptor()
+        vertexDescriptor.attributes[0].format = .float2
+        vertexDescriptor.attributes[0].offset = 0
+        vertexDescriptor.attributes[0].bufferIndex = 0
+        vertexDescriptor.attributes[1].format = .float2
+        vertexDescriptor.attributes[1].offset = MemoryLayout<simd_float2>.stride
+        vertexDescriptor.attributes[1].bufferIndex = 0
+        vertexDescriptor.layouts[0].stride = MemoryLayout<simd_float2>.stride * 2
+        vertexDescriptor.layouts[0].stepFunction = .perVertex
+        
+        let descriptor = MTLRenderPipelineDescriptor()
+        descriptor.vertexFunction = vertexFunction
+        descriptor.fragmentFunction = fragmentFunction
+        descriptor.vertexDescriptor = vertexDescriptor
+        descriptor.colorAttachments[0].pixelFormat = self.colorPixelFormat
+        descriptor.colorAttachments[0].isBlendingEnabled = true
+        descriptor.colorAttachments[0].rgbBlendOperation = .add
+        descriptor.colorAttachments[0].alphaBlendOperation = .add
+        descriptor.colorAttachments[0].sourceRGBBlendFactor = .sourceAlpha
+        descriptor.colorAttachments[0].sourceAlphaBlendFactor = .sourceAlpha
+        descriptor.colorAttachments[0].destinationRGBBlendFactor = .oneMinusSourceAlpha
+        descriptor.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
+        
+        return try? device.makeRenderPipelineState(descriptor: descriptor)
+    }
+    
+    private func makeQuadVertexBuffer(device: MTLDevice) -> MTLBuffer? {
+        struct Vertex {
+            var position: simd_float2
+            var texCoord: simd_float2
+        }
+        
+        let vertices: [Vertex] = [
+            Vertex(position: [-1, -1], texCoord: [0, 1]),
+            Vertex(position: [1, -1], texCoord: [1, 1]),
+            Vertex(position: [-1, 1], texCoord: [0, 0]),
+            Vertex(position: [1, 1], texCoord: [1, 0])
+        ]
+        
+        let length = vertices.count * MemoryLayout<Vertex>.stride
+        return device.makeBuffer(bytes: vertices, length: length, options: .storageModeShared)
+    }
+    
+    private func makeSamplerState(device: MTLDevice) -> MTLSamplerState? {
+        let descriptor = MTLSamplerDescriptor()
+        descriptor.minFilter = .linear
+        descriptor.magFilter = .linear
+        descriptor.mipFilter = .notMipmapped
+        descriptor.sAddressMode = .clampToEdge
+        descriptor.tAddressMode = .clampToEdge
+        return device.makeSamplerState(descriptor: descriptor)
+    }
+    
+    private func makeUniformsBuffer(device: MTLDevice) -> MTLBuffer? {
+        return device.makeBuffer(
+            length: MemoryLayout<LegacyGlassUniforms>.stride,
+            options: .storageModeShared
+        )
+    }
+    
+    func setIsPaused(_ isPaused: Bool) {
+        guard self.isPaused != isPaused else { return }
+        self.isPaused = isPaused
+    }
+    
+    func requestUpdate() {
+        self.isTextureUpdateNeeded = true
+    }
+
+    func setCaptureHostView(_ captureHostView: UIView) {
+        guard self.captureHostView !== captureHostView else { return }
+
+        self.snapshotRequest?.invalidate()
+        self.snapshotRequest = nil
+        self.snapshotRequestId = nil
+        
+        self.captureHostView = captureHostView
+        
+        self.snapshotRequest = LegacyGlassSnapshotter.shared.requestSnapshot(
+            hostView: captureHostView,
+            renderer: self,
+            allowsGroupSnapshotting: self.allowsGroupSnapshotting
+        )
+        self.snapshotRequestId = self.snapshotRequest?.requestId
+        LegacyGlassSnapshotter.shared.snapshotExclusionMode = self.snapshotExclusionMode
+        
+        self.isTextureUpdateNeeded = true
+    }
+
+    func setCaptureMode(_ captureMode: LegacyGlassCaptureMode) {
+        guard captureMode != self.captureMode else { return }
+        
+        switch captureMode {
+        case .dynamicBackground:
+            self.captureMode = captureMode
+        case .staticBackground:
+            self.debounceCaptureMode(captureMode, duration: 1.0)
+        }
+    }
+
+    func ensureFastCaptureWithDebounce(to debounceCaptureMode: LegacyGlassCaptureMode, duration: TimeInterval? = nil) {
+        self.setCaptureMode(.dynamicBackground(.fast))
+        let debounceDuration = duration ?? self.context.qualityProfile.captureAutoUpdateSlowDebounce
+        self.debounceCaptureMode(debounceCaptureMode, duration: debounceDuration)
+    }
+    
+    func currentUpdateFrequency() -> LegacyGlassUpdateFrequency {
+        switch self.captureMode {
+        case .dynamicBackground(let speed):
+            switch speed {
+            case .fast:
+                return self.context.qualityProfile.dynamicFastFrequency
+            case .slow:
+                return self.context.qualityProfile.dynamicSlowFrequency
+            }
+        case .staticBackground:
+            return self.context.qualityProfile.staticFrequency
+        }
+    }
+    
+    func currentCaptureScale() -> CGFloat {
+        return self.isBlurEnabled ? self.context.qualityProfile.captureScaleBlurred : self.context.qualityProfile.captureScale
+    }
+
+    private func updateTextureIfNeeded() {
+        guard let hostView = self.captureHostView else {
+            return
+        }
+
+        if case .fps(let captureFrameRate, _) = self.currentUpdateFrequency() {
+            let now = CACurrentMediaTime()
+            let minInterval: CFTimeInterval = 1.0 / captureFrameRate
+            if let last = self.lastTextureUpdateTimestamp, (now - last) < minInterval {
+                return
+            }
+        }
+
+        self.trackTextureUpdateFPS()
+
+        let targetFrame: CGRect
+        switch self.captureMode {
+        case .dynamicBackground, .staticBackground:
+            switch self.snapshotExclusionMode {
+            case .overlayWindow:
+                let frameInWindowCoordinates = self.convert(self.bounds, to: nil)
+                targetFrame = hostView.convert(frameInWindowCoordinates, from: nil).intersection(hostView.bounds)
+            case .none:
+                targetFrame = self.convert(self.bounds, to: hostView).intersection(hostView.bounds)
+            }
+        }
+
+        guard targetFrame.width > 0, targetFrame.height > 0 else {
+            return
+        }
+
+        self.capturedFrame = targetFrame
+        
+        if self.allowsGroupSnapshotting, let requestId = self.snapshotRequestId {
+            if let cgImage = LegacyGlassSnapshotter.shared.getCroppedSnapshot(requestId: requestId) {
+                self.createTexture(from: cgImage)
+            }
+        } else {
+            if let cgImage = LegacyGlassSnapshotter.shared.captureSnapshotDirectly(
+                rect: targetFrame,
+                hostView: hostView,
+                scale: self.currentCaptureScale(),
+                exclusionMode: self.snapshotExclusionMode,
+                viewToExclude: self.superview,
+                useLayerBasedRender: self.useLayerBaseRender
+            ) {
+                self.createTexture(from: cgImage)
+            }
+        }
+    }
+    
+    private func createTexture(from cgImage: CGImage) {
+        do {
+            let texture = try self.makeTexture(from: cgImage)
+            self.texture = texture
+            self.textureBlurred = self.isBlurEnabled ? self.ensureBlurredTexture(fromTexture: texture) : nil
+            self.averageBackgroundLuma = self.computeAverageLuma(from: cgImage)
+            self.isTextureUpdateNeeded = false
+            self.isBlurredTextureValid = false
+        } catch {
+            assertionFailure("Failed to create texture from cgImage: \(error)")
+            self.texture = nil
+            self.textureBlurred = nil
+            self.isTextureUpdateNeeded = false
+            self.isBlurredTextureValid = false
+        }
+    }
+    
+    private func makeTexture(from cgImage: CGImage) throws -> MTLTexture {
+        return try self.textureLoader.newTexture(
+            cgImage: cgImage,
+            options: [
+                MTKTextureLoader.Option.SRGB: false,
+                MTKTextureLoader.Option.textureUsage: MTLTextureUsage.shaderRead.rawValue,
+                MTKTextureLoader.Option.generateMipmaps: false
+            ]
+        )
+    }
+
+    private func ensureBlurredTexture(fromTexture texture: MTLTexture) -> MTLTexture? {
+        if self.isTextureMatching(texture, with: self.textureBlurred) {
+            return self.textureBlurred
+        }
+        
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: texture.pixelFormat,
+            width: texture.width,
+            height: texture.height,
+            mipmapped: false
+        )
+        descriptor.storageMode = .private
+        descriptor.usage = [.shaderRead, .shaderWrite]
+        
+        return texture.device.makeTexture(descriptor: descriptor)
+    }
+    
+    private func updateUniformsBuffer(buffer: MTLBuffer) {
+        let canvasWidth = self.bounds.width
+        let canvasHeight = self.bounds.height
+        
+        guard canvasWidth > 0, canvasHeight > 0 else {
+            return
+        }
+        
+        guard let hostView = self.captureHostView else {
+            return
+        }
+        
+        let requiredSize = MemoryLayout<LegacyGlassUniforms>.stride
+        if buffer.length < requiredSize {
+            assertionFailure("Uniforms buffer too small: \(buffer.length) < \(requiredSize)")
+            return
+        }
+
+        let increasingJelly = 1.0 + self.context.interactionJelly
+        let decreasingJelly = max(0.75, 1.0 - self.context.interactionJelly)
+        let jellyX = self.context.interactionJellyDirection == .horizontal ? increasingJelly : decreasingJelly
+        let jellyY = self.context.interactionJellyDirection == .horizontal ? decreasingJelly : increasingJelly
+
+        let baseStretchX = max(0.8, 1.0 + abs(CGFloat(self.context.interactionStretch.x)))
+        let baseStretchY = max(0.8, 1.0 + abs(CGFloat(self.context.interactionStretch.y)))
+        let maxStretch = max(baseStretchX, baseStretchY)
+        let minStretch = min(baseStretchX, baseStretchY)
+        let stretchBalance = max(0.0, min(1.0, minStretch / maxStretch))
+        let stretchBalanceFactor: CGFloat = 0.3
+        let scaleAdjust = 1.0 - (1.0 - stretchBalance) * stretchBalanceFactor
+        let stretchX = baseStretchX * scaleAdjust
+        let stretchY = baseStretchY * scaleAdjust
+        
+        let lensSize = self.lensSize
+
+        var lensSizeTransformed = CGSize(
+            width: lensSize.width * CGFloat(self.context.interactionScale) * CGFloat(jellyX) * stretchX,
+            height: lensSize.height * CGFloat(self.context.interactionScale) * CGFloat(jellyY) * stretchY
+        )
+        
+        let aaMargin: CGFloat = 0
+        lensSizeTransformed.width = min(lensSizeTransformed.width, canvasWidth - aaMargin * 2.0)
+        lensSizeTransformed.height = min(lensSizeTransformed.height, canvasHeight - aaMargin * 2.0)
+
+        let lensDelta = CGSize(
+            width: (lensSizeTransformed.width - lensSize.width),
+            height: (lensSizeTransformed.height - lensSize.height)
+        )
+
+        let stretchMax = max(self.context.interactionStretchMax, 0.0001)
+        let softClamp: (CGFloat) -> CGFloat = { value in
+            let x = max(-1.0, min(1.0, value / stretchMax))
+            return tanh(x * 1.0)
+        }
+        let easedPivotX = 0.5 * softClamp(self.context.interactionStretch.x)
+        let easedPivotY = 0.5 * softClamp(self.context.interactionStretch.y)
+        let deltaFactorX: CGFloat = 0.5 - easedPivotX
+        let deltaFactorY: CGFloat = 0.5 - easedPivotY
+        
+        let cornerRadiusTransformed = self.context.cornerRadius * self.context.interactionScale * stretchY
+        
+        let lensCenterCanvas = simd_float2(
+            Float((self.context.horizontalPadding + lensSizeTransformed.width * 0.5 - lensDelta.width * deltaFactorX) / canvasWidth),
+            Float((self.context.verticalPadding + lensSizeTransformed.height * 0.5 - lensDelta.height * deltaFactorY) / canvasHeight)
+        )
+        
+        let lensRadiusCanvas = simd_float2(
+            Float((lensSizeTransformed.width * 0.5) / canvasWidth),
+            Float((lensSizeTransformed.height * 0.5) / canvasHeight)
+        )
+        
+        let hostBounds = hostView.bounds
+        guard hostBounds.width > 0, hostBounds.height > 0 else {
+            return
+        }
+        
+        let textureOriginNormalized = simd_float2(
+            Float(self.capturedFrame.origin.x / hostBounds.width),
+            Float(self.capturedFrame.origin.y / hostBounds.height)
+        )
+        
+        let textureSizeNormalized = simd_float2(
+            Float(self.capturedFrame.size.width / hostBounds.width),
+            Float(self.capturedFrame.size.height / hostBounds.height)
+        )
+        
+        var glassFrame: CGRect
+        switch self.snapshotExclusionMode {
+        case .overlayWindow:
+            let glassFrameInWindowCoordinates = self.convert(self.bounds, to: nil)
+            glassFrame = hostView.convert(glassFrameInWindowCoordinates, from: nil)
+        case .none:
+            glassFrame = self.convert(self.bounds, to: hostView)
+        }
+        glassFrame = glassFrame.insetBy(dx: self.context.horizontalPadding, dy: self.context.verticalPadding)
+        
+        let lensOriginHost = simd_float2(
+            Float((glassFrame.origin.x - lensDelta.width * deltaFactorX) / hostBounds.width),
+            Float((glassFrame.origin.y - lensDelta.height * deltaFactorY) / hostBounds.height)
+        )
+        
+        let lensSizeHost = simd_float2(
+            Float(lensSizeTransformed.width / hostBounds.width),
+            Float(lensSizeTransformed.height / hostBounds.height)
+        )
+        
+        let glowProgress = Float(max(0.0, min(1.0, self.context.interactionGlow)))
+        let glowCenter = simd_float2(
+            Float(self.context.interactionGlowCenter.x),
+            Float(self.context.interactionGlowCenter.y)
+        )
+        
+        let timestamp = CACurrentMediaTime()
+        if self.context.lastUpdateTimestamp > 0 {
+            let deltaTime = Float(timestamp - self.context.lastUpdateTimestamp)
+            if deltaTime > 0 {
+                let deltaHost = lensOriginHost - self.context.lastHostOrigin
+                let speed = CGFloat(length(deltaHost) / deltaTime)
+                let targetJelly = min(speed * self.context.interactionJellyGain, self.context.interactionJellyMax)
+                self.context.interactionJellyTarget = targetJelly
+            }
+        }
+        
+        self.context.lastUpdateTimestamp = timestamp
+        self.context.lastHostOrigin = lensOriginHost
+        
+        self.glassDelegate?.updateContentViewTransform(
+            scale: CGPoint(
+                x: lensSizeTransformed.width / lensSize.width,
+                y: lensSizeTransformed.height / lensSize.height,
+            ),
+            translation: CGPoint(x: easedPivotX * lensDelta.width, y: easedPivotY * lensDelta.height)
+        )
+
+        let activationProgress = Float(max(0.0, min(1.0, self.context.interactionActivationProgress)))
+        let idleWeight = 1.0 - activationProgress
+        let outerShadowWidth = self.context.style.idleOuterShadowWidth * idleWeight + self.context.style.activeOuterShadowWidth * activationProgress
+        let outerShadowOpacity = self.context.style.idleOuterShadowOpacity * idleWeight + self.context.style.activeOuterShadowOpacity * activationProgress
+
+        var uniforms = LegacyGlassUniforms(
+            tintColor: self.tintColorVector,
+            canvasSize: simd_float2(Float(canvasWidth), Float(canvasHeight)),
+            lensCenterCanvas: lensCenterCanvas,
+            lensRadiusCanvas: lensRadiusCanvas,
+            cornerRadius: Float(cornerRadiusTransformed),
+            refractionStrength: self.context.style.refractionStrength,
+            dimmingMin: self.dimmingMin,
+            dimmingMax: self.dimmingMax,
+            dimmingStrength: self.context.style.dimmingStrength,
+            averageBackgroundLuma: self.averageBackgroundLuma,
+            textureOriginHost: textureOriginNormalized,
+            textureSizeHost: textureSizeNormalized,
+            lensOriginHost: lensOriginHost,
+            lensSizeHost: lensSizeHost,
+            refractionEdgeWidth: self.context.style.refractionEdgeWidth,
+            refractionCenterStrength: self.context.style.refractionCenterStrength,
+            refractionEdgeStrength: self.context.style.refractionEdgeStrength,
+            interactionScale: Float(self.context.interactionScale),
+            refractionYScale: self.context.style.refractionYScale,
+            chromaticAberrationStrength: self.context.style.chromaticAberrationStrength,
+            rimHighlightWidth: self.context.style.rimHighlightWidth,
+            rimHighlightStrength: self.context.style.rimHighlightStrength,
+            coreRadius: self.context.style.coreRadius,
+            glowProgress: glowProgress,
+            glowCenter: glowCenter,
+            glowRadius: Float(self.context.interactionGlowRadius),
+            glowStrength: self.context.interactionGlowStrength,
+            outerShadowWidth: outerShadowWidth,
+            outerShadowOpacity: outerShadowOpacity,
+            fillColor: self.fillColorVector,
+            fillProgress: idleWeight,
+            padding0: 0
+        )
+        memcpy(buffer.contents(), &uniforms, requiredSize)
+    }
+    
+    private func colorVector(from color: UIColor?) -> simd_float4 {
+        guard let uiColor = color else {
+            return simd_float4(0,0,0,0)
+        }
+        
+        let resolvedColor = uiColor.resolvedColor(with: self.traitCollection)
+
+        guard
+            let colorSpace = CGColorSpace(name: CGColorSpace.linearSRGB),
+            let cgColor = resolvedColor.cgColor.converted(to: colorSpace, intent: .defaultIntent, options: nil),
+            let components = cgColor.components, !components.isEmpty
+        else {
+            return simd_float4(0, 0, 0, 0)
+        }
+        
+        let r: CGFloat
+        let g: CGFloat
+        let b: CGFloat
+        if components.count >= 3 {
+            r = components[0]
+            g = components[1]
+            b = components[2]
+        } else {
+            r = components[0]
+            g = components[0]
+            b = components[0]
+        }
+        
+        let a = components.count > 3 ? components[3] : cgColor.alpha
+        return simd_float4(Float(r), Float(g), Float(b), Float(a))
+    }
+    
+    private func trackTextureUpdateFPS() {
+//        let now = CACurrentMediaTime()
+//        defer { self.lastTextureUpdateTimestamp = now; print("textureUpdateFPS: \(self.textureUpdateFPS)") }
+//        
+//        guard let last = self.lastTextureUpdateTimestamp else { return }
+//        
+//        let delta = now - last
+//        guard delta > 1e-4 else { return }
+//        
+//        let instantaneousFPS = 1.0 / delta
+//        let smoothingFactor: Double = 0.2
+//        if self.textureUpdateFPS <= 0.0 {
+//            self.textureUpdateFPS = instantaneousFPS
+//        } else {
+//            self.textureUpdateFPS = self.textureUpdateFPS * (1.0 - smoothingFactor) + instantaneousFPS * smoothingFactor
+//        }
+    }
+
+    private func computeAverageLuma(from cgImage: CGImage) -> Float {
+        guard
+            let dataProvider = cgImage.dataProvider,
+            let data = dataProvider.data,
+            let ptr = CFDataGetBytePtr(data)
+        else {
+            return 0.5
+        }
+
+        let width = cgImage.width
+        let height = cgImage.height
+        let bytesPerRow = cgImage.bytesPerRow
+        let bytesPerPixel = cgImage.bitsPerPixel / 8
+        guard bytesPerPixel >= 3 else {
+            return 0.5
+        }
+
+        let info = cgImage.bitmapInfo
+        let isLittleEndian = info.contains(.byteOrder32Little)
+        let isBGR = isLittleEndian || info.contains(.byteOrder16Little)
+        let rIndex = isBGR ? 2 : 0
+        let gIndex = 1
+        let bIndex = isBGR ? 0 : 2
+        let aIndex = bytesPerPixel > 3 ? 3 : -1
+
+        let sampleStep = max(1, min(2, min(width, height) / 16))
+
+        var sum: Float = 0
+        var weightSum: Float = 0
+
+        var y = 0
+        while y < height {
+            var x = 0
+            while x < width {
+                let offset = y * bytesPerRow + x * bytesPerPixel
+                let a: Float
+                if aIndex >= 0 {
+                    a = Float(ptr[offset + aIndex]) / 255.0
+                    if a <= 0.0 {
+                        x += sampleStep
+                        continue
+                    }
+                } else {
+                    a = 1.0
+                }
+
+                let r = Float(ptr[offset + rIndex])
+                let g = Float(ptr[offset + gIndex])
+                let b = Float(ptr[offset + bIndex])
+
+                let luma = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0
+                sum += luma * a
+                weightSum += a
+                x += sampleStep
+            }
+            y += sampleStep
+        }
+
+        guard weightSum > 0 else { return 0.5 }
+        
+        let average = sum / weightSum
+        return min(max(average, 0.0), 1.0)
+    }
+    
+    private func debounceCaptureMode(_ captureMode: LegacyGlassCaptureMode, duration: TimeInterval) {
+        self.captureDebounceWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let strongSelf = self else { return }
+            strongSelf.captureMode = captureMode
+        }
+        self.captureDebounceWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: workItem)
+    }
+    
+    private func didUpdateCaptureMode(_ captureMode: LegacyGlassCaptureMode) {
+        print(captureMode)
+        self.preferredFramesPerSecond = self.currentUpdateFrequency().renderFrameRate
+        self.isTextureUpdateNeeded = true
+        LegacyGlassSnapshotter.shared.updateMinCaptureFrameRate()
+    }
+}
+
+// MARK: - MTKViewDelegate
+
+extension LegacyGlassRenderer: MTKViewDelegate {
+    func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
+        
+    }
+    
+    func draw(in view: MTKView) {
+        guard view.bounds.width > LegacyGlassRenderer.minRenderSize.width, view.bounds.height > LegacyGlassRenderer.minRenderSize.height else {
+            return
+        }
+
+        guard self.inflightSemaphore.wait(timeout: .now()) == .success else {
+            return
+        }
+
+        autoreleasepool {
+            guard
+                let renderPassDescriptor = view.currentRenderPassDescriptor,
+                let commandBuffer = self.commandQueue.makeCommandBuffer(),
+                let drawable = view.currentDrawable
+            else {
+                self.inflightSemaphore.signal()
+    //            assertionFailure("Failed to draw")
+                return
+            }
+            
+            switch self.captureMode {
+            case .dynamicBackground:
+                self.updateTextureIfNeeded()
+            case .staticBackground:
+                if self.texture == nil || self.isTextureUpdateNeeded {
+                    self.updateTextureIfNeeded()
+                }
+            }
+
+            var activeTexture: MTLTexture? = self.texture
+
+            if self.isBlurEnabled, let sourceTexture = self.texture {
+                var needsUpdateTexture = true
+                if self.captureMode == .staticBackground {
+                    let sizeMatches = self.isTextureMatching(sourceTexture, with: self.textureBlurred)
+                    needsUpdateTexture = !(self.isBlurredTextureValid && sizeMatches)
+                }
+
+                if needsUpdateTexture, let blurFilter = self.blurFilter, let destinationTexture = self.textureBlurred {
+                    blurFilter.encode(
+                        commandBuffer: commandBuffer,
+                        sourceTexture: sourceTexture,
+                        destinationTexture: destinationTexture
+                    )
+                    self.isBlurredTextureValid = true
+                }
+
+                if let texture = self.textureBlurred, self.isBlurredTextureValid {
+                    activeTexture = texture
+                }
+            }
+
+            if
+                let pipelineState = self.pipelineState,
+                let vertexBuffer = self.vertexBuffer,
+                let texture = activeTexture,
+                let uniformsBuffer = self.uniformsBuffer
+            {
+                self.updateUniformsBuffer(buffer: uniformsBuffer)
+                guard let renderEncoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else {
+                    return
+                }
+                renderEncoder.setRenderPipelineState(pipelineState)
+                renderEncoder.setVertexBuffer(vertexBuffer, offset: 0, index: 0)
+                renderEncoder.setFragmentBuffer(uniformsBuffer, offset: 0, index: 0)
+                renderEncoder.setFragmentTexture(texture, index: 0)
+                renderEncoder.setFragmentSamplerState(self.samplerState, index: 0)
+                renderEncoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+                renderEncoder.endEncoding()
+            }
+            
+            commandBuffer.present(drawable)
+            let semaphore = self.inflightSemaphore
+            commandBuffer.addCompletedHandler { _ in
+                semaphore.signal()
+            }
+            commandBuffer.commit()
+        }
+    }
+    
+    private func isTextureMatching(_ texture: MTLTexture, with anotherTexture: MTLTexture?) -> Bool {
+        guard anotherTexture != nil else { return false }
+        return texture.device === anotherTexture?.device
+            && texture.width == anotherTexture?.width
+            && texture.height == anotherTexture?.height
+            && texture.pixelFormat == anotherTexture?.pixelFormat
+    }
+}

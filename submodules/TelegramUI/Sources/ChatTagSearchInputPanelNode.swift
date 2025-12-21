@@ -119,6 +119,11 @@ final class ChatTagSearchInputPanelNode: ChatInputPanelNode {
         return height
     }
     
+    override func setCaptureHostView(_ view: UIView) {
+        self.leftControlsBackgroundView.setCaptureHostView(view)
+        self.rightControlsBackgroundView.setCaptureHostView(view)
+    }
+    
     func prepareSwitchToFilter(tag: MemoryBuffer, count: Int) {
         self.tagMessageCount?.disposable?.dispose()
         self.tagMessageCount = (tag, count, nil)
