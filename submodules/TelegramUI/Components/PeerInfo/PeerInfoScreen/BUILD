@@ -105,6 +105,7 @@ swift_library(
         "//submodules/TelegramUI/Components/Stories/StoryContainerScreen",
         "//submodules/SSignalKit/SSignalKit",
         "//submodules/SSignalKit/SwiftSignalKit",
+        "//submodules/SwitchNode",
         "//submodules/TelegramBaseController",
         "//submodules/TelegramCallsUI",
         "//submodules/TelegramCore",

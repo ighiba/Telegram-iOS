@@ -30,13 +30,13 @@ public enum LegacyGlassUpdateFrequency {
 }
 
 public struct LegacyGlassQualityProfile {
-    public let level: LegacyGlassQualityLevel
-    public let captureScale: CGFloat
-    public let captureScaleBlurred: CGFloat
-    public let captureAutoUpdateSlowDebounce: TimeInterval
-    public let dynamicFastFrequency: LegacyGlassUpdateFrequency
-    public let dynamicSlowFrequency: LegacyGlassUpdateFrequency
-    public let staticFrequency: LegacyGlassUpdateFrequency
+    public var level: LegacyGlassQualityLevel
+    public var captureScale: CGFloat
+    public var captureScaleBlurred: CGFloat
+    public var captureAutoUpdateSlowDebounce: TimeInterval
+    public var dynamicFastFrequency: LegacyGlassUpdateFrequency
+    public var dynamicSlowFrequency: LegacyGlassUpdateFrequency
+    public var staticFrequency: LegacyGlassUpdateFrequency
 
     public static var automatic: LegacyGlassQualityProfile {
         let lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled

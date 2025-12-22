@@ -2,6 +2,17 @@ import Foundation
 import UIKit
 import AsyncDisplayKit
 
+public protocol SwitchNodeProtocol: ASDisplayNode {
+    var valueUpdated: ((Bool) -> Void)? { get set }
+
+    var frameColor: UIColor { get set }
+    var handleColor: UIColor { get set }
+    var contentColor: UIColor { get set }
+    var isOn: Bool { get set }
+    
+    func setOn(_ value: Bool, animated: Bool)
+}
+
 private final class SwitchNodeViewLayer: CALayer {
     override func setNeedsDisplay() {
     }
@@ -17,7 +28,7 @@ private final class SwitchNodeView: UISwitch {
     }
 }
 
-open class SwitchNode: ASDisplayNode {
+open class SwitchNode: ASDisplayNode, SwitchNodeProtocol {
     public var valueUpdated: ((Bool) -> Void)?
     
     public var frameColor = UIColor(rgb: 0xe0e0e0) {

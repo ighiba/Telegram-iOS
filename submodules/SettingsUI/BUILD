@@ -61,6 +61,7 @@ swift_library(
         "//submodules/SearchUI:SearchUI",
         "//submodules/ShareController:ShareController",
         "//submodules/StickerPackPreviewUI:StickerPackPreviewUI",
+        "//submodules/SwitchNode",
         "//submodules/TelegramUIPreferences:TelegramUIPreferences",
         "//submodules/TelegramStringFormatting:TelegramStringFormatting",
         "//submodules/TelegramNotices:TelegramNotices",

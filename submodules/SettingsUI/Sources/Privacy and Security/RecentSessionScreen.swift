@@ -18,6 +18,7 @@ import AnimatedStickerNode
 import TelegramAnimatedStickerNode
 import AvatarNode
 import UndoUI
+import SwitchNode
 
 private func closeButtonImage(theme: PresentationTheme) -> UIImage? {
     return generateImage(CGSize(width: 30.0, height: 30.0), contextGenerator: { size, context in
@@ -185,10 +186,10 @@ private class RecentSessionScreenNode: ViewControllerTracingNode, ASScrollViewDe
     private let acceptBackgroundNode: ASDisplayNode
     private let acceptHeaderNode: ImmediateTextNode
     private let secretChatsTitleNode: ImmediateTextNode
-    private let secretChatsSwitchNode: SwitchNode
+    private let secretChatsSwitchNode: SwitchNodeProtocol
     private let secretChatsActivateAreaNode: AccessibilityAreaNode
     private let incomingCallsTitleNode: ImmediateTextNode
-    private let incomingCallsSwitchNode: SwitchNode
+    private let incomingCallsSwitchNode: SwitchNodeProtocol
     private let incomingCallsActivateAreaNode: AccessibilityAreaNode
     private let acceptSeparatorNode: ASDisplayNode
     
@@ -261,9 +262,19 @@ private class RecentSessionScreenNode: ViewControllerTracingNode, ASScrollViewDe
         
         self.acceptHeaderNode = ImmediateTextNode()
         self.secretChatsTitleNode = ImmediateTextNode()
-        self.secretChatsSwitchNode = SwitchNode()
+        if #available(iOS 26.0, *) {
+            self.secretChatsSwitchNode = SwitchNode()
+        } else {
+            self.secretChatsSwitchNode = LegacySwitchNode()
+            self.secretChatsSwitchNode.backgroundColor = self.presentationData.theme.list.itemBlocksBackgroundColor
+        }
         self.incomingCallsTitleNode = ImmediateTextNode()
-        self.incomingCallsSwitchNode = SwitchNode()
+        if #available(iOS 26.0, *) {
+            self.incomingCallsSwitchNode = SwitchNode()
+        } else {
+            self.incomingCallsSwitchNode = LegacySwitchNode()
+            self.incomingCallsSwitchNode.backgroundColor = self.presentationData.theme.list.itemBlocksBackgroundColor
+        }
         
         self.secretChatsActivateAreaNode = AccessibilityAreaNode()
         self.incomingCallsActivateAreaNode = AccessibilityAreaNode()
@@ -854,7 +865,7 @@ private class RecentSessionScreenNode: ViewControllerTracingNode, ASScrollViewDe
             let secretChatsTitleTextFrame = CGRect(origin: CGPoint(x: secretFrame.minX + inset, y: secretFrame.minY + floorToScreenPixels((fieldItemHeight - secretChatsTitleTextSize.height) / 2.0)), size: secretChatsTitleTextSize)
             transition.updateFrame(node: self.secretChatsTitleNode, frame: secretChatsTitleTextFrame)
 
-            if let switchView = self.secretChatsSwitchNode.view as? UISwitch {
+            if let switchView = self.secretChatsSwitchNode.view as? UIControl {
                 if self.secretChatsSwitchNode.bounds.size.width.isZero {
                     switchView.sizeToFit()
                 }
@@ -871,7 +882,7 @@ private class RecentSessionScreenNode: ViewControllerTracingNode, ASScrollViewDe
         
         transition.updateFrame(node: self.acceptSeparatorNode, frame: CGRect(x: secretFrame.minX + inset, y: secretFrame.minY + fieldItemHeight, width: fieldFrame.width - inset, height: UIScreenPixel))
 
-        if let switchView = self.incomingCallsSwitchNode.view as? UISwitch {
+        if let switchView = self.incomingCallsSwitchNode.view as? UIControl {
             if self.incomingCallsSwitchNode.bounds.size.width.isZero {
                 switchView.sizeToFit()
             }

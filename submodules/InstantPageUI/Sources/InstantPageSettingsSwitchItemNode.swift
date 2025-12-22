@@ -2,13 +2,14 @@ import Foundation
 import UIKit
 import AsyncDisplayKit
 import Display
+import SwitchNode
 
 final class InstantPageSettingsSwitchNode: InstantPageSettingsItemNode {
     private let title: String
     private let toggled: (Bool) -> Void
     
     private let labelNode: ASTextNode
-    private let switchNode: SwitchNode
+    private let switchNode: SwitchNodeProtocol
     
     var isOn: Bool {
         didSet {
@@ -39,7 +40,13 @@ final class InstantPageSettingsSwitchNode: InstantPageSettingsItemNode {
         
         self.labelNode = ASTextNode()
         
-        self.switchNode = SwitchNode()
+        if #available(iOS 26.0, *) {
+            self.switchNode = SwitchNode()
+        } else {
+            self.switchNode = LegacySwitchNode()
+            self.switchNode.backgroundColor = theme.itemBackgroundColor
+        }
+
         if isEnabled {
             self.switchNode.isOn = isOn
         } else {
@@ -68,13 +75,16 @@ final class InstantPageSettingsSwitchNode: InstantPageSettingsItemNode {
         super.updateTheme(theme)
         
         self.labelNode.attributedText = NSAttributedString(string: self.title, font: Font.regular(17.0), textColor: theme.primaryColor)
+        if let _ = self.switchNode as? LegacySwitchNode {
+            self.switchNode.backgroundColor = theme.itemBackgroundColor
+        }
     }
     
     override func updateInternalLayout(width: CGFloat, insets: UIEdgeInsets, previousItem: (InstantPageSettingsItemNodeStatus, InstantPageSettingsItemNode?), nextItem: (InstantPageSettingsItemNodeStatus, InstantPageSettingsItemNode?)) -> (height: CGFloat, separatorInset: CGFloat?) {
         
         let labelSize = self.labelNode.measure(CGSize(width: width - 46.0 - 5.0, height: 44.0))
         self.labelNode.frame = CGRect(origin: CGPoint(x: 15.0, y: insets.top + floor((44.0 - labelSize.height) / 2.0)), size: labelSize)
-        if let switchView = self.switchNode.view as? UISwitch {
+        if let switchView = self.switchNode.view as? UIControl {
             if self.switchNode.bounds.size.width.isZero {
                 switchView.sizeToFit()
             }

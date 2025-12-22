@@ -10,12 +10,7 @@ public final class LegacySwitchView: UIControl {
         return CGSize(width: 63.0, height: 28.0)
     }
 
-    public private(set) var isOn: Bool = false {
-        didSet {
-            guard self.isOn != oldValue else { return }
-            self.sendActions(for: .valueChanged)
-        }
-    }
+    public private(set) var isOn: Bool = false
     private var isDragging: Bool = false
     private var isThumbMoved: Bool = false
     private var isTrackFadeDrivenByThumb: Bool = false
@@ -58,6 +53,7 @@ public final class LegacySwitchView: UIControl {
 
     private var panGestureRecognizer: UIPanGestureRecognizer?
     
+    private let captureContainerMaskView = UIView()
     private let captureContainerView = UIView()
     private let containerView = UIView()
     private let backView = UIView()
@@ -85,7 +81,9 @@ public final class LegacySwitchView: UIControl {
             activeOuterShadowOpacity: 0.1,
             isBlurEnabled: false
         )
-        self.thumbView = LegacyGlassKnobView(style: style, qualityProfile: .automatic, size: self.thumbSize)
+        var quality = LegacyGlassQualityProfile.automatic
+        quality.captureScale = LegacyGlassQualityProfile.high.captureScale
+        self.thumbView = LegacyGlassKnobView(style: style, qualityProfile: quality, size: self.thumbSize)
         
         super.init(frame: frame)
 
@@ -93,8 +91,10 @@ public final class LegacySwitchView: UIControl {
         self.backView.backgroundColor = self.offTintColor
         self.trackView.backgroundColor = self.onTintColor
         
+        self.captureContainerMaskView.clipsToBounds = true
         self.containerView.layer.masksToBounds = true
 
+        self.captureContainerMaskView.isUserInteractionEnabled = false
         self.captureContainerView.isUserInteractionEnabled = false
         self.containerView.isUserInteractionEnabled = false
         self.backView.isUserInteractionEnabled = false
@@ -115,7 +115,8 @@ public final class LegacySwitchView: UIControl {
         self.containerView.addSubview(self.backView)
         self.containerView.addSubview(self.trackView)
         self.captureContainerView.addSubview(self.containerView)
-        self.addSubview(self.captureContainerView)
+        self.captureContainerMaskView.addSubview(self.captureContainerView)
+        self.addSubview(self.captureContainerMaskView)
         self.addSubview(self.thumbView)
 
         self.updateTrackAppearance(animated: false)
@@ -128,7 +129,6 @@ public final class LegacySwitchView: UIControl {
         panGesture.maximumNumberOfTouches = 1
         self.addGestureRecognizer(panGesture)
         self.panGestureRecognizer = panGesture
-       
     }
 
     required init?(coder: NSCoder) {
@@ -137,8 +137,9 @@ public final class LegacySwitchView: UIControl {
 
     public override func layoutSubviews() {
         super.layoutSubviews()
-        self.captureContainerView.frame = self.bounds.insetBy(dx: -horizontalPadding, dy: -verticalPadding)
-        self.containerView.frame = self.captureContainerView.bounds.insetBy(dx: horizontalPadding, dy: verticalPadding)
+        self.captureContainerMaskView.frame = self.bounds
+        self.captureContainerView.frame = self.captureContainerMaskView.bounds.insetBy(dx: -15, dy: -5)
+        self.containerView.frame = self.captureContainerView.bounds.insetBy(dx: 15, dy: 5)
         self.backView.frame = self.containerView.bounds
         self.trackView.frame = self.containerView.bounds
         self.containerView.layer.cornerRadius = self.bounds.height * 0.5
@@ -242,13 +243,16 @@ public final class LegacySwitchView: UIControl {
         self.updateTrackAppearance(animated: false)
     }
     
-    public func setOn(_ isOn: Bool, animated: Bool) {
-        self.setOn(isOn, animated: animated, shouldUpdateAppearance: true, playHaptic: false)
+    public func setOn(_ isOn: Bool, animated: Bool, shouldSendAction: Bool = true) {
+        self.setOn(isOn, animated: animated, shouldSendAction: shouldSendAction, shouldUpdateAppearance: true, playHaptic: false)
     }
 
-    private func setOn(_ isOn: Bool, animated: Bool, shouldUpdateAppearance: Bool, playHaptic: Bool) {
+    private func setOn(_ isOn: Bool, animated: Bool, shouldSendAction: Bool = true, shouldUpdateAppearance: Bool, playHaptic: Bool) {
         let isValueChanged = self.isOn != isOn
         self.isOn = isOn
+        if isValueChanged && shouldSendAction {
+            self.sendActions(for: .valueChanged)
+        }
 
         if shouldUpdateAppearance {
             let isInCorrectPosition = self.calculateThumbFrame().origin.x == self.thumbView.frame.origin.x

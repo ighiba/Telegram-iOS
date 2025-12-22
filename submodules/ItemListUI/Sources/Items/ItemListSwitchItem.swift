@@ -142,6 +142,23 @@ extension SwitchNode: ItemListSwitchNodeImpl {
     }
 }
 
+extension LegacySwitchNode: ItemListSwitchNodeImpl {
+    var positiveContentColor: UIColor {
+        get {
+            return .white
+        } set(value) {
+            
+        }
+    }
+    var negativeContentColor: UIColor {
+        get {
+            return .white
+        } set(value) {
+            
+        }
+    }
+}
+
 extension IconSwitchNode: ItemListSwitchNodeImpl {
 }
 
@@ -195,7 +212,11 @@ public class ItemListSwitchItemNode: ListViewItemNode, ItemListItemNode {
         
         switch type {
             case .regular:
-                self.switchNode = SwitchNode()
+                if #available(iOS 26.0, *) {
+                    self.switchNode = SwitchNode()
+                } else {
+                    self.switchNode = LegacySwitchNode()
+                }
             case .icon:
                 self.switchNode = IconSwitchNode()
         }
@@ -230,7 +251,7 @@ public class ItemListSwitchItemNode: ListViewItemNode, ItemListItemNode {
     override public func didLoad() {
         super.didLoad()
         
-        (self.switchNode.view as? UISwitch)?.addTarget(self, action: #selector(self.switchValueChanged(_:)), for: .valueChanged)
+        (self.switchNode.view as? UIControl)?.addTarget(self, action: #selector(self.switchValueChanged(_:)), for: .valueChanged)
         self.switchGestureNode.view.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(self.tapGesture(_:))))
     }
     
@@ -280,8 +301,6 @@ public class ItemListSwitchItemNode: ListViewItemNode, ItemListItemNode {
                 contentSize = CGSize(width: params.width, height: 44.0)
                 insets = itemListNeighborsGroupedInsets(neighbors, params)
             }
-            
-            
             
             var topInset: CGFloat
             if item.text != nil {
@@ -406,6 +425,10 @@ public class ItemListSwitchItemNode: ListViewItemNode, ItemListItemNode {
                         strongSelf.switchNode.handleColor = item.presentationData.theme.list.itemSwitchColors.handleColor
                         strongSelf.switchNode.positiveContentColor = item.presentationData.theme.list.itemSwitchColors.positiveColor
                         strongSelf.switchNode.negativeContentColor = item.presentationData.theme.list.itemSwitchColors.negativeColor
+
+                        if let switchNode = strongSelf.switchNode as? LegacySwitchNode {
+                            switchNode.backgroundColor = itemBackgroundColor
+                        }
                         
                         strongSelf.highlightedBackgroundNode.backgroundColor = item.presentationData.theme.list.itemHighlightedBackgroundColor
                     }
@@ -498,7 +521,7 @@ public class ItemListSwitchItemNode: ListViewItemNode, ItemListItemNode {
                         }
                     }
                     
-                    if let switchView = strongSelf.switchNode.view as? UISwitch {
+                    if let switchView = strongSelf.switchNode.view as? UIControl {
                         if strongSelf.switchNode.bounds.size.width.isZero {
                             switchView.sizeToFit()
                         }
@@ -506,8 +529,8 @@ public class ItemListSwitchItemNode: ListViewItemNode, ItemListItemNode {
                         
                         transition.updateFrame(node: strongSelf.switchNode, frame: CGRect(origin: CGPoint(x: params.width - params.rightInset - switchSize.width - 15.0, y: floor((contentSize.height - switchSize.height) / 2.0)), size: switchSize))
                         strongSelf.switchGestureNode.frame = strongSelf.switchNode.frame
-                        if switchView.isOn != item.value {
-                            switchView.setOn(item.value, animated: animated)
+                        if strongSelf.switchNode.isOn != item.value {
+                            strongSelf.switchNode.setOn(item.value, animated: animated)
                         }
                         switchView.isUserInteractionEnabled = item.enableInteractiveChanges
                     }
@@ -602,6 +625,9 @@ public class ItemListSwitchItemNode: ListViewItemNode, ItemListItemNode {
         } else if let switchNode = self.switchNode as? SwitchNode {
             switchNode.isOn = !switchNode.isOn
             item.updated(switchNode.isOn)
+        } else if let switchNode = self.switchNode as? LegacySwitchNode {
+            switchNode.isOn = !switchNode.isOn
+            item.updated(switchNode.isOn)
         }
         return true
     }
@@ -656,17 +682,21 @@ public class ItemListSwitchItemNode: ListViewItemNode, ItemListItemNode {
         self.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.15, removeOnCompletion: false)
     }
     
-    @objc private func switchValueChanged(_ switchView: UISwitch) {
+    @objc private func switchValueChanged(_ switchView: UIControl) {
         if let item = self.item {
-            let value = switchView.isOn
-            item.updated(value)
+            if let switchView = switchView as? UISwitch {
+                item.updated(switchView.isOn)
+            } else if let switchNode = switchView.asyncdisplaykit_node as? LegacySwitchNode {
+                item.updated(switchNode.isOn)
+            }
+            
         }
     }
     
     @objc private func tapGesture(_ recognizer: UITapGestureRecognizer) {
-        if let item = self.item, let switchView = self.switchNode.view as? UISwitch, case .ended = recognizer.state {
+        if let item = self.item, self.switchNode.view is UIControl, case .ended = recognizer.state {
             if item.enabled && !item.displayLocked {
-                let value = switchView.isOn
+                let value = self.switchNode.isOn
                 item.updated(!value)
             } else {
                 item.activatedWhileDisabled()

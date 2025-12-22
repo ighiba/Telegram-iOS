@@ -20,6 +20,7 @@ import CheckNode
 import AnimationCache
 import MultiAnimationRenderer
 import TextNodeWithEntities
+import SwitchNode
 
 private final class ShimmerEffectNode: ASDisplayNode {
     private var currentBackgroundColor: UIColor?
@@ -742,7 +743,7 @@ public class ItemListPeerItemNode: ItemListRevealOptionsItemNode, ItemListItemNo
     private var credibilityIconView: ComponentHostView<Empty>?
     private var verifiedIconComponent: EmojiStatusComponent?
     private var verifiedIconView: ComponentHostView<Empty>?
-    private var switchNode: SwitchNode?
+    private var switchNode: SwitchNodeProtocol?
     private var checkNode: ASImageNode?
     private var leftCheckNode: CheckNode?
     
@@ -1039,7 +1040,11 @@ public class ItemListPeerItemNode: ItemListRevealOptionsItemNode, ItemListItemNo
                 switch switchValue.style {
                 case .standard:
                     if currentSwitchNode == nil {
-                        currentSwitchNode = SwitchNode()
+                        if #available(iOS 26.0, *) {
+                            currentSwitchNode = SwitchNode()
+                        } else {
+                            currentSwitchNode = LegacySwitchNode()
+                        }
                     }
                     rightInset += switchSize.width
                     currentCheckNode = nil
@@ -1061,11 +1066,15 @@ public class ItemListPeerItemNode: ItemListRevealOptionsItemNode, ItemListItemNo
                 currentCheckNode = nil
             }
             
-            if let currentSwitchNode, let switchView = currentSwitchNode.view as? UISwitch {
+            if let currentSwitchNode, let switchView = currentSwitchNode.view as? UIControl {
                 if currentSwitchNode.bounds.size.width.isZero {
                     switchView.sizeToFit()
                 }
                 switchSize = switchView.bounds.size
+            }
+            
+            if let _ = currentSwitchNode as? LegacySwitchNode {
+                currentSwitchNode?.backgroundColor = item.presentationData.theme.list.itemBlocksBackgroundColor
             }
             
             let titleColor: UIColor

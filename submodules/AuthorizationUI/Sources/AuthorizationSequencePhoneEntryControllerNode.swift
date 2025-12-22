@@ -16,6 +16,7 @@ import SolidRoundedButtonNode
 import AuthorizationUtils
 import ManagedAnimationNode
 import Markdown
+import SwitchNode
 
 private final class PhoneAndCountryNode: ASDisplayNode {
     let strings: PresentationStrings
@@ -266,13 +267,18 @@ private final class PhoneAndCountryNode: ASDisplayNode {
 
 private final class ContactSyncNode: ASDisplayNode {
     private let titleNode: ImmediateTextNode
-    let switchNode: SwitchNode
+    let switchNode: SwitchNodeProtocol
     
     init(theme: PresentationTheme, strings: PresentationStrings) {
         self.titleNode = ImmediateTextNode()
         self.titleNode.maximumNumberOfLines = 1
         self.titleNode.attributedText = NSAttributedString(string: strings.Privacy_ContactsSync, font: Font.regular(17.0), textColor: theme.list.itemPrimaryTextColor)
-        self.switchNode = SwitchNode()
+        if #available(iOS 26.0, *) {
+            self.switchNode = SwitchNode()
+        } else {
+            self.switchNode = LegacySwitchNode()
+            self.switchNode.backgroundColor = theme.list.itemBlocksBackgroundColor
+        }
         self.switchNode.frameColor = theme.list.itemSwitchColors.frameColor
         self.switchNode.contentColor = theme.list.itemSwitchColors.contentColor
         self.switchNode.handleColor = theme.list.itemSwitchColors.handleColor
@@ -286,7 +292,7 @@ private final class ContactSyncNode: ASDisplayNode {
     
     func updateLayout(width: CGFloat) -> CGSize {
         var switchSize = CGSize(width: 51.0, height: 31.0)
-        if let switchView = self.switchNode.view as? UISwitch {
+        if let switchView = self.switchNode.view as? UIControl {
             if self.switchNode.bounds.size.width.isZero {
                 switchView.sizeToFit()
             }

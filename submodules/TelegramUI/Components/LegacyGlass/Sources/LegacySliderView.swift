@@ -172,6 +172,7 @@ public final class LegacySliderView: UIControl {
         self._isKnobTracking
     }
     
+    private let captureContainerMaskView = UIView()
     private let captureContainerView = UIView()
     private let containerView = UIView()
     private let trackView: TrackView
@@ -220,6 +221,7 @@ public final class LegacySliderView: UIControl {
         self.trackColor = defaultTrackColor
         self.startColor = defaultTrackColor
         
+        self.captureContainerMaskView.isUserInteractionEnabled = false
         self.captureContainerView.isUserInteractionEnabled = false
         self.containerView.isUserInteractionEnabled = false
         self.trackView.isUserInteractionEnabled = false
@@ -230,6 +232,8 @@ public final class LegacySliderView: UIControl {
         self.trackView.slider = self
         self.trackView.backgroundColor = .clear
         self.trackView.isOpaque = false
+        
+        self.captureContainerMaskView.clipsToBounds = true
         
         self.knobView.legacyGlassView.fillColor = .white
         self.knobView.legacyGlassView.isActivationEnabled = true
@@ -248,7 +252,8 @@ public final class LegacySliderView: UIControl {
 
         self.captureContainerView.addSubview(self.containerView)
         self.containerView.addSubview(self.trackView)
-        self.addSubview(self.captureContainerView)
+        self.captureContainerMaskView.addSubview(self.captureContainerView)
+        self.addSubview(self.captureContainerMaskView)
         self.addSubview(self.knobView)
         
         self.addGestureRecognizer(self.panGestureRecognizer)
@@ -268,9 +273,10 @@ public final class LegacySliderView: UIControl {
             return
         }
         
-        self.captureContainerView.frame = self.bounds.insetBy(dx: -horizontalPadding, dy: -verticalPadding)
-        self.containerView.frame = self.bounds.insetBy(dx: horizontalPadding, dy: verticalPadding)
-        self.trackView.frame = self.bounds
+        self.captureContainerMaskView.frame = self.bounds
+        self.captureContainerView.frame = self.captureContainerMaskView.bounds.insetBy(dx: -15, dy: -5)
+        self.containerView.frame = self.captureContainerView.bounds.insetBy(dx: 15, dy: 5)
+        self.trackView.frame = self.containerView.bounds
         
         let margin = internalMargin
         var totalLength = self.bounds.width - margin * 2

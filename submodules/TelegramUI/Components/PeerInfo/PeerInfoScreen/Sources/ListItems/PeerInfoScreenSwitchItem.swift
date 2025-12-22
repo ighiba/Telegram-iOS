@@ -5,6 +5,7 @@ import Display
 import TelegramPresentationData
 import AppBundle
 import AccountContext
+import SwitchNode
 
 final class PeerInfoScreenSwitchItem: PeerInfoScreenItem {
     let id: AnyHashable
@@ -33,7 +34,7 @@ private final class PeerInfoScreenSwitchItemNode: PeerInfoScreenItemNode {
     private let maskNode: ASImageNode
     private let iconNode: ASImageNode
     private let textNode: ImmediateTextNode
-    private let switchNode: SwitchNode
+    private let switchNode: SwitchNodeProtocol
     private var lockedIconNode: ASImageNode?
     private let bottomSeparatorNode: ASDisplayNode
     private var lockedButtonNode: HighlightableButtonNode?
@@ -58,7 +59,11 @@ private final class PeerInfoScreenSwitchItemNode: PeerInfoScreenItemNode {
         self.textNode.displaysAsynchronously = false
         self.textNode.isUserInteractionEnabled = false
         
-        self.switchNode = SwitchNode()
+        if #available(iOS 26.0, *) {
+            self.switchNode = SwitchNode()
+        } else {
+            self.switchNode = LegacySwitchNode()
+        }
         
         self.bottomSeparatorNode = ASDisplayNode()
         self.bottomSeparatorNode.isLayerBacked = true
@@ -138,6 +143,10 @@ private final class PeerInfoScreenSwitchItemNode: PeerInfoScreenItemNode {
             self.switchNode.frameColor = presentationData.theme.list.itemSwitchColors.frameColor
             self.switchNode.contentColor = presentationData.theme.list.itemSwitchColors.contentColor
             self.switchNode.handleColor = presentationData.theme.list.itemSwitchColors.handleColor
+
+            if let _ = self.switchNode as? LegacySwitchNode {
+                self.switchNode.backgroundColor = presentationData.theme.list.itemBlocksBackgroundColor
+            }
             
             updateLockedIconImage = true
         }
@@ -184,7 +193,7 @@ private final class PeerInfoScreenSwitchItemNode: PeerInfoScreenItemNode {
         
         transition.updateFrame(node: self.textNode, frame: textFrame)
         
-        if let switchView = self.switchNode.view as? UISwitch {
+        if let switchView = self.switchNode.view as? UIControl {
             if self.switchNode.bounds.size.width.isZero {
                 switchView.sizeToFit()
             }
@@ -192,8 +201,8 @@ private final class PeerInfoScreenSwitchItemNode: PeerInfoScreenItemNode {
             
             let switchFrame = CGRect(origin: CGPoint(x: width - switchSize.width - 15.0 - safeInsets.right, y: floor((height - switchSize.height) / 2.0)), size: switchSize)
             self.switchNode.frame = switchFrame
-            if switchView.isOn != item.value {
-                switchView.setOn(item.value, animated: !firstTime)
+            if self.switchNode.isOn != item.value {
+                self.switchNode.setOn(item.value, animated: !firstTime)
             }
             
             self.lockedButtonNode?.frame = switchFrame

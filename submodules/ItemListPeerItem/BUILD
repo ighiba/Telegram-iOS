@@ -27,6 +27,7 @@ swift_library(
         "//submodules/ComponentFlow:ComponentFlow",
         "//submodules/TelegramUI/Components/EmojiStatusComponent:EmojiStatusComponent",
         "//submodules/CheckNode",
+        "//submodules/SwitchNode",
         "//submodules/TelegramUI/Components/AnimationCache",
         "//submodules/TelegramUI/Components/MultiAnimationRenderer",
         "//submodules/TelegramUI/Components/TextNodeWithEntities",

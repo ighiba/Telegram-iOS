@@ -332,7 +332,7 @@ public final class ListActionItemComponent: Component {
         private var icon: ComponentView<Empty>?
         
         private var arrowView: UIImageView?
-        private var switchNode: SwitchNode?
+        private var switchNode: SwitchNodeProtocol?
         private var iconSwitchNode: IconSwitchNode?
         private var activityIndicatorView: UIActivityIndicatorView?
         private var customAccessoryView: ComponentView<Empty>?
@@ -736,7 +736,7 @@ public final class ListActionItemComponent: Component {
             if case let .toggle(toggle) = component.accessory {
                 switch toggle.style {
                 case .regular:
-                    let switchNode: SwitchNode
+                    let switchNode: SwitchNodeProtocol
                     var switchTransition = transition
                     var updateSwitchTheme = themeUpdated
                     if let current = self.switchNode {
@@ -745,7 +745,11 @@ public final class ListActionItemComponent: Component {
                     } else {
                         switchTransition = switchTransition.withAnimation(.none)
                         updateSwitchTheme = true
-                        switchNode = SwitchNode()
+                        if #available(iOS 26.0, *) {
+                            switchNode = SwitchNode()
+                        } else {
+                            switchNode = LegacySwitchNode()
+                        }
                         switchNode.setOn(toggle.isOn, animated: false)
                         self.switchNode = switchNode
                         self.button.addSubview(switchNode.view)
@@ -770,10 +774,14 @@ public final class ListActionItemComponent: Component {
                         switchNode.frameColor = component.theme.list.itemSwitchColors.frameColor
                         switchNode.contentColor = component.theme.list.itemSwitchColors.contentColor
                         switchNode.handleColor = component.theme.list.itemSwitchColors.handleColor
+
+                        if let _ = switchNode as? LegacySwitchNode {
+                            switchNode.backgroundColor = component.theme.list.itemBlocksBackgroundColor
+                        }
                     }
                     
                     var switchSize = CGSize(width: 51.0, height: 31.0)
-                    if let switchView = switchNode.view as? UISwitch {
+                    if let switchView = switchNode.view as? UIControl {
                         if switchNode.bounds.size.width.isZero {
                             switchView.sizeToFit()
                         }

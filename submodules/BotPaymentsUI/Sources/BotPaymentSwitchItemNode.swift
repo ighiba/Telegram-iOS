@@ -3,6 +3,7 @@ import UIKit
 import AsyncDisplayKit
 import Display
 import TelegramPresentationData
+import SwitchNode
 
 private let titleFont = Font.regular(17.0)
 
@@ -11,7 +12,7 @@ final class BotPaymentSwitchItemNode: BotPaymentItemNode {
     
     private let title: String
     private let titleNode: ASTextNode
-    private let switchNode: SwitchNode
+    private let switchNode: SwitchNodeProtocol
     private let buttonNode: HighlightableButtonNode
     
     private var theme: PresentationTheme?
@@ -40,7 +41,12 @@ final class BotPaymentSwitchItemNode: BotPaymentItemNode {
         self.titleNode = ASTextNode()
         self.titleNode.maximumNumberOfLines = 1
         
-        self.switchNode = SwitchNode()
+        if #available(iOS 26.0, *) {
+            self.switchNode = SwitchNode()
+        } else {
+            self.switchNode = LegacySwitchNode()
+        }
+        
         self.switchNode.setOn(isOn, animated: false)
         
         self.buttonNode = HighlightableButtonNode()
@@ -68,6 +74,9 @@ final class BotPaymentSwitchItemNode: BotPaymentItemNode {
             self.switchNode.frameColor = theme.list.itemSwitchColors.frameColor
             self.switchNode.contentColor = theme.list.itemSwitchColors.contentColor
             self.switchNode.handleColor = theme.list.itemSwitchColors.handleColor
+            if let _ = self.switchNode as? LegacySwitchNode {
+                self.switchNode.backgroundColor = theme.list.itemBlocksBackgroundColor
+            }
         }
         
         let leftInset: CGFloat = 16.0
