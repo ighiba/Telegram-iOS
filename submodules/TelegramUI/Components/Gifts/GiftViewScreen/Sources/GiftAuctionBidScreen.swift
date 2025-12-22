@@ -2138,6 +2138,7 @@ private final class GiftAuctionBidScreenComponent: Component {
                             self.previousTimestamp = currentTimestamp
                         }
                     )),
+                    backgroundColor: .clear,
                     trackBackgroundColor: .clear,
                     trackForegroundColor: .clear,
                     knobSize: 26.0,

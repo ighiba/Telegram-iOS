@@ -151,6 +151,7 @@ final class StorageKeepSizeComponent: Component {
                             }
                         )),
                         useNative: true,
+                        backgroundColor: component.theme.list.itemBlocksBackgroundColor,
                         trackBackgroundColor: component.theme.list.itemSwitchColors.frameColor,
                         trackForegroundColor: component.theme.list.itemAccentColor
                     )

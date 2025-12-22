@@ -291,6 +291,7 @@ class EnergyUsageBatteryLevelItemNode: ListViewItemNode {
                                     }
                                 )),
                                 useNative: true,
+                                backgroundColor: item.theme.list.itemBlocksBackgroundColor,
                                 trackBackgroundColor: item.theme.list.itemSwitchColors.frameColor,
                                 trackForegroundColor: item.theme.list.itemAccentColor
                             )

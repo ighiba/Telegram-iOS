@@ -1609,6 +1609,7 @@ private final class ChatSendStarsScreenComponent: Component {
                             self.previousTimestamp = currentTimestamp
                         }
                     )),
+                    backgroundColor: .clear,
                     trackBackgroundColor: .clear,
                     trackForegroundColor: .clear,
                     knobSize: 26.0,

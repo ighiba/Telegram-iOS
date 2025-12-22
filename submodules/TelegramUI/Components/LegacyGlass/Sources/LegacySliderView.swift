@@ -2,7 +2,7 @@ import UIKit
 
 private let defaultLineSize: CGFloat = 3
 private let margin: CGFloat = 15
-private let internalMargin: CGFloat = 7
+private let internalMargin: CGFloat = 10
 private let defaultBackColor = UIColor(red: 0.914, green: 0.914, blue: 0.918, alpha: 1.0)
 private let defaultTrackColor = UIColor.systemBlue
 
@@ -234,6 +234,7 @@ public final class LegacySliderView: UIControl {
         self.trackView.isOpaque = false
         
         self.captureContainerMaskView.clipsToBounds = true
+        self.captureContainerMaskView.backgroundColor = .white
         
         self.knobView.legacyGlassView.fillColor = .white
         self.knobView.legacyGlassView.isActivationEnabled = true
@@ -250,8 +251,8 @@ public final class LegacySliderView: UIControl {
         self.knobView.legacyGlassView.interactionActivationDownDuration = 0.3
         self.knobView.legacyGlassView.setCaptureHostView(self.captureContainerView)
 
-        self.captureContainerView.addSubview(self.containerView)
         self.containerView.addSubview(self.trackView)
+        self.captureContainerView.addSubview(self.containerView)
         self.captureContainerMaskView.addSubview(self.captureContainerView)
         self.addSubview(self.captureContainerMaskView)
         self.addSubview(self.knobView)
