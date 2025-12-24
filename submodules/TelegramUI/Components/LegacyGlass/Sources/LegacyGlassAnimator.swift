@@ -27,12 +27,26 @@ enum LegacyGlassEasing {
 }
 
 struct LegacyGlassAnimationSegment {
+    
     let from: CGFloat
     let to: CGFloat
     let duration: CGFloat
     let easing: LegacyGlassEasing
-    let onComplete: (() -> Void)?
     var elapsed: CGFloat = 0.0
+    let onBegin: (() -> Void)?
+    let onComplete: (() -> Void)?
+    
+    fileprivate var hasStarted: Bool = false
+    
+    init(from: CGFloat, to: CGFloat, duration: CGFloat, easing: LegacyGlassEasing, elapsed: CGFloat, onBegin: (() -> Void)? = nil, onComplete: (() -> Void)? = nil) {
+        self.from = from
+        self.to = to
+        self.duration = duration
+        self.easing = easing
+        self.elapsed = elapsed
+        self.onBegin = onBegin
+        self.onComplete = onComplete
+    }
     
     func value(at time: CGFloat) -> CGFloat {
         let clampedT = max(0.0, min(1.0, time / max(duration, 0.0001)))
@@ -46,21 +60,21 @@ struct LegacyGlassAnimationSegment {
 }
 
 final class LegacyGlassAnimator {
-    private var segments: [LegacyGlassAnimationSegment] = []
-    private(set) var currentValue: CGFloat = 0.0
-    
     var isRunning: Bool {
         !self.segments.isEmpty
     }
+    
+    private var segments: [LegacyGlassAnimationSegment] = []
+    private(set) var currentValue: CGFloat = 0.0
     
     func reset(to value: CGFloat) {
         self.segments.removeAll()
         self.currentValue = value
     }
     
-    func enqueue(from: CGFloat, to: CGFloat, duration: CGFloat, easing: LegacyGlassEasing, onComplete: (() -> Void)? = nil) {
+    func enqueue(from: CGFloat, to: CGFloat, duration: CGFloat, easing: LegacyGlassEasing, onBegin: (() -> Void)?, onComplete: (() -> Void)? = nil) {
         self.segments = [
-            LegacyGlassAnimationSegment(from: from, to: to, duration: duration, easing: easing, onComplete: onComplete, elapsed: 0.0)
+            LegacyGlassAnimationSegment(from: from, to: to, duration: duration, easing: easing, elapsed: 0.0, onBegin: onBegin, onComplete: onComplete)
         ]
     }
     
@@ -72,6 +86,11 @@ final class LegacyGlassAnimator {
         guard !self.segments.isEmpty else { return }
         
         var head = self.segments.removeFirst()
+        if !head.hasStarted {
+            head.hasStarted = true
+            head.onBegin?()
+        }
+        
         head.elapsed += delta
         self.currentValue = head.value(at: head.elapsed)
         

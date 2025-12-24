@@ -65,6 +65,9 @@ public enum LegacyGlassInteraction {
 
 public final class LegacyGlassView: UIView {
     
+    public var willActivate: ((TimeInterval) -> Void)?
+    public var willDeactivate: ((TimeInterval) -> Void)?
+    
     public var onCaptureBegan: (() -> Void)?
     public var onCaptureEnded: (() -> Void)?
 
@@ -88,6 +91,11 @@ public final class LegacyGlassView: UIView {
         }
     }
     
+    public var useAdditionalFrontImage: Bool {
+        get { self.rendererView.useAdditionalFrontImage }
+        set { self.rendererView.useAdditionalFrontImage = newValue }
+    }
+    
     public var useLayerBaseRender: Bool {
         get { self.rendererView.useLayerBaseRender }
         set { self.rendererView.useLayerBaseRender = newValue }
@@ -95,6 +103,14 @@ public final class LegacyGlassView: UIView {
 
     public var captureMode: LegacyGlassCaptureMode {
         self.rendererView.captureMode
+    }
+    
+    public var captureScale: CGFloat {
+        self.rendererView.currentCaptureScale()
+    }
+    
+    public var hasAdditionalFrontImage: Bool {
+        self.rendererView.hasAdditionalFrontImage
     }
     
     public var dimmingMin: Float {
@@ -115,6 +131,11 @@ public final class LegacyGlassView: UIView {
     public var fillColor: UIColor? {
         get { self.rendererView.fillColor }
         set { self.rendererView.fillColor = newValue }
+    }
+
+    public var additionalFrontImageBackgroundColor: UIColor? {
+        get { self.rendererView.additionalFrontImageBackgroundColor }
+        set { self.rendererView.additionalFrontImageBackgroundColor = newValue }
     }
     
     public var horizontalPadding: CGFloat {
@@ -336,6 +357,16 @@ public final class LegacyGlassView: UIView {
         self.rendererView.requestUpdate()
     }
     
+    public func setAdditionalFrontImage(_ cgImage: CGImage?, atOrigin origin: CGPoint) {
+        let paddedOrigin = CGPoint(x: origin.x + horizontalPadding, y: origin.y + verticalPadding)
+        self.rendererView.setAdditionalFrontImage(cgImage, atPaddedOrigin: paddedOrigin)
+    }
+    
+    public func updateAdditionalFrontImageOrigin(at origin: CGPoint) {
+        let paddedOrigin = CGPoint(x: origin.x + horizontalPadding, y: origin.y + verticalPadding)
+        self.rendererView.updateAdditionalFrontImageOrigin(at: paddedOrigin)
+    }
+    
     public func interactionBegan(at point: CGPoint) {
         self.isPressActive = true
         if self.context.style.isIdleImageEnabled {
@@ -354,20 +385,22 @@ public final class LegacyGlassView: UIView {
             to: self.interactionScaleMax,
             duration: self.interactionScaleUpDuration,
             easing: .easeOut,
-            onComplete: nil,
             elapsed: 0.0
         )
         self.scaleAnimator.enqueueAnimationSegments([scaleSegment])
         
         if self.isActivationEnabled {
             let currentActivation = self.context.interactionActivationProgress
+            let duration = self.interactionActivationUpDuration
             let activationSegment = LegacyGlassAnimationSegment(
                 from: currentActivation,
                 to: 1.0,
                 duration: self.interactionActivationUpDuration,
                 easing: .easeOut,
-                onComplete: nil,
-                elapsed: 0.0
+                elapsed: 0.0,
+                onBegin: { [weak self] in
+                    self?.willActivate?(duration)
+                }
             )
             self.activationAnimator.enqueueAnimationSegments([activationSegment])
         } else {
@@ -403,16 +436,20 @@ public final class LegacyGlassView: UIView {
                 to: peak,
                 duration: remainingUpDuration,
                 easing: .easeOut,
-                onComplete: nil,
-                elapsed: 0.0
+                elapsed: 0.0,
+                onBegin: { [weak self] in
+                    self?.willActivate?(remainingUpDuration)
+                }
             )
             let downSegment = LegacyGlassAnimationSegment(
                 from: peak,
                 to: 1.0,
                 duration: returnDuration,
                 easing: .easeInOut,
-                onComplete: nil,
-                elapsed: 0.0
+                elapsed: 0.0,
+                onBegin: { [weak self] in
+                    self?.willDeactivate?(returnDuration)
+                }
             )
             self.scaleAnimator.enqueueAnimationSegments([upSegment, downSegment])
         } else {
@@ -421,8 +458,10 @@ public final class LegacyGlassView: UIView {
                 to: 1.0,
                 duration: returnDuration,
                 easing: .easeInOut,
-                onComplete: nil,
-                elapsed: 0.0
+                elapsed: 0.0,
+                onBegin: { [weak self] in
+                    self?.willDeactivate?(returnDuration)
+                }
             )
             self.scaleAnimator.enqueueAnimationSegments([downSegment])
         }
@@ -430,31 +469,40 @@ public final class LegacyGlassView: UIView {
         if self.isActivationEnabled {
             let currentActivation = self.context.interactionActivationProgress
             if shouldCompleteToPeak {
+                let durationUp = max(0.04, self.interactionActivationUpDuration * max(0.0, min(1.0, remainingRatio)))
+                let durationDown = self.interactionActivationDownDuration
                 let activationUp = LegacyGlassAnimationSegment(
                     from: currentActivation,
                     to: 1.0,
-                    duration: max(0.04, self.interactionActivationUpDuration * max(0.0, min(1.0, remainingRatio))),
+                    duration: durationUp,
                     easing: .easeOut,
-                    onComplete: nil,
-                    elapsed: 0.0
+                    elapsed: 0.0,
+                    onBegin: { [weak self] in
+                        self?.willActivate?(remainingUpDuration)
+                    }
                 )
                 let activationDown = LegacyGlassAnimationSegment(
                     from: 1.0,
                     to: 0.0,
-                    duration: self.interactionActivationDownDuration,
+                    duration: durationDown,
                     easing: .easeInOut,
-                    onComplete: nil,
-                    elapsed: 0.0
+                    elapsed: 0.0,
+                    onBegin: { [weak self] in
+                        self?.willDeactivate?(durationDown)
+                    }
                 )
                 self.activationAnimator.enqueueAnimationSegments([activationUp, activationDown])
             } else {
+                let duration = self.interactionActivationDownDuration
                 let activationDown = LegacyGlassAnimationSegment(
                     from: currentActivation,
                     to: 0.0,
-                    duration: self.interactionActivationDownDuration,
+                    duration: duration,
                     easing: .easeInOut,
-                    onComplete: nil,
-                    elapsed: 0.0
+                    elapsed: 0.0,
+                    onBegin: { [weak self] in
+                        self?.willDeactivate?(duration)
+                    }
                 )
                 self.activationAnimator.enqueueAnimationSegments([activationDown])
             }
@@ -880,8 +928,12 @@ public final class LegacyGlassView: UIView {
         }
     }
     
+    public func ensureFastCaptureWithDebounce(to debounceCaptureMode: LegacyGlassCaptureMode, duration: TimeInterval? = nil) {
+        self.rendererView.ensureFastCaptureWithDebounce(to: debounceCaptureMode)
+    }
+    
     private func nestedHostScrollViewDidUpdate() {
-        self.rendererView.ensureFastCaptureWithDebounce(to: .dynamicBackground(.slow))
+        self.ensureFastCaptureWithDebounce(to: .dynamicBackground(.slow))
     }
 }
 

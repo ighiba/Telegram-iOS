@@ -51,6 +51,15 @@ private struct LegacyGlassUniforms {
     var padding0: UInt32
 }
 
+private struct AdditionalTextureUniforms {
+    var canvasSize: simd_float2
+    var additionalTextureOriginCanvas: simd_float2
+    var additionalTextureSizeCanvas: simd_float2
+    var backgroundTextureSize: simd_float2
+    var cornerRadius: Float
+    var backgroundColor: simd_float4
+}
+
 protocol LegacyGlassRendererDelegate: AnyObject {
     var onCaptureBegan: (() -> Void)? { get set }
     var onCaptureEnded: (() -> Void)? { get set }
@@ -68,6 +77,14 @@ final class LegacyGlassRenderer: MTKView {
     weak var glassDelegate: LegacyGlassRendererDelegate?
     
     var useLayerBaseRender: Bool = false
+    var useAdditionalFrontImage: Bool = false {
+        didSet {
+            self.isTextureUpdateNeeded = true
+        }
+    }
+    var hasAdditionalFrontImage: Bool {
+        return self.additionalFrontTexture != nil
+    }
     
     let allowsGroupSnapshotting: Bool
     var snapshotExclusionMode: LegacyGlassSnapshotExclusionMode = .overlayWindow {
@@ -93,6 +110,15 @@ final class LegacyGlassRenderer: MTKView {
     }
     private var fillColorVector: simd_float4 = .zero
     
+    var additionalFrontImageBackgroundColor: UIColor? {
+        didSet {
+            guard self.additionalFrontImageBackgroundColor != oldValue else { return }
+            self.additionalFrontImageBackgroundColorVector = self.colorVector(from: self.additionalFrontImageBackgroundColor)
+            self.isCombinedTextureValid = false
+        }
+    }
+    private var additionalFrontImageBackgroundColorVector: simd_float4 = .zero
+    
     private weak var captureHostView: UIView?
     private var capturedFrame: CGRect = .zero
     private var captureDebounceWorkItem: DispatchWorkItem?
@@ -114,16 +140,37 @@ final class LegacyGlassRenderer: MTKView {
     private var vertexBuffer: MTLBuffer?
     private var samplerState: MTLSamplerState?
     private var uniformsBuffer: MTLBuffer?
+    private var additionalTextureUniformsBuffer: MTLBuffer?
+    
+    private var _additionalTexturePipelineState: MTLRenderPipelineState?
+    private var additionalTexturePipelineState: MTLRenderPipelineState? {
+        if let cached = self._additionalTexturePipelineState {
+            return cached
+        }
+        guard let device = self.device else {
+            return nil
+        }
+        let pipelineState = self.makeAdditionalTexturePipelineState(device: device)
+        self._additionalTexturePipelineState = pipelineState
+        return pipelineState
+    }
     
     var isTextureUpdateNeeded: Bool = false
     private var texture: MTLTexture?
     private var textureBlurred: MTLTexture?
+    private var additionalFrontTexture: MTLTexture?
+    private var additionalFrontOrigin: CGPoint = .zero
+    private var currentAdditionalFrontImage: CGImage?
     private var lastTextureUpdateTimestamp: CFTimeInterval?
     private var textureUpdateFPS: Double = 0.0
     
     private var isBlurredTextureValid: Bool = false
     private var blurFilter: MPSImageGaussianBlur?
     private var blurFilterSigma: Float = 1.0
+    
+    private var isCombinedTextureValid: Bool = false
+    private var combinedTexture: MTLTexture?
+    private var lastCombinedTextureOrigin: CGPoint = .zero
     
     var dimmingMin: Float = 0.0
     var dimmingMax: Float = 0.1
@@ -165,6 +212,7 @@ final class LegacyGlassRenderer: MTKView {
         self.vertexBuffer = self.makeQuadVertexBuffer(device: device)
         self.samplerState = self.makeSamplerState(device: device)
         self.uniformsBuffer = self.makeUniformsBuffer(device: device)
+        self.additionalTextureUniformsBuffer = self.makeAdditionalTextureUniformsBuffer(device: device)
         
         if self.isBlurEnabled {
             self.blurFilter = MPSImageGaussianBlur(device: device, sigma: self.blurFilterSigma)
@@ -245,6 +293,42 @@ final class LegacyGlassRenderer: MTKView {
         return try? device.makeRenderPipelineState(descriptor: descriptor)
     }
     
+    private func makeAdditionalTexturePipelineState(device: MTLDevice) -> MTLRenderPipelineState? {
+        guard
+            let library = metalLibrary(device: device),
+            let vertexFunction = library.makeFunction(name: "legacyGlassVertex"),
+            let fragmentFunction = library.makeFunction(name: "additionalTextureFragment")
+        else {
+            assertionFailure("Failed to make additional texture pipeline state")
+            return nil
+        }
+        
+        let vertexDescriptor = MTLVertexDescriptor()
+        vertexDescriptor.attributes[0].format = .float2
+        vertexDescriptor.attributes[0].offset = 0
+        vertexDescriptor.attributes[0].bufferIndex = 0
+        vertexDescriptor.attributes[1].format = .float2
+        vertexDescriptor.attributes[1].offset = MemoryLayout<simd_float2>.stride
+        vertexDescriptor.attributes[1].bufferIndex = 0
+        vertexDescriptor.layouts[0].stride = MemoryLayout<simd_float2>.stride * 2
+        vertexDescriptor.layouts[0].stepFunction = .perVertex
+        
+        let descriptor = MTLRenderPipelineDescriptor()
+        descriptor.vertexFunction = vertexFunction
+        descriptor.fragmentFunction = fragmentFunction
+        descriptor.vertexDescriptor = vertexDescriptor
+        descriptor.colorAttachments[0].pixelFormat = self.colorPixelFormat
+        descriptor.colorAttachments[0].isBlendingEnabled = true
+        descriptor.colorAttachments[0].rgbBlendOperation = .add
+        descriptor.colorAttachments[0].alphaBlendOperation = .add
+        descriptor.colorAttachments[0].sourceRGBBlendFactor = .sourceAlpha
+        descriptor.colorAttachments[0].sourceAlphaBlendFactor = .sourceAlpha
+        descriptor.colorAttachments[0].destinationRGBBlendFactor = .oneMinusSourceAlpha
+        descriptor.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
+        
+        return try? device.makeRenderPipelineState(descriptor: descriptor)
+    }
+    
     private func makeQuadVertexBuffer(device: MTLDevice) -> MTLBuffer? {
         struct Vertex {
             var position: simd_float2
@@ -275,6 +359,13 @@ final class LegacyGlassRenderer: MTKView {
     private func makeUniformsBuffer(device: MTLDevice) -> MTLBuffer? {
         return device.makeBuffer(
             length: MemoryLayout<LegacyGlassUniforms>.stride,
+            options: .storageModeShared
+        )
+    }
+    
+    private func makeAdditionalTextureUniformsBuffer(device: MTLDevice) -> MTLBuffer? {
+        return device.makeBuffer(
+            length: MemoryLayout<AdditionalTextureUniforms>.stride,
             options: .storageModeShared
         )
     }
@@ -317,6 +408,51 @@ final class LegacyGlassRenderer: MTKView {
         case .staticBackground:
             self.debounceCaptureMode(captureMode, duration: 1.0)
         }
+    }
+    
+    func setAdditionalFrontImage(_ cgImage: CGImage?, atPaddedOrigin origin: CGPoint) {
+        assert(Thread.isMainThread, "setAdditionalFrontImage must be called on the main thread")
+        
+        let needsTextureUpdate: Bool
+        if let cgImage = cgImage {
+            if self.currentAdditionalFrontImage !== cgImage {
+                needsTextureUpdate = true
+                self.currentAdditionalFrontImage = cgImage
+            } else {
+                needsTextureUpdate = false
+            }
+        } else {
+            needsTextureUpdate = self.additionalFrontTexture != nil
+            self.currentAdditionalFrontImage = nil
+        }
+        
+        let originChanged = self.additionalFrontOrigin != origin
+        self.additionalFrontOrigin = origin
+        
+        if needsTextureUpdate {
+            if let cgImage = cgImage {
+                do {
+                    let texture = try self.makeTexture(from: cgImage)
+                    self.additionalFrontTexture = texture
+                } catch {
+                    assertionFailure("Failed to create additional front texture from cgImage: \(error)")
+                    self.additionalFrontTexture = nil
+                }
+            } else {
+                self.additionalFrontTexture = nil
+            }
+        }
+        
+        if needsTextureUpdate || originChanged {
+            self.updateCombinedTextureIfNeeded()
+            if self.isBlurEnabled {
+                self.isBlurredTextureValid = false
+            }
+        }
+    }
+
+    func updateAdditionalFrontImageOrigin(at point: CGPoint) {
+        self.additionalFrontOrigin = point
     }
 
     func ensureFastCaptureWithDebounce(to debounceCaptureMode: LegacyGlassCaptureMode, duration: TimeInterval? = nil) {
@@ -394,34 +530,43 @@ final class LegacyGlassRenderer: MTKView {
         }
     }
     
+    private func updateCombinedTextureIfNeeded() {
+        guard let sourceTexture = self.texture else {
+            self.combinedTexture = nil
+            self.isCombinedTextureValid = false
+            return
+        }
+        
+        guard self.additionalFrontTexture != nil else {
+            self.combinedTexture = nil
+            self.isCombinedTextureValid = false
+            return
+        }
+        
+        _ = self.ensureCombinedTexture(for: sourceTexture)
+        self.isCombinedTextureValid = false
+    }
+    
     private func createTexture(from cgImage: CGImage) {
         do {
             let texture = try self.makeTexture(from: cgImage)
             self.texture = texture
             self.textureBlurred = self.isBlurEnabled ? self.ensureBlurredTexture(fromTexture: texture) : nil
             self.averageBackgroundLuma = self.computeAverageLuma(from: cgImage)
+            self.isCombinedTextureValid = false
+            self.updateCombinedTextureIfNeeded()
             self.isTextureUpdateNeeded = false
             self.isBlurredTextureValid = false
         } catch {
             assertionFailure("Failed to create texture from cgImage: \(error)")
             self.texture = nil
             self.textureBlurred = nil
+            self.combinedTexture = nil
             self.isTextureUpdateNeeded = false
             self.isBlurredTextureValid = false
         }
     }
     
-    private func makeTexture(from cgImage: CGImage) throws -> MTLTexture {
-        return try self.textureLoader.newTexture(
-            cgImage: cgImage,
-            options: [
-                MTKTextureLoader.Option.SRGB: false,
-                MTKTextureLoader.Option.textureUsage: MTLTextureUsage.shaderRead.rawValue,
-                MTKTextureLoader.Option.generateMipmaps: false
-            ]
-        )
-    }
-
     private func ensureBlurredTexture(fromTexture texture: MTLTexture) -> MTLTexture? {
         if self.isTextureMatching(texture, with: self.textureBlurred) {
             return self.textureBlurred
@@ -437,6 +582,46 @@ final class LegacyGlassRenderer: MTKView {
         descriptor.usage = [.shaderRead, .shaderWrite]
         
         return texture.device.makeTexture(descriptor: descriptor)
+    }
+    
+    private func ensureCombinedTexture(for sourceTexture: MTLTexture) -> MTLTexture? {
+        guard sourceTexture.width > 0, sourceTexture.height > 0 else {
+            return nil
+        }
+        
+        if self.isTextureMatching(sourceTexture, with: self.combinedTexture) {
+            return self.combinedTexture
+        }
+        
+        self.combinedTexture = nil
+        self.isCombinedTextureValid = false
+        
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: self.colorPixelFormat,
+            width: sourceTexture.width,
+            height: sourceTexture.height,
+            mipmapped: false
+        )
+        descriptor.storageMode = .private
+        descriptor.usage = [.shaderRead, .shaderWrite, .renderTarget]
+        
+        guard let combinedTexture = sourceTexture.device.makeTexture(descriptor: descriptor) else {
+            return nil
+        }
+        
+        self.combinedTexture = combinedTexture
+        return combinedTexture
+    }
+    
+    private func makeTexture(from cgImage: CGImage) throws -> MTLTexture {
+        return try self.textureLoader.newTexture(
+            cgImage: cgImage,
+            options: [
+                MTKTextureLoader.Option.SRGB: false,
+                MTKTextureLoader.Option.textureUsage: MTLTextureUsage.shaderRead.rawValue,
+                MTKTextureLoader.Option.generateMipmaps: false
+            ]
+        )
     }
     
     private func updateUniformsBuffer(buffer: MTLBuffer) {
@@ -650,12 +835,12 @@ final class LegacyGlassRenderer: MTKView {
     private func trackTextureUpdateFPS() {
 //        let now = CACurrentMediaTime()
 //        defer { self.lastTextureUpdateTimestamp = now; print("textureUpdateFPS: \(self.textureUpdateFPS)") }
-//        
+//
 //        guard let last = self.lastTextureUpdateTimestamp else { return }
-//        
+//
 //        let delta = now - last
 //        guard delta > 1e-4 else { return }
-//        
+//
 //        let instantaneousFPS = 1.0 / delta
 //        let smoothingFactor: Double = 0.2
 //        if self.textureUpdateFPS <= 0.0 {
@@ -751,7 +936,11 @@ final class LegacyGlassRenderer: MTKView {
 
 extension LegacyGlassRenderer: MTKViewDelegate {
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
-        
+        if self.useAdditionalFrontImage {
+            self.combinedTexture = nil
+            self.isCombinedTextureValid = false
+            self._additionalTexturePipelineState = nil
+        }
     }
     
     func draw(in view: MTKView) {
@@ -773,7 +962,7 @@ extension LegacyGlassRenderer: MTKViewDelegate {
     //            assertionFailure("Failed to draw")
                 return
             }
-            
+
             switch self.captureMode {
             case .dynamicBackground:
                 self.updateTextureIfNeeded()
@@ -805,6 +994,29 @@ extension LegacyGlassRenderer: MTKViewDelegate {
                     activeTexture = texture
                 }
             }
+            
+            if
+                self.useAdditionalFrontImage,
+                let sourceTexture = activeTexture,
+                let additionalTexture = self.additionalFrontTexture
+            {
+                let needsUpdate = !self.isCombinedTextureValid || self.lastCombinedTextureOrigin != self.additionalFrontOrigin || !self.isTextureMatching(sourceTexture, with: self.combinedTexture)
+                
+                if needsUpdate, let combinedTexture = self.ensureCombinedTexture(for: sourceTexture) {
+                    if self.renderAdditionalTexture(
+                        commandBuffer: commandBuffer,
+                        sourceTexture: sourceTexture,
+                        additionalTexture: additionalTexture,
+                        destinationTexture: combinedTexture
+                    ) {
+                        self.isCombinedTextureValid = true
+                        self.lastCombinedTextureOrigin = self.additionalFrontOrigin
+                        activeTexture = combinedTexture
+                    }
+                } else if let combinedTexture = self.combinedTexture, self.isCombinedTextureValid {
+                    activeTexture = combinedTexture
+                }
+            }
 
             if
                 let pipelineState = self.pipelineState,
@@ -814,6 +1026,7 @@ extension LegacyGlassRenderer: MTKViewDelegate {
             {
                 self.updateUniformsBuffer(buffer: uniformsBuffer)
                 guard let renderEncoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else {
+                    self.inflightSemaphore.signal()
                     return
                 }
                 renderEncoder.setRenderPipelineState(pipelineState)
@@ -833,6 +1046,104 @@ extension LegacyGlassRenderer: MTKViewDelegate {
             commandBuffer.commit()
         }
     }
+    
+    private func renderAdditionalTexture(
+        commandBuffer: MTLCommandBuffer,
+        sourceTexture: MTLTexture,
+        additionalTexture: MTLTexture,
+        destinationTexture: MTLTexture
+    ) -> Bool {
+        guard
+            let pipelineState = self.additionalTexturePipelineState,
+            let vertexBuffer = self.vertexBuffer,
+            let uniformsBuffer = self.additionalTextureUniformsBuffer
+        else {
+            return false
+        }
+        
+        guard
+            sourceTexture.width > 0, sourceTexture.height > 0,
+            additionalTexture.width > 0, additionalTexture.height > 0,
+            destinationTexture.width > 0, destinationTexture.height > 0
+        else {
+            return false
+        }
+        
+        let canvasSize = self.bounds.size
+        guard canvasSize.width > 0, canvasSize.height > 0 else {
+            return false
+        }
+
+        let backgroundTextureSizeFloat = simd_float2(
+            Float(sourceTexture.width),
+            Float(sourceTexture.height)
+        )
+        
+        let canvasSizeFloat = simd_float2(
+            Float(canvasSize.width),
+            Float(canvasSize.height)
+        )
+        
+        guard backgroundTextureSizeFloat.x > 0, backgroundTextureSizeFloat.y > 0 else {
+            return false
+        }
+        
+        let scaleX = canvasSizeFloat.x / backgroundTextureSizeFloat.x
+        let scaleY = canvasSizeFloat.y / backgroundTextureSizeFloat.y
+        
+        let additionalTextureSizeInPixels = simd_float2(
+            Float(additionalTexture.width),
+            Float(additionalTexture.height)
+        )
+        
+        let additionalTextureSizeCanvas = simd_float2(
+            additionalTextureSizeInPixels.x * scaleX,
+            additionalTextureSizeInPixels.y * scaleY
+        )
+        
+        let additionalTextureOriginCanvas = simd_float2(
+            Float(self.additionalFrontOrigin.x),
+            Float(self.additionalFrontOrigin.y)
+        )
+        
+        let cornerRadius = Float(additionalTexture.height) * 0.5
+        
+        var uniforms = AdditionalTextureUniforms(
+            canvasSize: canvasSizeFloat,
+            additionalTextureOriginCanvas: additionalTextureOriginCanvas,
+            additionalTextureSizeCanvas: additionalTextureSizeCanvas,
+            backgroundTextureSize: backgroundTextureSizeFloat,
+            cornerRadius: cornerRadius,
+            backgroundColor: self.additionalFrontImageBackgroundColorVector
+        )
+        
+        let uniformsSize = MemoryLayout<AdditionalTextureUniforms>.stride
+        if uniformsBuffer.length >= uniformsSize {
+            memcpy(uniformsBuffer.contents(), &uniforms, uniformsSize)
+        }
+        
+        let descriptor = MTLRenderPassDescriptor()
+        descriptor.colorAttachments[0].texture = destinationTexture
+        descriptor.colorAttachments[0].loadAction = .clear
+        descriptor.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 0)
+        descriptor.colorAttachments[0].storeAction = .store
+        
+        guard let renderEncoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
+            return false
+        }
+        
+        renderEncoder.setRenderPipelineState(pipelineState)
+        renderEncoder.setVertexBuffer(vertexBuffer, offset: 0, index: 0)
+        renderEncoder.setFragmentBuffer(uniformsBuffer, offset: 0, index: 0)
+        renderEncoder.setFragmentTexture(sourceTexture, index: 0)
+        renderEncoder.setFragmentTexture(additionalTexture, index: 1)
+        renderEncoder.setFragmentSamplerState(self.samplerState, index: 0)
+        renderEncoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+        renderEncoder.endEncoding()
+        
+        return true
+    }
+
     
     private func isTextureMatching(_ texture: MTLTexture, with anotherTexture: MTLTexture?) -> Bool {
         guard anotherTexture != nil else { return false }

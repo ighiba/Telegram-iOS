@@ -122,7 +122,7 @@ final class LegacyGlassSnapshotter {
     }
     
     private func updateCaptureScale() {
-        var minScale: CGFloat = 1.0
+        var minScale: CGFloat = UIScreen.main.scale
         
         for request in self.requests {
             if request.isActive && request.hostView != nil, let renderer = request.renderer {
@@ -184,12 +184,20 @@ final class LegacyGlassSnapshotter {
         guard targetFrame.width > 0, targetFrame.height > 0 else {
             return nil
         }
-
+        
         guard self.captureRegion.width > 0, self.captureRegion.height > 0 else {
             return nil
         }
         
-        guard let croppedImage = snapshot.cropping(to: targetFrame) else {
+        let scale = self.captureScale
+        let pixelRect = CGRect(
+            x: targetFrame.origin.x * scale,
+            y: targetFrame.origin.y * scale,
+            width: targetFrame.size.width * scale,
+            height: targetFrame.size.height * scale
+        )
+        
+        guard let croppedImage = snapshot.cropping(to: pixelRect) else {
             return nil
         }
 

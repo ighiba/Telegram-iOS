@@ -1,5 +1,5 @@
 import UIKit
-import Display
+ import Display
 
 private let verticalPadding: CGFloat = 15.0
 private let horizontalPadding: CGFloat = 15.0

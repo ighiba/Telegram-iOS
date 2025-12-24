@@ -353,3 +353,82 @@ fragment float4 legacyGlassFragment(VertexOut in [[stage_in]],
     color.a = clamp(color.a + outerShadowAlpha, 0.0, 1.0);
     return color;
 }
+
+struct AdditionalTextureUniforms {
+  float2 canvasSize;
+  float2 additionalTextureOriginCanvas;
+  float2 additionalTextureSizeCanvas;
+  float2 backgroundTextureSize;
+  float  cornerRadius;
+  float4 backgroundColor;
+};
+
+fragment float4 additionalTextureFragment(VertexOut in [[stage_in]],
+                                          constant AdditionalTextureUniforms& uniforms [[buffer(0)]],
+                                          texture2d<float> backgroundTexture [[texture(0)]],
+                                          texture2d<float> additionalTexture [[texture(1)]],
+                                          sampler textureSampler [[sampler(0)]]) {
+    float2 uv = in.texCoord;
+    float4 color = backgroundTexture.sample(textureSampler, uv);
+
+    if (uniforms.canvasSize.x <= 0.0 || uniforms.canvasSize.y <= 0.0 ||
+      uniforms.backgroundTextureSize.x <= 0.0 || uniforms.backgroundTextureSize.y <= 0.0) {
+        return color;
+    }
+
+    float2 canvasToTextureScale = uniforms.backgroundTextureSize / uniforms.canvasSize;
+    float2 uvInTextureSpace = uv * uniforms.backgroundTextureSize;
+
+    float2 additionalTextureOriginInTextureSpace = uniforms.additionalTextureOriginCanvas * canvasToTextureScale;
+    float2 additionalTextureSizeInTextureSpace = uniforms.additionalTextureSizeCanvas * canvasToTextureScale;
+
+    if (additionalTextureSizeInTextureSpace.x <= 0.0 || additionalTextureSizeInTextureSpace.y <= 0.0) {
+        return color;
+    }
+
+    float2 additionalTextureMinCanvas = uniforms.additionalTextureOriginCanvas / uniforms.canvasSize;
+    float2 additionalTextureMaxCanvas = (uniforms.additionalTextureOriginCanvas + uniforms.additionalTextureSizeCanvas) / uniforms.canvasSize;
+    float2 additionalTextureRadiusCanvas = uniforms.additionalTextureSizeCanvas * 0.5 / uniforms.canvasSize;
+    
+    float2 additionalTextureMin = additionalTextureOriginInTextureSpace;;
+
+    float2 lensUV = (uv - additionalTextureMinCanvas) / (additionalTextureMaxCanvas - additionalTextureMinCanvas);
+    float sdf = roundedRectSDF(lensUV, additionalTextureRadiusCanvas, uniforms.canvasSize, uniforms.cornerRadius);
+    
+    float aaWidth = fwidth(sdf) * 0.5;
+    float mask = computeMask(sdf, aaWidth);
+    
+        if (mask > 0.0) {
+            float2 deltaInTextureSpace = uvInTextureSpace - additionalTextureMin;
+            float2 additionalUV = deltaInTextureSpace / additionalTextureSizeInTextureSpace;
+            additionalUV = clamp(additionalUV, float2(0.0, 0.0), float2(1.0, 1.0));
+            
+            float backgroundColorAlpha = uniforms.backgroundColor.a * mask;
+            float3 backgroundColorPremultiplied = uniforms.backgroundColor.rgb * backgroundColorAlpha;
+            
+            float backgroundAlpha = color.a;
+            if (backgroundAlpha > 0.0) {
+                color.rgb = color.rgb * (1.0 - backgroundColorAlpha) + backgroundColorPremultiplied;
+                color.a = backgroundAlpha + backgroundColorAlpha * (1.0 - backgroundAlpha);
+            } else {
+                color.rgb = backgroundColorPremultiplied;
+                color.a = backgroundColorAlpha;
+            }
+            
+            float4 additionalColor = additionalTexture.sample(textureSampler, additionalUV);
+            if (additionalColor.a > 0.0) {
+                float textureAlpha = additionalColor.a * mask;
+                float3 texturePremultiplied = additionalColor.rgb * textureAlpha;
+                float currentAlpha = color.a;
+                if (currentAlpha > 0.0) {
+                    color.rgb = color.rgb * (1.0 - textureAlpha) + texturePremultiplied;
+                    color.a = currentAlpha + textureAlpha * (1.0 - currentAlpha);
+                } else {
+                    color.rgb = texturePremultiplied;
+                    color.a = textureAlpha;
+                }
+            }
+        }
+
+    return color;
+}
