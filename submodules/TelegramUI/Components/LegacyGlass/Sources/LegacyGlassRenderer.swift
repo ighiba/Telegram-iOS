@@ -87,11 +87,6 @@ final class LegacyGlassRenderer: MTKView {
     }
     
     let allowsGroupSnapshotting: Bool
-    var snapshotExclusionMode: LegacyGlassSnapshotExclusionMode = .overlayWindow {
-        didSet {
-            LegacyGlassSnapshotter.shared.snapshotExclusionMode = self.snapshotExclusionMode
-        }
-    }
     
     private var snapshotRequest: LegacyGlassSnapshotRequest?
     private var snapshotRequestId: UUID?
@@ -205,6 +200,7 @@ final class LegacyGlassRenderer: MTKView {
         self.enableSetNeedsDisplay = false
         self.isPaused = false
         self.framebufferOnly = false
+        self.autoResizeDrawable = false
         self.colorPixelFormat = .bgra8Unorm
         self.clearColor = MTLClearColorMake(0.0, 0.0, 0.0, 0.0)
         self.preferredFramesPerSecond = self.currentUpdateFrequency().renderFrameRate
@@ -394,7 +390,6 @@ final class LegacyGlassRenderer: MTKView {
             allowsGroupSnapshotting: self.allowsGroupSnapshotting
         )
         self.snapshotRequestId = self.snapshotRequest?.requestId
-        LegacyGlassSnapshotter.shared.snapshotExclusionMode = self.snapshotExclusionMode
         
         self.isTextureUpdateNeeded = true
     }
@@ -497,13 +492,7 @@ final class LegacyGlassRenderer: MTKView {
         let targetFrame: CGRect
         switch self.captureMode {
         case .dynamicBackground, .staticBackground:
-            switch self.snapshotExclusionMode {
-            case .overlayWindow:
-                let frameInWindowCoordinates = self.convert(self.bounds, to: nil)
-                targetFrame = hostView.convert(frameInWindowCoordinates, from: nil).intersection(hostView.bounds)
-            case .none:
-                targetFrame = self.convert(self.bounds, to: hostView).intersection(hostView.bounds)
-            }
+            targetFrame = self.convert(self.bounds, to: hostView).intersection(hostView.bounds)
         }
 
         guard targetFrame.width > 0, targetFrame.height > 0 else {
@@ -521,7 +510,6 @@ final class LegacyGlassRenderer: MTKView {
                 rect: targetFrame,
                 hostView: hostView,
                 scale: self.currentCaptureScale(),
-                exclusionMode: self.snapshotExclusionMode,
                 viewToExclude: self.superview,
                 useLayerBasedRender: self.useLayerBaseRender
             ) {
@@ -710,15 +698,8 @@ final class LegacyGlassRenderer: MTKView {
             Float(self.capturedFrame.size.height / hostBounds.height)
         )
         
-        var glassFrame: CGRect
-        switch self.snapshotExclusionMode {
-        case .overlayWindow:
-            let glassFrameInWindowCoordinates = self.convert(self.bounds, to: nil)
-            glassFrame = hostView.convert(glassFrameInWindowCoordinates, from: nil)
-        case .none:
-            glassFrame = self.convert(self.bounds, to: hostView)
-        }
-        glassFrame = glassFrame.insetBy(dx: self.context.horizontalPadding, dy: self.context.verticalPadding)
+        let glassFrame = self.convert(self.bounds, to: hostView)
+            .insetBy(dx: self.context.horizontalPadding, dy: self.context.verticalPadding)
         
         let lensOriginHost = simd_float2(
             Float((glassFrame.origin.x - lensDelta.width * deltaFactorX) / hostBounds.width),

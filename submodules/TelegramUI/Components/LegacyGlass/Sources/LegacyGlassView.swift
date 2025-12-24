@@ -4,10 +4,6 @@ import MetalKit
 import simd
 import Display
 
-public enum LegacyGlassSnapshotExclusionMode {
-    case none
-    case overlayWindow
-}
 
 public final class LegacyGlassContext {
     var style: LegacyGlassStyle
@@ -78,12 +74,6 @@ public final class LegacyGlassView: UIView {
     public var isGlowEnabled: Bool = false
     
     private var isPressActive: Bool = false
-    
-    public var isOverlayScrollSyncEnabled: Bool = false {
-        didSet {
-            self.updateOverlayScrollObservers()
-        }
-    }
     
     public var autoUpdatesOnScroll: Bool = false {
         didSet {
@@ -166,16 +156,6 @@ public final class LegacyGlassView: UIView {
         }
     }
 
-    public var snapshotExclusionMode: LegacyGlassSnapshotExclusionMode = .none {
-        didSet {
-            self.rendererView.snapshotExclusionMode = self.snapshotExclusionMode
-            self.updateOverlayLayout()
-            self.updateOverlayResyncObservers()
-            self.updateOverlayScrollObservers()
-            self.updateNestedHostScrollObservers()
-        }
-    }
-    
     public var interactionScaleUpDuration: CGFloat = 0.12
     public var interactionScaleDownDuration: CGFloat = 0.16
     public var interactionActivationUpDuration: CGFloat = 0.12
@@ -190,11 +170,7 @@ public final class LegacyGlassView: UIView {
     private weak var nestedHostScrollView: UIScrollView?
     private var nestedHostScrollObservations: [NSKeyValueObservation] = []
     
-    private var overlayResyncObservers: [NSObjectProtocol] = []
-    private var overlayScrollObservations: [NSKeyValueObservation] = []
-
     private weak var captureHostViewOverride: UIView?
-    private let overlayContentView = UIView(frame: .zero)
     
     var idleImagePadding: CGFloat = 10.0
     private var idleImage: UIImage?
@@ -216,18 +192,13 @@ public final class LegacyGlassView: UIView {
         
         self.isOpaque = false
         self.backgroundColor = .clear
-
-        self.overlayContentView.isOpaque = false
-        self.overlayContentView.backgroundColor = .clear
-        self.overlayContentView.isUserInteractionEnabled = false
         
         self.contentView.isUserInteractionEnabled = false
         self.rendererView.isUserInteractionEnabled = false
         
         self.rendererView.fillColor = self.fillColor
-        self.rendererView.snapshotExclusionMode = self.snapshotExclusionMode
         
-        self.overlayContentView.addSubview(self.rendererView)
+        self.addSubview(self.rendererView)
         
         if let idleImage, self.context.style.isIdleImageEnabled {
             self.idleImage = idleImage
@@ -239,14 +210,12 @@ public final class LegacyGlassView: UIView {
             idleImageView.contentMode = .scaleToFill
             idleImageView.clipsToBounds = false
             idleImageView.isUserInteractionEnabled = false
-            self.overlayContentView.addSubview(idleImageView)
+            self.addSubview(idleImageView)
             self.idleImageView = idleImageView
             self.updateIdleRenderingPolicy()
         }
 
-        self.overlayContentView.addSubview(self.contentView)
-        
-        self.addSubview(self.overlayContentView)
+        self.addSubview(self.contentView)
     }
     
     required public init?(coder: NSCoder) {
@@ -254,10 +223,6 @@ public final class LegacyGlassView: UIView {
     }
 
     deinit {
-        self.overlayContentView.removeFromSuperview()
-        self.idleImageView?.removeFromSuperview()
-        self.removeOverlayResyncObservers()
-        self.overlayScrollObservations.removeAll()
         self.nestedHostScrollObservations.removeAll()
     }
     
@@ -265,14 +230,17 @@ public final class LegacyGlassView: UIView {
         super.layoutSubviews()
         self.updateOverlayLayout()
 
-        self.rendererView.frame = self.overlayContentView.bounds
-            .insetBy(dx: -self.horizontalPadding, dy: -self.verticalPadding)
-        self.rendererView.drawableSize = self.rendererView.bounds.size
-        self.contentView.frame = self.overlayContentView.bounds
+        let safeBoundsSize = clampBoundsSize(self.bounds.size)
+        let safeBounds = CGRect(origin: self.bounds.origin, size: safeBoundsSize)
+        self.rendererView.frame = safeBounds.insetBy(dx: -self.horizontalPadding, dy: -self.verticalPadding)
+        
+        let clampedDrawableSize = clampBoundsSize(self.rendererView.bounds.size)
+        self.rendererView.drawableSize = clampedDrawableSize
+        self.contentView.frame = self.bounds
         
         if let idleImageView {
             let padding = self.idleImagePadding
-            idleImageView.frame = self.overlayContentView.bounds.insetBy(dx: -padding, dy: -padding)
+            idleImageView.frame = self.bounds.insetBy(dx: -padding, dy: -padding)
             idleImageView.layer.cornerRadius = 0
             idleImageView.layer.masksToBounds = false
         }
@@ -293,8 +261,6 @@ public final class LegacyGlassView: UIView {
         super.didMoveToWindow()
         self.updateNestedHostScrollObservers()
         self.updateOverlayLayout()
-        self.updateOverlayResyncObservers()
-        self.updateOverlayScrollObservers()
         
         if self.context.style.isIdleImageEnabled {
             self.setNeedsLayout()
@@ -307,7 +273,6 @@ public final class LegacyGlassView: UIView {
     override public func didMoveToSuperview() {
         super.didMoveToSuperview()
         self.updateNestedHostScrollObservers()
-        self.updateOverlayScrollObservers()
         if self.context.style.isIdleImageEnabled {
             self.setNeedsLayout()
             self.layoutIfNeeded()
@@ -345,10 +310,6 @@ public final class LegacyGlassView: UIView {
         self.updateNestedHostScrollObservers()
     }
 
-    public func syncOverlayNow() {
-        self.updateOverlayLayout()
-    }
-    
     public func setCaptureMode(_ captureMode: LegacyGlassCaptureMode) {
         self.rendererView.setCaptureMode(captureMode)
     }
@@ -729,7 +690,7 @@ public final class LegacyGlassView: UIView {
             
             if idleImageView.frame.isEmpty && !self.bounds.isEmpty {
                 let padding = self.idleImagePadding
-                idleImageView.frame = self.overlayContentView.bounds.insetBy(dx: -padding, dy: -padding)
+                idleImageView.frame = self.bounds.insetBy(dx: -padding, dy: -padding)
             }
         } else {
             idleImageView.isHidden = true
@@ -737,60 +698,9 @@ public final class LegacyGlassView: UIView {
     }
 
     private func updateOverlayLayout() {
-        guard let hostWindow = self.window else {
-            if self.overlayContentView.superview !== self {
-                self.overlayContentView.removeFromSuperview()
-                self.addSubview(self.overlayContentView)
-            }
-            self.overlayContentView.frame = self.bounds
-            return
+        if let hostWindow = self.window {
+            self.rendererView.setCaptureHostView(self.captureHostViewOverride ?? hostWindow)
         }
-        
-        self.rendererView.setCaptureHostView(self.captureHostViewOverride ?? hostWindow)
-
-        switch self.snapshotExclusionMode {
-        case .none:
-            if self.overlayContentView.superview !== self {
-                self.overlayContentView.removeFromSuperview()
-                self.addSubview(self.overlayContentView)
-            }
-            self.overlayContentView.frame = self.bounds
-
-        case .overlayWindow:
-            let overlayRoot = LegacyGlassOverlayWindowProvider.shared.rootView(forHostWindow: hostWindow)
-            if self.overlayContentView.superview !== overlayRoot {
-                self.overlayContentView.removeFromSuperview()
-                overlayRoot.addSubview(self.overlayContentView)
-            }
-
-            let frameInScreen = self.convert(self.bounds, to: nil)
-            self.overlayContentView.frame = frameInScreen
-        }
-    }
-
-    private func updateOverlayScrollObservers() {
-        guard
-            self.isOverlayScrollSyncEnabled,
-            self.snapshotExclusionMode == .overlayWindow,
-            self.window != nil
-        else {
-            self.overlayScrollObservations.removeAll()
-            return
-        }
-
-        guard let scrollView = self.findScrollView(in: self, upward: true) else {
-            self.overlayScrollObservations.removeAll()
-            return
-        }
-
-        self.overlayScrollObservations.removeAll()
-        let contentOffsetObs = scrollView.observe(\.contentOffset, options: [.new]) { [weak self] _, _ in
-            self?.syncOverlayNow()
-        }
-        let boundsObs = scrollView.observe(\.bounds, options: [.new]) { [weak self] _, _ in
-            self?.syncOverlayNow()
-        }
-        self.overlayScrollObservations.append(contentsOf: [contentOffsetObs, boundsObs])
     }
     
     private func updateNestedHostScrollObservers() {
@@ -848,31 +758,6 @@ public final class LegacyGlassView: UIView {
         return nil
     }
 
-    private func updateOverlayResyncObservers() {
-        let shouldObserve = (self.snapshotExclusionMode == .overlayWindow) && (self.window != nil)
-        if shouldObserve {
-            if !self.overlayResyncObservers.isEmpty { return }
-            self.overlayResyncObservers.append(
-                NotificationCenter.default.addObserver(forName: UIDevice.orientationDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
-                    DispatchQueue.main.async {
-                        self?.syncOverlayNow()
-                    }
-                }
-            )
-        } else {
-            self.removeOverlayResyncObservers()
-        }
-    }
-
-    private func removeOverlayResyncObservers() {
-        if self.overlayResyncObservers.isEmpty { return }
-        let center = NotificationCenter.default
-        for token in self.overlayResyncObservers {
-            center.removeObserver(token)
-        }
-        self.overlayResyncObservers.removeAll()
-    }
-    
     private func updateIdleRenderingPolicy() {
         guard
             let idleImageView = self.idleImageView,
@@ -959,76 +844,18 @@ extension LegacyGlassView: LegacyGlassRendererDelegate {
     }
 }
 
-final class LegacyGlassOverlayWindowProvider {
 
-    static let shared = LegacyGlassOverlayWindowProvider()
-
-    @available(iOS 13.0, *)
-    private let windowsByScene = NSMapTable<UIWindowScene, UIWindow>(keyOptions: .weakMemory, valueOptions: .strongMemory)
-    
-    private var legacyOverlayWindow: UIWindow?
-    
-    func window(for scene: UIWindowScene) -> UIWindow {
-        if #available(iOS 13.0, *) {
-            if let existing = self.windowsByScene.object(forKey: scene) {
-                self.updateWindowFrame(existing, for: scene)
-                return existing
-            }
-
-            let window = UIWindow(windowScene: scene)
-            self.configureOverlayWindow(window)
-            self.updateWindowFrame(window, for: scene)
-            self.windowsByScene.setObject(window, forKey: scene)
-            return window
-        } else {
-            return self.legacyWindow()
-        }
+private func clampBoundsSize(_ size: CGSize) -> CGSize {
+    let maxDimension: CGFloat = 4096.0
+    guard size.width > 0 && size.height > 0 else {
+        return .zero
     }
-    
-    func rootView(for scene: UIWindowScene) -> UIView {
-        let window = self.window(for: scene)
-        return window.rootViewController?.view ?? window
+    guard !size.width.isInfinite && !size.width.isNaN && !size.height.isInfinite && !size.height.isNaN else {
+        return .zero
     }
-    
-    func rootView(forHostWindow hostWindow: UIWindow) -> UIView {
-        if #available(iOS 13.0, *), let scene = hostWindow.windowScene {
-            return self.rootView(for: scene)
-        }
-        let window = self.legacyWindow()
-        return window.rootViewController?.view ?? window
+    guard size.width <= maxDimension && size.height <= maxDimension else {
+        let scale = min(maxDimension / size.width, maxDimension / size.height)
+        return CGSize(width: size.width * scale, height: size.height * scale)
     }
-    
-    private func updateWindowFrame(_ window: UIWindow, for scene: UIWindowScene) {
-        window.frame = scene.coordinateSpace.bounds
-    }
-    
-    private func legacyWindow() -> UIWindow {
-        if let existing = self.legacyOverlayWindow {
-            existing.frame = UIScreen.main.bounds
-            return existing
-        }
-
-        let window = UIWindow(frame: UIScreen.main.bounds)
-        self.configureOverlayWindow(window)
-        self.legacyOverlayWindow = window
-        return window
-    }
-    
-    private func configureOverlayWindow(_ window: UIWindow) {
-        window.backgroundColor = .clear
-        window.isOpaque = false
-        window.isHidden = false
-        window.isUserInteractionEnabled = false
-        
-        window.windowLevel = UIWindow.Level.normal + 1
-
-        if window.rootViewController == nil {
-            let rootVC = UIViewController()
-            rootVC.view.backgroundColor = .clear
-            rootVC.view.isOpaque = false
-            rootVC.view.isUserInteractionEnabled = false
-            window.rootViewController = rootVC
-        }
-    }
-    
+    return size
 }

@@ -70,14 +70,6 @@ final class LegacyGlassSnapshotter {
 
     private let groupRendererFormat: UIGraphicsImageRendererFormat = makeRendererFormat()
     private let directRendererFormat: UIGraphicsImageRendererFormat = makeRendererFormat()
-
-    public var snapshotExclusionMode: LegacyGlassSnapshotExclusionMode = .overlayWindow {
-        didSet {
-            if self.snapshotExclusionMode != oldValue {
-                self.updateCaptureRegion()
-            }
-        }
-    }
     
     private init() {
         self.displayLink = SharedDisplayLinkDriver.shared.add(framesPerSecond: .max) { [weak self] _ in
@@ -151,7 +143,7 @@ final class LegacyGlassSnapshotter {
         self.captureFrameRate = minRate
     }
 
-    func captureSnapshotDirectly(rect: CGRect, hostView: UIView, scale: CGFloat, exclusionMode: LegacyGlassSnapshotExclusionMode, viewToExclude: UIView? = nil, useLayerBasedRender: Bool = false) -> CGImage? {
+    func captureSnapshotDirectly(rect: CGRect, hostView: UIView, scale: CGFloat, viewToExclude: UIView? = nil, useLayerBasedRender: Bool = false) -> CGImage? {
         guard rect.width > 0, rect.height > 0 else {
             return nil
         }
@@ -166,7 +158,6 @@ final class LegacyGlassSnapshotter {
             using: imageRenderer,
             hostView: hostView,
             rect: rect,
-            exclusionMode: exclusionMode,
             viewToExclude: viewToExclude,
             useLayerBasedRender: useLayerBasedRender
         )
@@ -281,7 +272,6 @@ final class LegacyGlassSnapshotter {
             using: imageRenderer,
             hostView: hostView,
             rect: self.captureRegion,
-            exclusionMode: self.snapshotExclusionMode,
             useLayerBasedRender: isLayerBasedRenderNeeded
         )
     }
@@ -290,7 +280,6 @@ final class LegacyGlassSnapshotter {
         using imageRenderer: UIGraphicsImageRenderer,
         hostView: UIView,
         rect: CGRect,
-        exclusionMode: LegacyGlassSnapshotExclusionMode,
         viewToExclude: UIView? = nil,
         useLayerBasedRender: Bool = false
     ) -> CGImage? {
@@ -298,19 +287,13 @@ final class LegacyGlassSnapshotter {
             let cgContext = context.cgContext
             cgContext.translateBy(x: -rect.minX, y: -rect.minY)
             
-            switch exclusionMode {
-            case .overlayWindow:
+            if useLayerBasedRender {
+                let wasHidden = viewToExclude?.isHidden ?? false
+                viewToExclude?.isHidden = true
+                hostView.layer.render(in: cgContext)
+                viewToExclude?.isHidden = wasHidden
+            } else {
                 hostView.drawHierarchy(in: hostView.bounds, afterScreenUpdates: false)
-                
-            case .none:
-                if useLayerBasedRender {
-                    let wasHidden = viewToExclude?.isHidden ?? false
-                    viewToExclude?.isHidden = true
-                    hostView.layer.render(in: cgContext)
-                    viewToExclude?.isHidden = wasHidden
-                } else {
-                    hostView.drawHierarchy(in: hostView.bounds, afterScreenUpdates: false)
-                }
             }
         }.cgImage
     }
@@ -429,17 +412,6 @@ final class LegacyGlassSnapshotter {
         var unionRect: CGRect?
         var updatedFrames: [UUID: CGRect] = [:]
         
-        let overlayRoot: UIView?
-        if self.snapshotExclusionMode == .overlayWindow {
-            if let hostWindow = hostView as? UIWindow ?? hostView.window {
-                overlayRoot = LegacyGlassOverlayWindowProvider.shared.rootView(forHostWindow: hostWindow)
-            } else {
-                overlayRoot = nil
-            }
-        } else {
-            overlayRoot = nil
-        }
-        
         for request in self.requests {
             guard request.isActive else {
                 continue
@@ -454,13 +426,7 @@ final class LegacyGlassSnapshotter {
                 continue
             }
             
-            let rendererFrameInHost: CGRect
-            if let overlayRoot = overlayRoot {
-                let frameInOverlay = renderer.convert(rendererBounds, to: overlayRoot)
-                rendererFrameInHost = hostView.convert(frameInOverlay, from: overlayRoot)
-            } else {
-                rendererFrameInHost = renderer.convert(rendererBounds, to: hostView)
-            }
+            let rendererFrameInHost = renderer.convert(rendererBounds, to: hostView)
             
             let frameInHost = rendererFrameInHost.intersection(hostView.bounds)
             guard frameInHost.width > minRequestFrameSize.width, frameInHost.height > minRequestFrameSize.height else {

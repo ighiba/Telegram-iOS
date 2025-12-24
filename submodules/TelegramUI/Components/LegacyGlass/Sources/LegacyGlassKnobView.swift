@@ -2,21 +2,6 @@ import UIKit
 
 public final class LegacyGlassKnobView: UIView {
     
-    public override var frame: CGRect {
-        didSet {
-            if self.legacyGlassView.snapshotExclusionMode == .overlayWindow {
-                self.legacyGlassView.syncOverlayNow()
-            }
-        }
-    }
-
-    public override var center: CGPoint {
-        didSet {
-            if self.legacyGlassView.snapshotExclusionMode == .overlayWindow {
-                self.legacyGlassView.syncOverlayNow()
-            }
-        }
-    }
     
     public var iconImage: UIImage? {
         didSet {
@@ -45,7 +30,6 @@ public final class LegacyGlassKnobView: UIView {
             allowsGroupSnapshotting: false
         )
         self.legacyGlassView.isUserInteractionEnabled = false
-        self.legacyGlassView.snapshotExclusionMode = .none
         self.legacyGlassView.setCaptureMode(.staticBackground)
         
         super.init(frame: .zero)
@@ -61,10 +45,6 @@ public final class LegacyGlassKnobView: UIView {
         super.layoutSubviews()
         self.legacyGlassView.frame = self.bounds
         
-        if self.legacyGlassView.snapshotExclusionMode == .overlayWindow {
-            self.legacyGlassView.syncOverlayNow()
-        }
-        
         if let iconImageView = self.iconImageView, let size = iconImageView.image?.size {
             iconImageView.frame = CGRect(
                 x: (self.bounds.width - size.width) * 0.5,
@@ -75,12 +55,6 @@ public final class LegacyGlassKnobView: UIView {
         }
     }
 
-    public override func didMoveToWindow() {
-        super.didMoveToWindow()
-        if self.legacyGlassView.snapshotExclusionMode == .overlayWindow {
-            self.legacyGlassView.syncOverlayNow()
-        }
-    }
 
     public func interactionBegan(at point: CGPoint) {
         self.legacyGlassView.rendererView.ensureFastCaptureWithDebounce(to: .dynamicBackground(.slow))
