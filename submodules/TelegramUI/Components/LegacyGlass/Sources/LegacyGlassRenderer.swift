@@ -115,7 +115,8 @@ final class LegacyGlassRenderer: MTKView {
     private var additionalFrontImageBackgroundColorVector: simd_float4 = .zero
     
     private weak var captureHostView: UIView?
-    private var capturedFrame: CGRect = .zero
+    var isSafeBoundsCaptureEnabled: Bool = true
+    private var capturedFrameInHost: (proposed: CGRect, captured: CGRect) = (.zero, .zero)
     private var captureDebounceWorkItem: DispatchWorkItem?
     private(set) var captureMode: LegacyGlassCaptureMode = .staticBackground {
         didSet {
@@ -159,9 +160,15 @@ final class LegacyGlassRenderer: MTKView {
     private var lastTextureUpdateTimestamp: CFTimeInterval?
     private var textureUpdateFPS: Double = 0.0
     
+    var blurFilterSigma: Float = 1.0 {
+        didSet {
+            guard self.context.style.isBlurEnabled, let device = self.device else { return }
+            self.blurFilter = MPSImageGaussianBlur(device: device, sigma: self.blurFilterSigma)
+            self.isBlurredTextureValid = false
+        }
+    }
     private var isBlurredTextureValid: Bool = false
     private var blurFilter: MPSImageGaussianBlur?
-    private var blurFilterSigma: Float = 1.0
     
     private var isCombinedTextureValid: Bool = false
     private var combinedTexture: MTLTexture?
@@ -489,17 +496,19 @@ final class LegacyGlassRenderer: MTKView {
 
         self.trackTextureUpdateFPS()
 
-        let targetFrame: CGRect
-        switch self.captureMode {
-        case .dynamicBackground, .staticBackground:
-            targetFrame = self.convert(self.bounds, to: hostView).intersection(hostView.bounds)
+        let proposedFrame = self.convert(self.bounds, to: hostView)
+        let capturedFrame: CGRect
+        if self.isSafeBoundsCaptureEnabled {
+            capturedFrame = proposedFrame.intersection(hostView.bounds)
+        } else {
+            capturedFrame = proposedFrame
         }
 
-        guard targetFrame.width > 0, targetFrame.height > 0 else {
+        guard capturedFrame.width > 0, capturedFrame.height > 0 else {
             return
         }
 
-        self.capturedFrame = targetFrame
+        self.capturedFrameInHost = (proposed: proposedFrame, captured: capturedFrame)
         
         if self.allowsGroupSnapshotting, let requestId = self.snapshotRequestId {
             if let cgImage = LegacyGlassSnapshotter.shared.getCroppedSnapshot(requestId: requestId) {
@@ -507,7 +516,7 @@ final class LegacyGlassRenderer: MTKView {
             }
         } else {
             if let cgImage = LegacyGlassSnapshotter.shared.captureSnapshotDirectly(
-                rect: targetFrame,
+                rect: capturedFrame,
                 hostView: hostView,
                 scale: self.currentCaptureScale(),
                 viewToExclude: self.superview,
@@ -689,13 +698,13 @@ final class LegacyGlassRenderer: MTKView {
         }
         
         let textureOriginNormalized = simd_float2(
-            Float(self.capturedFrame.origin.x / hostBounds.width),
-            Float(self.capturedFrame.origin.y / hostBounds.height)
+            Float(self.capturedFrameInHost.captured.origin.x / hostBounds.width),
+            Float(self.capturedFrameInHost.captured.origin.y / hostBounds.height)
         )
         
         let textureSizeNormalized = simd_float2(
-            Float(self.capturedFrame.size.width / hostBounds.width),
-            Float(self.capturedFrame.size.height / hostBounds.height)
+            Float(self.capturedFrameInHost.captured.size.width / hostBounds.width),
+            Float(self.capturedFrameInHost.captured.size.height / hostBounds.height)
         )
         
         let glassFrame = self.convert(self.bounds, to: hostView)
@@ -770,8 +779,8 @@ final class LegacyGlassRenderer: MTKView {
             coreRadius: self.context.style.coreRadius,
             glowProgress: glowProgress,
             glowCenter: glowCenter,
-            glowRadius: Float(self.context.interactionGlowRadius),
-            glowStrength: self.context.interactionGlowStrength,
+            glowRadius: self.context.style.glowRadius,
+            glowStrength: self.context.style.glowStrenght,
             outerShadowWidth: outerShadowWidth,
             outerShadowOpacity: outerShadowOpacity,
             fillColor: self.fillColorVector,
@@ -1054,16 +1063,26 @@ extension LegacyGlassRenderer: MTKViewDelegate {
         guard canvasSize.width > 0, canvasSize.height > 0 else {
             return false
         }
-
-        let backgroundTextureSizeFloat = simd_float2(
-            Float(sourceTexture.width),
-            Float(sourceTexture.height)
-        )
         
         let canvasSizeFloat = simd_float2(
             Float(canvasSize.width),
             Float(canvasSize.height)
         )
+        
+        let backgroundTextureSizeFloat: simd_float2
+        if self.isSafeBoundsCaptureEnabled {
+            backgroundTextureSizeFloat = simd_float2(
+                Float(sourceTexture.width),
+                Float(sourceTexture.height)
+            )
+        } else {
+            let proposedFrame = self.capturedFrameInHost.proposed
+            let captureScale = Float(self.currentCaptureScale())
+            backgroundTextureSizeFloat = simd_float2(
+                Float(proposedFrame.width * CGFloat(captureScale)),
+                Float(proposedFrame.height * CGFloat(captureScale))
+            )
+        }
         
         guard backgroundTextureSizeFloat.x > 0, backgroundTextureSizeFloat.y > 0 else {
             return false
@@ -1134,3 +1153,4 @@ extension LegacyGlassRenderer: MTKViewDelegate {
             && texture.pixelFormat == anotherTexture?.pixelFormat
     }
 }
+

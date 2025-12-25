@@ -126,21 +126,21 @@ final class LegacyGlassSnapshotter {
     }
     
     func updateMinCaptureFrameRate() {
-        var minRate: Double = 60.0
+        var frameRate: Double = 1.0
         var hasActiveRequests = false
         
         for request in self.requests {
             if request.isActive && request.hostView != nil, let renderer = request.renderer {
-                minRate = min(minRate, renderer.currentUpdateFrequency().captureFrameRate)
+                frameRate = max(frameRate, renderer.currentUpdateFrequency().captureFrameRate)
                 hasActiveRequests = true
             }
         }
         
         if !hasActiveRequests {
-            minRate = 60.0
+            frameRate = 60.0
         }
-        
-        self.captureFrameRate = minRate
+
+        self.captureFrameRate = frameRate
     }
 
     func captureSnapshotDirectly(rect: CGRect, hostView: UIView, scale: CGFloat, viewToExclude: UIView? = nil, useLayerBasedRender: Bool = false) -> CGImage? {
@@ -241,6 +241,7 @@ final class LegacyGlassSnapshotter {
         }
 
         self.updateCaptureRegion()
+        self.updateCaptureScale()
         
         guard self.captureRegion.width > 0, self.captureRegion.height > 0 else {
             return
@@ -260,8 +261,6 @@ final class LegacyGlassSnapshotter {
             }
         }
 
-        let isLayerBasedRenderNeeded = self.hasRecentHostViewChange
-        
         self.groupRendererFormat.scale = self.captureScale
         let imageRenderer = UIGraphicsImageRenderer(
             bounds: CGRect(origin: .zero, size: self.captureRegion.size),
@@ -272,7 +271,7 @@ final class LegacyGlassSnapshotter {
             using: imageRenderer,
             hostView: hostView,
             rect: self.captureRegion,
-            useLayerBasedRender: isLayerBasedRenderNeeded
+            useLayerBasedRender: self.hasRecentHostViewChange
         )
     }
 

@@ -60,6 +60,8 @@ public struct LegacyGlassStyle {
     public var idleImageShadowOffset: Float
     public var idleImageShadowBlur: Float
     public var idleImageShadowOpacity: Float
+    public var glowRadius: Float
+    public var glowStrenght: Float
     
     public init(
         refractionStrength: Float,
@@ -77,6 +79,8 @@ public struct LegacyGlassStyle {
         idleOuterShadowOpacity: Float,
         activeOuterShadowWidth: Float,
         activeOuterShadowOpacity: Float,
+        glowRadius: Float = 8.0,
+        glowStrenght: Float = 0.8,
         isBlurEnabled: Bool,
         isIdleImageEnabled: Bool = false,
         isIdleImageShadowEnabled: Bool = true,
@@ -105,5 +109,7 @@ public struct LegacyGlassStyle {
         self.idleImageShadowOffset = idleImageShadowOffset
         self.idleImageShadowBlur = idleImageShadowBlur
         self.idleImageShadowOpacity = idleImageShadowOpacity
+        self.glowRadius = glowRadius
+        self.glowStrenght = glowStrenght
     }
 }

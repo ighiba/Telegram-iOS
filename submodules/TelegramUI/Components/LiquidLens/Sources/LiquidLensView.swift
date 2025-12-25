@@ -207,9 +207,9 @@ public final class LiquidLensView: UIView {
                 refractionXScale: 1.0,
                 refractionYScale: 0.8,
                 dimmingStrength: 0.3,
-                rimHighlightWidth: 3.0,
-                rimHighlightStrength: 1.0,
-                chromaticAberrationStrength: 0.25,
+                rimHighlightWidth: 1.5,
+                rimHighlightStrength: 0.5,
+                chromaticAberrationStrength: 0.95,
                 coreRadius: 0.36,
                 idleOuterShadowWidth: 0.2,
                 idleOuterShadowOpacity: 0.2,
@@ -217,10 +217,15 @@ public final class LiquidLensView: UIView {
                 activeOuterShadowOpacity: 0.2,
                 isBlurEnabled: false
             )
-            let legacyLensView = LegacyGlassView(style: style, qualityProfile: .automatic, allowsGroupSnapshotting: true)
+            
+            var qualityProfile = LegacyGlassQualityProfile.automatic
+            qualityProfile.captureScale *= 1.0
+            
+            let legacyLensView = LegacyGlassView(style: style, qualityProfile: qualityProfile, allowsGroupSnapshotting: true)
             legacyLensView.isUserInteractionEnabled = false
             legacyLensView.fillColor = .clear
             legacyLensView.autoUpdatesOnScroll = true
+            legacyLensView.isSafeBoundsCaptureEnabled = false
             legacyLensView.isActivationEnabled = true
             legacyLensView.isScalingEnabled = true
             legacyLensView.isJellyEnabled = true
@@ -233,6 +238,45 @@ public final class LiquidLensView: UIView {
             legacyLensView.interactionActivationUpDuration = 0.2
             legacyLensView.interactionActivationDownDuration = 0.2
             self.legacyLensView = legacyLensView
+
+            if let backgroundLegacyGlassView = self.backgroundView.legacyGlassView {
+                backgroundLegacyGlassView.isScalingEnabled = true
+                backgroundLegacyGlassView.isGlowEnabled = true
+                backgroundLegacyGlassView.horizontalPadding = 10
+                backgroundLegacyGlassView.verticalPadding = 10
+                backgroundLegacyGlassView.interactionScaleMax = 1.03
+                backgroundLegacyGlassView.interactionScaleUpDuration = 0.4
+                backgroundLegacyGlassView.interactionScaleDownDuration = 0.4
+                
+                backgroundLegacyGlassView.updateStyle { backgroundStyle in
+                    backgroundStyle.refractionStrength = -0.48
+                    backgroundStyle.refractionEdgeStrength = 0.25
+                    backgroundStyle.rimHighlightWidth = 1.0
+                    backgroundStyle.rimHighlightStrength = 0.35
+                    backgroundStyle.glowRadius = 10.0
+                    backgroundStyle.glowStrenght = 0.3
+                }
+                
+                backgroundLegacyGlassView.updateQualityProfile { qualityProfile in
+                    qualityProfile.captureScaleBlurred = legacyLensView.qualityProfile.captureScale
+                }
+                
+                backgroundLegacyGlassView.setBlurFilterSigma(value: 4.5)
+            }
+
+            let legacyLiftedContainerMaskView = UIView()
+            legacyLiftedContainerMaskView.clipsToBounds = true
+            self.legacyLiftedContainerMaskView = legacyLiftedContainerMaskView
+
+            let legacySelectionView = GlassBackgroundView.ContentImageView()
+            self.legacySelectionView = legacySelectionView
+
+            legacyLiftedContainerMaskView.addSubview(legacySelectionView)
+            legacyLiftedContainerMaskView.addSubview(self.liftedContainerView)
+            self.containerView.addSubview(self.contentView)
+            self.containerView.addSubview(legacyLiftedContainerMaskView)
+            self.containerView.addSubview(legacyLensView)
+            
             
             legacyLensView.alpha = 0.0
             
@@ -248,19 +292,6 @@ public final class LiquidLensView: UIView {
                     legacyLensView?.alpha = 0.0
                 }
             }
-
-            let legacyLiftedContainerMaskView = UIView()
-            legacyLiftedContainerMaskView.clipsToBounds = true
-            self.legacyLiftedContainerMaskView = legacyLiftedContainerMaskView
-
-            let legacySelectionView = GlassBackgroundView.ContentImageView()
-            self.legacySelectionView = legacySelectionView
-
-            legacyLiftedContainerMaskView.addSubview(legacySelectionView)
-            legacyLiftedContainerMaskView.addSubview(self.liftedContainerView)
-            self.containerView.addSubview(self.contentView)
-            self.containerView.addSubview(legacyLiftedContainerMaskView)
-            self.containerView.addSubview(legacyLensView)
         }
         
         NotificationCenter.default.addObserver(
@@ -289,6 +320,18 @@ public final class LiquidLensView: UIView {
         if self.window == nil {
             self.legacyLensView?.setAdditionalFrontImage(nil, atOrigin: .zero)
         }
+    }
+    
+    public func interactionBegan(at point: CGPoint) {
+        self.backgroundView.interactionBegan(at: point)
+    }
+    
+    public func interactionUpdate(at point: CGPoint) {
+        self.backgroundView.interactionUpdate(at: point)
+    }
+
+    public func interactionEnded(shouldCompleteToPeak: Bool = false) {
+        self.backgroundView.interactionEnded(shouldCompleteToPeak: shouldCompleteToPeak)
     }
 
     public func setCaptureHostView(_ view: UIView) {
@@ -566,17 +609,18 @@ public final class LiquidLensView: UIView {
 
                 let croppedOriginInLiftedContainer = CGPoint(x: croppedRect.origin.x, y: croppedRect.origin.y)
                 let croppedOriginInLens = self.liftedContainerView.convert(croppedOriginInLiftedContainer, to: legacyLensView)
-                
+
                 var isFrontImageValid: Bool = legacyLensView.hasAdditionalFrontImage
                 if let lastUpdatedParams = self.lastUpdatedParams {
                     let isSizeSame = lastUpdatedParams.size == params.size
                     let isThemeSame = lastUpdatedParams.isDark == params.isDark
                     isFrontImageValid = isSizeSame && isThemeSame && legacyLensView.hasAdditionalFrontImage
                 }
+                
+                legacyLensView.additionalFrontImageBackgroundColor = params.isDark ? UIColor(red: 0.435, green: 0.435, blue: 0.435, alpha: 1.0) : .white
 
                 if isFrontImageValid {
                     legacyLensView.updateAdditionalFrontImageOrigin(at: croppedOriginInLens)
-                    legacyLensView.additionalFrontImageBackgroundColor = params.isDark ? .black.withAlphaComponent(0.6) : .white
                 } else {
                     DispatchQueue.main.async {
                         self.updateLegacyLensFrontImage(inRect: croppedRect, croppedOriginInLens: croppedOriginInLens, params: params)
@@ -641,7 +685,7 @@ public final class LiquidLensView: UIView {
 
         let imageRenderer = UIGraphicsImageRenderer(bounds: bounds, format: format)
         let fullImage = imageRenderer.image { context in
-            self.liftedContainerView.drawHierarchy(in: bounds, afterScreenUpdates: !self.isUpdatedForTheFirstTime)
+            self.liftedContainerView.drawHierarchy(in: bounds, afterScreenUpdates: true)
         }
         
         guard let fullCGImage = fullImage.cgImage, fullCGImage.width > 0, fullCGImage.height > 0 else {
@@ -665,7 +709,6 @@ public final class LiquidLensView: UIView {
             return
         }
         
-        legacyLensView.additionalFrontImageBackgroundColor = params.isDark ? .black.withAlphaComponent(0.6) : .white
         legacyLensView.setAdditionalFrontImage(cgImage, atOrigin: croppedOriginInLens)
     }
 }

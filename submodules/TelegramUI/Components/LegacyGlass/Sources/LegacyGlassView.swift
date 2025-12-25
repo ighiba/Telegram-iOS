@@ -42,9 +42,7 @@ public final class LegacyGlassContext {
     var interactionGlowVelocity: CGFloat = 0.0
     var interactionGlowTarget: CGFloat = 0.0
     var interactionGlowCenter: CGPoint = .zero
-    let interactionGlowRadius: CGFloat = 8
-    let interactionGlowStrength: Float = 0.8
-    let interactionGlowSmoothing: CGFloat = 10.0
+    var interactionGlowSmoothing: CGFloat = 10.0
     
     public init(style: LegacyGlassStyle, qualityProfile: LegacyGlassQualityProfile) {
         self.style = style
@@ -90,6 +88,18 @@ public final class LegacyGlassView: UIView {
         get { self.rendererView.useLayerBaseRender }
         set { self.rendererView.useLayerBaseRender = newValue }
     }
+    
+    public var isIdleImageEnabled: Bool {
+        get { self.context.style.isIdleImageEnabled }
+        set {
+            self.context.style.isIdleImageEnabled = newValue
+            self.updateIdleRenderingPolicy()
+        }
+    }
+    
+    public var qualityProfile: LegacyGlassQualityProfile {
+        return self.context.qualityProfile
+    }
 
     public var captureMode: LegacyGlassCaptureMode {
         self.rendererView.captureMode
@@ -101,6 +111,11 @@ public final class LegacyGlassView: UIView {
     
     public var hasAdditionalFrontImage: Bool {
         self.rendererView.hasAdditionalFrontImage
+    }
+    
+    public var isSafeBoundsCaptureEnabled: Bool {
+        get { self.rendererView.isSafeBoundsCaptureEnabled }
+        set { self.rendererView.isSafeBoundsCaptureEnabled = newValue }
     }
     
     public var dimmingMin: Float {
@@ -148,12 +163,9 @@ public final class LegacyGlassView: UIView {
         set { self.context.interactionJellyDirection = newValue }
     }
     
-    public var isIdleImageEnabled: Bool {
-        get { self.context.style.isIdleImageEnabled }
-        set {
-            self.context.style.isIdleImageEnabled = newValue
-            self.updateIdleRenderingPolicy()
-        }
+    public var interactionGlowSmoothing: CGFloat {
+        get { self.context.interactionGlowSmoothing }
+        set { self.context.interactionGlowSmoothing = newValue }
     }
 
     public var interactionScaleUpDuration: CGFloat = 0.12
@@ -303,6 +315,18 @@ public final class LegacyGlassView: UIView {
         self.context.interactionStretchTarget = .zero
         self.interactionEnded()
     }
+    
+    public func updateStyle(_ block: (inout LegacyGlassStyle) -> ()) {
+        var style = self.context.style
+        block(&style)
+        self.context.style = style
+    }
+    
+    public func updateQualityProfile(_ block: (inout LegacyGlassQualityProfile) -> ()) {
+        var qualityProfile = self.context.qualityProfile
+        block(&qualityProfile)
+        self.context.qualityProfile = qualityProfile
+    }
 
     public func setCaptureHostView(_ captureHostView: UIView) {
         self.captureHostViewOverride = captureHostView
@@ -316,6 +340,10 @@ public final class LegacyGlassView: UIView {
 
     public func requestUpdate() {
         self.rendererView.requestUpdate()
+    }
+    
+    public func setBlurFilterSigma(value: Float) {
+        self.rendererView.blurFilterSigma = value
     }
     
     public func setAdditionalFrontImage(_ cgImage: CGImage?, atOrigin origin: CGPoint) {

@@ -281,28 +281,32 @@ public final class TabBarComponent: Component {
         }
 
         @objc private func onTabSelectionGesture(_ recognizer: TabSelectionRecognizer) {
+            let location = recognizer.location(in: self)
             switch recognizer.state {
             case .began:
-                if let itemId = self.item(at: recognizer.location(in: self)), let itemView = self.itemViews[itemId]?.view {
+                if let itemId = self.item(at: location), let itemView = self.itemViews[itemId]?.view {
                     let startX = itemView.frame.minX - 4.0
                     self.selectionGestureState = (startX, startX)
                     self.state?.updated(transition: .spring(duration: 0.4), isLocal: true)
                 }
+                self.liquidLensView.interactionBegan(at: location)
             case .changed:
                 if var selectionGestureState = self.selectionGestureState {
                     selectionGestureState.currentX = selectionGestureState.startX + recognizer.translation(in: self).x
                     self.selectionGestureState = selectionGestureState
                     self.state?.updated(transition: .immediate, isLocal: true)
                 }
+                self.liquidLensView.interactionUpdate(at: location)
             case .ended, .cancelled:
                 self.selectionGestureState = nil
-                if let component = self.component, let itemId = self.item(at: recognizer.location(in: self)) {
+                if let component = self.component, let itemId = self.item(at: location) {
                     guard let item = component.items.first(where: { $0.id == itemId }) else {
                         return
                     }
                     self.overrideSelectedItemId = itemId
                     item.action(false)
                 }
+                self.liquidLensView.interactionEnded()
                 self.state?.updated(transition: .spring(duration: 0.4), isLocal: true)
             default:
                 break

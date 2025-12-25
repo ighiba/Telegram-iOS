@@ -234,19 +234,29 @@ float4 applyGlow(float2 uv,
     const float  minRadiusPx  = min(lensRadiusPx.x, lensRadiusPx.y);
 
     float2 deltaPx = (uv - glowCenter) * canvasSize;
-    float distGlow = length(deltaPx) / max(minRadiusPx, 1e-4);
+    float distGlowPx = length(deltaPx);
+    float distGlow = distGlowPx / max(minRadiusPx, 1e-4);
 
     const float radiusGlow = glowRadius;
-    const float fadeGlow   = radiusGlow * 0.6;
-    const float innerFalloff = 1.0 - smoothstep(0.0, radiusGlow, distGlow);
+    const float normalizedDistance = clamp(distGlow / max(radiusGlow, 1e-4), 0.0, 1.0);
+    
+    const float inverseSquareFalloff = 1.0 / (1.0 + normalizedDistance * normalizedDistance * 4.0);
+    const float exponentialFalloff = exp(-normalizedDistance * 2.5);
+    const float glowIntensityBase = mix(inverseSquareFalloff, exponentialFalloff, 0.3);
+    
+    const float fadeGlow = radiusGlow * 0.4;
     const float outerFeather = 1.0 - smoothstep(radiusGlow, radiusGlow + fadeGlow, distGlow);
-    const float glowMask   = pow(innerFalloff * outerFeather, 1.5);
+    const float glowMask = glowIntensityBase * outerFeather;
 
     const float clipMask = smoothstep(aaWidth, 0.0, sdf);
 
     const float strength = glowProgress * clamp(glowStrength, 0.0, 1.0);
-    const float glowMix = clamp(clipMask * strength * (glowMask + 0.25 * pow(glowMask, 2.0)), 0.0, 1.0);
-    color.rgb = mix(color.rgb, float3(1.0), glowMix);
+    const float glowIntensity = clipMask * strength * glowMask;
+    
+    const float3 glowColor = float3(1.0, 1.0, 1.0);
+    const float glowAmount = glowIntensity * 0.6;
+    
+    color.rgb = color.rgb + glowColor * glowAmount;
     return color;
 }
 
@@ -377,8 +387,7 @@ fragment float4 additionalTextureFragment(VertexOut in [[stage_in]],
     }
 
     float2 canvasToTextureScale = uniforms.backgroundTextureSize / uniforms.canvasSize;
-    float2 uvInTextureSpace = uv * uniforms.backgroundTextureSize;
-
+    
     float2 additionalTextureOriginInTextureSpace = uniforms.additionalTextureOriginCanvas * canvasToTextureScale;
     float2 additionalTextureSizeInTextureSpace = uniforms.additionalTextureSizeCanvas * canvasToTextureScale;
 
@@ -390,17 +399,19 @@ fragment float4 additionalTextureFragment(VertexOut in [[stage_in]],
     float2 additionalTextureMaxCanvas = (uniforms.additionalTextureOriginCanvas + uniforms.additionalTextureSizeCanvas) / uniforms.canvasSize;
     float2 additionalTextureRadiusCanvas = uniforms.additionalTextureSizeCanvas * 0.5 / uniforms.canvasSize;
     
-    float2 additionalTextureMin = additionalTextureOriginInTextureSpace;;
-
-    float2 lensUV = (uv - additionalTextureMinCanvas) / (additionalTextureMaxCanvas - additionalTextureMinCanvas);
+    float2 additionalTextureSizeCanvasNormalized = additionalTextureMaxCanvas - additionalTextureMinCanvas;
+    float2 lensUV = (uv - additionalTextureMinCanvas) / max(additionalTextureSizeCanvasNormalized, float2(1e-6, 1e-6));
     float sdf = roundedRectSDF(lensUV, additionalTextureRadiusCanvas, uniforms.canvasSize, uniforms.cornerRadius);
     
     float aaWidth = fwidth(sdf) * 0.5;
     float mask = computeMask(sdf, aaWidth);
     
         if (mask > 0.0) {
-            float2 deltaInTextureSpace = uvInTextureSpace - additionalTextureMin;
-            float2 additionalUV = deltaInTextureSpace / additionalTextureSizeInTextureSpace;
+            float2 uvInCanvasPixels = uv * uniforms.canvasSize;
+            float2 deltaInCanvasPixels = uvInCanvasPixels - uniforms.additionalTextureOriginCanvas;
+            float2 textureScale = uniforms.backgroundTextureSize / uniforms.canvasSize;
+            float2 deltaInTexturePixels = deltaInCanvasPixels * textureScale;
+            float2 additionalUV = deltaInTexturePixels / max(additionalTextureSizeInTextureSpace, float2(1e-6, 1e-6));
             additionalUV = clamp(additionalUV, float2(0.0, 0.0), float2(1.0, 1.0));
             
             float backgroundColorAlpha = uniforms.backgroundColor.a * mask;

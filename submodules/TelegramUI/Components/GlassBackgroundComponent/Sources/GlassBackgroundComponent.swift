@@ -304,7 +304,7 @@ public class GlassBackgroundView: UIView {
     
     private let backgroundNode: NavigationBackgroundNode?
     
-    private let legacyGlassView: LegacyGlassView?
+    public let legacyGlassView: LegacyGlassView?
     
     private let nativeView: UIVisualEffectView?
     private let nativeViewClippingContext: ClippingShapeContext?
@@ -350,36 +350,35 @@ public class GlassBackgroundView: UIView {
             self.foregroundView = nil
             self.shadowView = nil
         } else {
-//            let backgroundNode = NavigationBackgroundNode(color: .black, enableBlur: true, customBlurRadius: 8.0)
-//            self.backgroundNode = backgroundNode
             self.backgroundNode = nil
             let style = LegacyGlassStyle(
-                refractionStrength: -0.48,
+                refractionStrength: -1.6,
                 refractionEdgeWidth: 0.75,
                 refractionCenterStrength: 0.0,
-                refractionEdgeStrength: 0.3,
+                refractionEdgeStrength: 0.5,
                 refractionXScale: 1.0,
                 refractionYScale: 10.0,
                 dimmingStrength: 0.0,
-                rimHighlightWidth: 3.0,
-                rimHighlightStrength: 2.0,
+                rimHighlightWidth: 1.0,
+                rimHighlightStrength: 0.25,
                 chromaticAberrationStrength: 0.05,
                 coreRadius: 0.34,
                 idleOuterShadowWidth: 0.1,
                 idleOuterShadowOpacity: 0.15,
                 activeOuterShadowWidth: 0.0,
                 activeOuterShadowOpacity: 0.0,
-                isBlurEnabled: false,
+                isBlurEnabled: true,
             )
-            
-            self.legacyGlassView = LegacyGlassView(style: style, qualityProfile: .automatic, allowsGroupSnapshotting: true)
+            var qualityProfile = LegacyGlassQualityProfile.low
+            qualityProfile.dynamicFastFrequency = LegacyGlassQualityProfile.automatic.dynamicFastFrequency
+            qualityProfile.dynamicSlowFrequency = LegacyGlassQualityProfile.automatic.dynamicSlowFrequency
+            self.legacyGlassView = LegacyGlassView(style: style, qualityProfile: qualityProfile, allowsGroupSnapshotting: true)
             self.legacyGlassView?.autoUpdatesOnScroll = true
-//            self.legacyGlassView?.setCaptureMode(.dynamicBackground(.fast))
-            
+
             self.nativeView = nil
             self.nativeViewClippingContext = nil
             self.nativeParamsView = nil
-            self.foregroundView = nil//UIImageView()
+            self.foregroundView = nil
             
             self.shadowView = UIImageView()
         }
@@ -582,6 +581,18 @@ public class GlassBackgroundView: UIView {
         if let legacyGlassView = self.legacyGlassView {
             legacyGlassView.setCaptureHostView(view)
         }
+    }
+    
+    public func interactionBegan(at point: CGPoint) {
+        self.legacyGlassView?.interactionBegan(at: point)
+    }
+    
+    public func interactionUpdate(at point: CGPoint) {
+        self.legacyGlassView?.interactionUpdate(at: point)
+    }
+
+    public func interactionEnded(shouldCompleteToPeak: Bool = false) {
+        self.legacyGlassView?.interactionEnded(shouldCompleteToPeak: shouldCompleteToPeak)
     }
 }
 
