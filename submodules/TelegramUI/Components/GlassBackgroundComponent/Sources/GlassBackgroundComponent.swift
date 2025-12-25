@@ -351,29 +351,14 @@ public class GlassBackgroundView: UIView {
             self.shadowView = nil
         } else {
             self.backgroundNode = nil
-            let style = LegacyGlassStyle(
-                refractionStrength: -1.6,
-                refractionEdgeWidth: 0.75,
-                refractionCenterStrength: 0.0,
-                refractionEdgeStrength: 0.5,
-                refractionXScale: 1.0,
-                refractionYScale: 10.0,
-                dimmingStrength: 0.0,
-                rimHighlightWidth: 1.0,
-                rimHighlightStrength: 0.25,
-                chromaticAberrationStrength: 0.05,
-                coreRadius: 0.34,
-                idleOuterShadowWidth: 0.1,
-                idleOuterShadowOpacity: 0.15,
-                activeOuterShadowWidth: 0.0,
-                activeOuterShadowOpacity: 0.0,
-                isBlurEnabled: true,
-            )
+            
             var qualityProfile = LegacyGlassQualityProfile.low
             qualityProfile.dynamicFastFrequency = LegacyGlassQualityProfile.automatic.dynamicFastFrequency
             qualityProfile.dynamicSlowFrequency = LegacyGlassQualityProfile.automatic.dynamicSlowFrequency
-            self.legacyGlassView = LegacyGlassView(style: style, qualityProfile: qualityProfile, allowsGroupSnapshotting: true)
+            
+            self.legacyGlassView = LegacyGlassView(style: .smallBackground, qualityProfile: qualityProfile, allowsGroupSnapshotting: true)
             self.legacyGlassView?.autoUpdatesOnScroll = true
+            self.legacyGlassView?.setBlurFilterSigma(value: 0.2)
 
             self.nativeView = nil
             self.nativeViewClippingContext = nil

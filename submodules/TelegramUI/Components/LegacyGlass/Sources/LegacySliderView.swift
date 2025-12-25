@@ -7,7 +7,7 @@ private let defaultBackColor = UIColor(red: 0.914, green: 0.914, blue: 0.918, al
 private let defaultTrackColor = UIColor.systemBlue
 
 private let verticalPadding: CGFloat = 15.0
-private let horizontalPadding: CGFloat = 15.0
+private let horizontalPadding: CGFloat = 20.0
 
 public final class LegacySliderView: UIControl {
     
@@ -182,31 +182,7 @@ public final class LegacySliderView: UIControl {
 
     public override init(frame: CGRect) {
         self.trackView = TrackView()
-        
-        let style = LegacyGlassStyle(
-            refractionStrength: 1.6,
-            refractionEdgeWidth: 1.0,
-            refractionCenterStrength: 0.0,
-            refractionEdgeStrength: -1.0,
-            refractionXScale: 1.0,
-            refractionYScale: 0.9,
-            dimmingStrength: 0.3,
-            rimHighlightWidth: 1.0,
-            rimHighlightStrength: 0.3,
-            chromaticAberrationStrength: 1.5,
-            coreRadius: 0.33,
-            idleOuterShadowWidth: 0.3,
-            idleOuterShadowOpacity: 0.2,
-            activeOuterShadowWidth: 0.3,
-            activeOuterShadowOpacity: 0.2,
-            isBlurEnabled: false,
-            isIdleImageEnabled: true,
-            isIdleImageShadowEnabled: true,
-            idleImageShadowOffset: 1.0,
-            idleImageShadowBlur: 10.0,
-            idleImageShadowOpacity: 0.1
-        )
-        self.knobView = LegacyGlassKnobView(style: style, qualityProfile: .automatic, size: self.knobSize)
+        self.knobView = LegacyGlassKnobView(style: .sliderKnob, qualityProfile: .automatic, size: self.knobSize)
         
         super.init(frame: frame)
         
@@ -243,6 +219,7 @@ public final class LegacySliderView: UIControl {
         self.knobView.legacyGlassView.interactionJellyDirection = .horizontal
         self.knobView.legacyGlassView.cornerRadius = self.knobSize.height * 0.5
         self.knobView.legacyGlassView.interactionScaleMax = 1.54
+        self.knobView.legacyGlassView.interactionJellyDamping = 9.0
         self.knobView.legacyGlassView.verticalPadding = verticalPadding
         self.knobView.legacyGlassView.horizontalPadding = horizontalPadding
         self.knobView.legacyGlassView.interactionScaleUpDuration = 0.25

@@ -1,8 +1,6 @@
 import UIKit
 
 public final class LegacyGlassKnobView: UIView {
-    
-    
     public var iconImage: UIImage? {
         didSet {
             self.didSetIconImage(self.iconImage)
@@ -54,7 +52,6 @@ public final class LegacyGlassKnobView: UIView {
             )
         }
     }
-
 
     public func interactionBegan(at point: CGPoint) {
         self.legacyGlassView.rendererView.ensureFastCaptureWithDebounce(to: .dynamicBackground(.slow))

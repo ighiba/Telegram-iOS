@@ -17,7 +17,6 @@ public enum LegacyGlassCaptureMode: Equatable {
 }
 
 private struct LegacyGlassUniforms {
-    var tintColor: simd_float4
     var canvasSize: simd_float2
     var lensCenterCanvas: simd_float2
     var lensRadiusCanvas: simd_float2
@@ -46,9 +45,9 @@ private struct LegacyGlassUniforms {
     var glowStrength: Float
     var outerShadowWidth: Float
     var outerShadowOpacity: Float
+    var tintColor: simd_float4
     var fillColor: simd_float4
     var fillProgress: Float
-    var padding0: UInt32
 }
 
 private struct AdditionalTextureUniforms {
@@ -88,9 +87,6 @@ final class LegacyGlassRenderer: MTKView {
     
     let allowsGroupSnapshotting: Bool
     
-    private var snapshotRequest: LegacyGlassSnapshotRequest?
-    private var snapshotRequestId: UUID?
-    
     override var tintColor: UIColor? {
         didSet {
             self.tintColorVector = self.colorVector(from: self.tintColor)
@@ -113,6 +109,9 @@ final class LegacyGlassRenderer: MTKView {
         }
     }
     private var additionalFrontImageBackgroundColorVector: simd_float4 = .zero
+
+    private var snapshotRequest: LegacyGlassSnapshotRequest?
+    private var snapshotRequestId: UUID?
     
     private weak var captureHostView: UIView?
     var isSafeBoundsCaptureEnabled: Bool = true
@@ -183,6 +182,10 @@ final class LegacyGlassRenderer: MTKView {
     }
     
     private let context: LegacyGlassContext
+    
+    private var backgroundObserver: NSObjectProtocol?
+    private var foregroundObserver: NSObjectProtocol?
+    private var activeObserver: NSObjectProtocol?
 
     init(context: LegacyGlassContext, allowsGroupSnapshotting: Bool) {
         guard
@@ -221,6 +224,33 @@ final class LegacyGlassRenderer: MTKView {
             self.blurFilter = MPSImageGaussianBlur(device: device, sigma: self.blurFilterSigma)
             self.isBlurredTextureValid = false
         }
+
+        self.backgroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let strongSelf = self else { return }
+            strongSelf.setIsPaused(true)
+        }
+        
+        self.foregroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let strongSelf = self else { return }
+            strongSelf.setIsPaused(false)
+        }
+        
+        self.activeObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let strongSelf = self else { return }
+            strongSelf.setIsPaused(false)
+        }
     }
 
     required init(coder: NSCoder) {
@@ -245,6 +275,10 @@ final class LegacyGlassRenderer: MTKView {
                 LegacyGlassSnapshotter.shared.forceVisibilityCheck()
             }
         }
+        
+        if self.window != nil {
+            self.setIsPaused(false)
+        }
     }
     
     deinit {
@@ -252,6 +286,16 @@ final class LegacyGlassRenderer: MTKView {
         for _ in 0..<semaphoreValue {
             _ = self.inflightSemaphore.wait(timeout: .now() + 0.1)
             self.inflightSemaphore.signal()
+        }
+        
+        if let backgroundObserver = self.backgroundObserver {
+            NotificationCenter.default.removeObserver(backgroundObserver)
+        }
+        if let foregroundObserver = self.foregroundObserver {
+            NotificationCenter.default.removeObserver(foregroundObserver)
+        }
+        if let activeObserver = self.activeObserver {
+            NotificationCenter.default.removeObserver(activeObserver)
         }
         
         self.snapshotRequest?.invalidate()
@@ -413,8 +457,6 @@ final class LegacyGlassRenderer: MTKView {
     }
     
     func setAdditionalFrontImage(_ cgImage: CGImage?, atPaddedOrigin origin: CGPoint) {
-        assert(Thread.isMainThread, "setAdditionalFrontImage must be called on the main thread")
-        
         let needsTextureUpdate: Bool
         if let cgImage = cgImage {
             if self.currentAdditionalFrontImage !== cgImage {
@@ -437,7 +479,7 @@ final class LegacyGlassRenderer: MTKView {
                     let texture = try self.makeTexture(from: cgImage)
                     self.additionalFrontTexture = texture
                 } catch {
-                    assertionFailure("Failed to create additional front texture from cgImage: \(error)")
+                    print("LegacyGlassRenderer: Failed to create additional front texture from cgImage: \(error)")
                     self.additionalFrontTexture = nil
                 }
             } else {
@@ -493,8 +535,6 @@ final class LegacyGlassRenderer: MTKView {
                 return
             }
         }
-
-        self.trackTextureUpdateFPS()
 
         let proposedFrame = self.convert(self.bounds, to: hostView)
         let capturedFrame: CGRect
@@ -555,7 +595,7 @@ final class LegacyGlassRenderer: MTKView {
             self.isTextureUpdateNeeded = false
             self.isBlurredTextureValid = false
         } catch {
-            assertionFailure("Failed to create texture from cgImage: \(error)")
+            print("LegacyGlassRenderer: Failed to create texture from cgImage: \(error)")
             self.texture = nil
             self.textureBlurred = nil
             self.combinedTexture = nil
@@ -578,7 +618,11 @@ final class LegacyGlassRenderer: MTKView {
         descriptor.storageMode = .private
         descriptor.usage = [.shaderRead, .shaderWrite]
         
-        return texture.device.makeTexture(descriptor: descriptor)
+        guard let blurredTexture = texture.device.makeTexture(descriptor: descriptor) else {
+            print("LegacyGlassRenderer: Failed to create blurred texture, descriptor: width=\(descriptor.width), height=\(descriptor.height), pixelFormat=\(descriptor.pixelFormat.rawValue)")
+            return nil
+        }
+        return blurredTexture
     }
     
     private func ensureCombinedTexture(for sourceTexture: MTLTexture) -> MTLTexture? {
@@ -603,6 +647,7 @@ final class LegacyGlassRenderer: MTKView {
         descriptor.usage = [.shaderRead, .shaderWrite, .renderTarget]
         
         guard let combinedTexture = sourceTexture.device.makeTexture(descriptor: descriptor) else {
+            print("LegacyGlassRenderer: Failed to create combined texture, descriptor: width=\(descriptor.width), height=\(descriptor.height), pixelFormat=\(descriptor.pixelFormat.rawValue)")
             return nil
         }
         
@@ -754,7 +799,6 @@ final class LegacyGlassRenderer: MTKView {
         let outerShadowOpacity = self.context.style.idleOuterShadowOpacity * idleWeight + self.context.style.activeOuterShadowOpacity * activationProgress
 
         var uniforms = LegacyGlassUniforms(
-            tintColor: self.tintColorVector,
             canvasSize: simd_float2(Float(canvasWidth), Float(canvasHeight)),
             lensCenterCanvas: lensCenterCanvas,
             lensRadiusCanvas: lensRadiusCanvas,
@@ -783,9 +827,9 @@ final class LegacyGlassRenderer: MTKView {
             glowStrength: self.context.style.glowStrenght,
             outerShadowWidth: outerShadowWidth,
             outerShadowOpacity: outerShadowOpacity,
+            tintColor: self.tintColorVector,
             fillColor: self.fillColorVector,
-            fillProgress: idleWeight,
-            padding0: 0
+            fillProgress: idleWeight
         )
         memcpy(buffer.contents(), &uniforms, requiredSize)
     }
@@ -820,24 +864,6 @@ final class LegacyGlassRenderer: MTKView {
         
         let a = components.count > 3 ? components[3] : cgColor.alpha
         return simd_float4(Float(r), Float(g), Float(b), Float(a))
-    }
-    
-    private func trackTextureUpdateFPS() {
-//        let now = CACurrentMediaTime()
-//        defer { self.lastTextureUpdateTimestamp = now; print("textureUpdateFPS: \(self.textureUpdateFPS)") }
-//
-//        guard let last = self.lastTextureUpdateTimestamp else { return }
-//
-//        let delta = now - last
-//        guard delta > 1e-4 else { return }
-//
-//        let instantaneousFPS = 1.0 / delta
-//        let smoothingFactor: Double = 0.2
-//        if self.textureUpdateFPS <= 0.0 {
-//            self.textureUpdateFPS = instantaneousFPS
-//        } else {
-//            self.textureUpdateFPS = self.textureUpdateFPS * (1.0 - smoothingFactor) + instantaneousFPS * smoothingFactor
-//        }
     }
 
     private func computeAverageLuma(from cgImage: CGImage) -> Float {
@@ -949,7 +975,7 @@ extension LegacyGlassRenderer: MTKViewDelegate {
                 let drawable = view.currentDrawable
             else {
                 self.inflightSemaphore.signal()
-    //            assertionFailure("Failed to draw")
+                print("LegacyGlassRenderer: draw - failed to get renderPassDescriptor, commandBuffer, or drawable")
                 return
             }
 
@@ -1017,6 +1043,7 @@ extension LegacyGlassRenderer: MTKViewDelegate {
                 self.updateUniformsBuffer(buffer: uniformsBuffer)
                 guard let renderEncoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else {
                     self.inflightSemaphore.signal()
+                    print("LegacyGlassRenderer: draw - failed to create renderEncoder")
                     return
                 }
                 renderEncoder.setRenderPipelineState(pipelineState)
@@ -1048,6 +1075,7 @@ extension LegacyGlassRenderer: MTKViewDelegate {
             let vertexBuffer = self.vertexBuffer,
             let uniformsBuffer = self.additionalTextureUniformsBuffer
         else {
+            print("LegacyGlassRenderer: renderAdditionalTexture - missing pipelineState, vertexBuffer, or uniformsBuffer")
             return false
         }
         
@@ -1129,6 +1157,7 @@ extension LegacyGlassRenderer: MTKViewDelegate {
         descriptor.colorAttachments[0].storeAction = .store
         
         guard let renderEncoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
+            print("LegacyGlassRenderer: renderAdditionalTexture - failed to create renderEncoder")
             return false
         }
         

@@ -1,5 +1,5 @@
 import UIKit
- import Display
+import Display
 
 private let verticalPadding: CGFloat = 15.0
 private let horizontalPadding: CGFloat = 15.0
@@ -12,33 +12,23 @@ public final class LegacySwitchView: UIControl {
 
     public private(set) var isOn: Bool = false
     private var isDragging: Bool = false
-    private var isThumbMoved: Bool = false
-    private var isTrackFadeDrivenByThumb: Bool = false
+    private var isKnobMoved: Bool = false
     
-    private let thumbSize = CGSize(width: 37.0, height: 24.0)
-    private let thumbInset: CGFloat = 2.0
+    private let knobSize = CGSize(width: 37.0, height: 24.0)
+    private let knobInset: CGFloat = 2.0
     private let dragMovementThreshold: CGFloat = 5.0
-    private var dragStartThumbOriginX: CGFloat = 0.0
+    private var dragStartKnobOriginX: CGFloat = 0.0
     private var dragStartLocationX: CGFloat = 0.0
     
-    private var thumbAnimationLink: SharedDisplayLinkDriver.Link?
-    private var thumbAnimationDurationSetting: CFTimeInterval = 0.5
-    private var thumbAnimationStartTime: CFTimeInterval = 0.0
-    private var thumbAnimationDuration: CFTimeInterval = 0.0
-    private var thumbAnimationStartX: CGFloat = 0.0
-    private var thumbAnimationEndX: CGFloat = 0.0
-    
-    private var trackFadeLink: SharedDisplayLinkDriver.Link?
-    private var trackFadeStartTime: CFTimeInterval = 0.0
-    private var trackFadeDuration: CFTimeInterval = 0.0
-    private var trackFadeStartAlpha: CGFloat = 0.0
-    private var trackFadeEndAlpha: CGFloat = 0.0
+    private var knobAnimationDuration: CFTimeInterval = 0.5
+    private var knobAnimator: DisplayLinkAnimator?
+    private var trackFadeAnimator: DisplayLinkAnimator?
     
     public override var backgroundColor: UIColor? {
         get { self.captureContainerView.backgroundColor }
         set { self.captureContainerView.backgroundColor = newValue }
     }
-    public var thumbTintColor: UIColor = .white {
+    public var knobTintColor: UIColor = .white {
         didSet { self.updateTrackAppearance(animated: true) }
     }
     public var onTintColor: UIColor = .systemGreen {
@@ -58,32 +48,14 @@ public final class LegacySwitchView: UIControl {
     private let containerView = UIView()
     private let backView = UIView()
     private let trackView = UIView()
-    public let thumbView: LegacyGlassKnobView
+    public let knobView: LegacyGlassKnobView
     
     private let feedbackGenerator = UIImpactFeedbackGenerator(style: .light)
     
     public override init(frame: CGRect) {
-        let style = LegacyGlassStyle(
-            refractionStrength: -0.32,
-            refractionEdgeWidth: 0.95,
-            refractionCenterStrength: -1.67,
-            refractionEdgeStrength: 2.9,
-            refractionXScale: 1.0,
-            refractionYScale: 0.9,
-            dimmingStrength: 0.65,
-            rimHighlightWidth: 1.0,
-            rimHighlightStrength: 0.5,
-            chromaticAberrationStrength: 0.37,
-            coreRadius: 0.33,
-            idleOuterShadowWidth: 0.0,
-            idleOuterShadowOpacity: 0.0,
-            activeOuterShadowWidth: 0.2,
-            activeOuterShadowOpacity: 0.1,
-            isBlurEnabled: false
-        )
         var quality = LegacyGlassQualityProfile.automatic
         quality.captureScale = LegacyGlassQualityProfile.high.captureScale
-        self.thumbView = LegacyGlassKnobView(style: style, qualityProfile: quality, size: self.thumbSize)
+        self.knobView = LegacyGlassKnobView(style: .switchKnob, qualityProfile: quality, size: self.knobSize)
         
         super.init(frame: frame)
 
@@ -100,24 +72,26 @@ public final class LegacySwitchView: UIControl {
         self.backView.isUserInteractionEnabled = false
         self.trackView.isUserInteractionEnabled = false
 
-        self.thumbView.isUserInteractionEnabled = false
-        self.thumbView.legacyGlassView.fillColor = .white
-        self.thumbView.legacyGlassView.isActivationEnabled = true
-        self.thumbView.legacyGlassView.isScalingEnabled = true
-        self.thumbView.legacyGlassView.isJellyEnabled = true
-        self.thumbView.legacyGlassView.interactionJellyDirection = .horizontal
-        self.thumbView.legacyGlassView.cornerRadius = self.thumbSize.height * 0.5
-        self.thumbView.legacyGlassView.interactionScaleMax = 1.54
-        self.thumbView.legacyGlassView.verticalPadding = verticalPadding
-        self.thumbView.legacyGlassView.horizontalPadding = horizontalPadding
-        self.thumbView.legacyGlassView.setCaptureHostView(self.captureContainerView)
+        self.knobView.isUserInteractionEnabled = false
+        self.knobView.legacyGlassView.fillColor = .white
+        self.knobView.legacyGlassView.isActivationEnabled = true
+        self.knobView.legacyGlassView.isScalingEnabled = true
+        self.knobView.legacyGlassView.isJellyEnabled = true
+        self.knobView.legacyGlassView.interactionJellyDirection = .horizontal
+        self.knobView.legacyGlassView.cornerRadius = self.knobSize.height * 0.5
+        self.knobView.legacyGlassView.interactionScaleMax = 1.54
+        self.knobView.legacyGlassView.interactionJellyDamping = 75.0
+        self.knobView.legacyGlassView.verticalPadding = verticalPadding
+        self.knobView.legacyGlassView.horizontalPadding = horizontalPadding
+        self.knobView.legacyGlassView.setCaptureHostView(self.captureContainerView)
+        self.syncGlassDurationsToKnob()
         
         self.containerView.addSubview(self.backView)
         self.containerView.addSubview(self.trackView)
         self.captureContainerView.addSubview(self.containerView)
         self.captureContainerMaskView.addSubview(self.captureContainerView)
         self.addSubview(self.captureContainerMaskView)
-        self.addSubview(self.thumbView)
+        self.addSubview(self.knobView)
 
         self.updateTrackAppearance(animated: false)
         
@@ -143,7 +117,7 @@ public final class LegacySwitchView: UIControl {
         self.backView.frame = self.containerView.bounds
         self.trackView.frame = self.containerView.bounds
         self.containerView.layer.cornerRadius = self.bounds.height * 0.5
-        self.updateThumbLayout(animated: false)
+        self.updateKnobLayout(animated: false)
     }
     
     public override func sizeToFit() {
@@ -151,24 +125,24 @@ public final class LegacySwitchView: UIControl {
         self.setNeedsLayout()
     }
     
-    private func updateThumbLayout(animated: Bool) {
-        let targetFrame = self.calculateThumbFrame()
+    private func updateKnobLayout(animated: Bool) {
+        let targetFrame = self.calculateKnobFrame()
         if animated {
-            self.syncGlassDurationsToThumb()
-            self.startThumbAnimation(to: targetFrame, duration: self.thumbAnimationDurationSetting)
+            self.syncGlassDurationsToKnob()
+            self.startKnobAnimation(to: targetFrame, duration: self.knobAnimationDuration)
         } else {
-            self.thumbView.frame = targetFrame
+            self.knobView.frame = targetFrame
         }
     }
     
-    private func calculateThumbFrame() -> CGRect {
-        let thumbOriginX: CGFloat
+    private func calculateKnobFrame() -> CGRect {
+        let knobOriginX: CGFloat
         if self.isOn {
-            thumbOriginX = self.bounds.width - self.thumbInset - self.thumbSize.width
+            knobOriginX = self.bounds.width - self.knobInset - self.knobSize.width
         } else {
-            thumbOriginX = self.thumbInset
+            knobOriginX = self.knobInset
         }
-        return CGRect(origin: CGPoint(x: thumbOriginX, y: self.thumbInset), size: self.thumbSize)
+        return CGRect(origin: CGPoint(x: knobOriginX, y: self.knobInset), size: self.knobSize)
     }
     
     public override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
@@ -176,13 +150,13 @@ public final class LegacySwitchView: UIControl {
 
         self.resetDragState()
         self.isDragging = true
-        self.syncGlassDurationsToThumb()
+        self.syncGlassDurationsToKnob()
         self.feedbackGenerator.prepare()
         
         let location = touch.location(in: self)
         self.dragStartLocationX = location.x
-        self.dragStartThumbOriginX = self.thumbView.frame.minX
-        self.thumbView.interactionBegan(at: location)
+        self.dragStartKnobOriginX = self.knobView.frame.minX
+        self.knobView.interactionBegan(at: location)
         
         return true
     }
@@ -192,42 +166,42 @@ public final class LegacySwitchView: UIControl {
         
         let location = touch.location(in: self)
         let deltaX = location.x - self.dragStartLocationX
-        let minX = self.thumbInset
-        let maxX = self.bounds.width - self.thumbInset - self.thumbSize.width
-        let proposedX = self.dragStartThumbOriginX + deltaX
+        let minX = self.knobInset
+        let maxX = self.bounds.width - self.knobInset - self.knobSize.width
+        let proposedX = self.dragStartKnobOriginX + deltaX
         let clampedX = min(max(proposedX, minX), maxX)
 
-        self.thumbView.frame.origin.x = clampedX
+        self.knobView.frame.origin.x = clampedX
         
         let deltaFromStart = location.x - self.dragStartLocationX
         if abs(deltaFromStart) > self.dragMovementThreshold {
-            self.isThumbMoved = true
+            self.isKnobMoved = true
         }
 
         let fraction = (clampedX - minX) / max(maxX - minX, 1.0)
         let threshold: CGFloat = 0.2
         if fraction <= threshold, self.isOn {
-            self.startTrackFadeAnimation(toOn: false, duration: self.thumbAnimationDurationSetting * 0.4)
+            self.startTrackFadeAnimation(toOn: false, duration: self.knobAnimationDuration * 0.4)
             self.setOn(false, animated: false, shouldUpdateAppearance: false, playHaptic: true)
         } else if fraction >= 1.0 - threshold, !self.isOn {
-            self.startTrackFadeAnimation(toOn: true, duration: self.thumbAnimationDurationSetting * 0.4)
+            self.startTrackFadeAnimation(toOn: true, duration: self.knobAnimationDuration * 0.4)
             self.setOn(true, animated: false, shouldUpdateAppearance: false, playHaptic: true)
         }
         
-        self.thumbView.interactionUpdate(at: location)
+        self.knobView.interactionUpdate(at: location)
         
         return true
     }
     
     public override func endTracking(_ touch: UITouch?, with event: UIEvent?) {
-        self.syncGlassDurationsToThumb()
-        self.thumbView.interactionEnded(shouldCompleteToPeak: !self.isThumbMoved)
+        self.syncGlassDurationsToKnob()
+        self.knobView.interactionEnded(shouldCompleteToPeak: !self.isKnobMoved)
         
         guard self.isEnabled else { return }
         
-        let fraction = self.thumbView.frame.midX / max(self.bounds.width, 1.0)
+        let fraction = self.knobView.frame.midX / max(self.bounds.width, 1.0)
         
-        if self.isThumbMoved {
+        if self.isKnobMoved {
             self.setOn(fraction >= 0.5, animated: true, shouldUpdateAppearance: true, playHaptic: true)
         } else {
             self.setOn(!self.isOn, animated: true, shouldUpdateAppearance: true, playHaptic: true)
@@ -239,7 +213,7 @@ public final class LegacySwitchView: UIControl {
     public override func cancelTracking(with event: UIEvent?) {
         super.cancelTracking(with: event)
         self.resetDragState()
-        self.updateThumbLayout(animated: false)
+        self.updateKnobLayout(animated: false)
         self.updateTrackAppearance(animated: false)
     }
     
@@ -255,9 +229,9 @@ public final class LegacySwitchView: UIControl {
         }
 
         if shouldUpdateAppearance {
-            let isInCorrectPosition = self.calculateThumbFrame().origin.x == self.thumbView.frame.origin.x
+            let isInCorrectPosition = self.calculateKnobFrame().origin.x == self.knobView.frame.origin.x
             if isValueChanged || !isInCorrectPosition {
-                self.updateThumbLayout(animated: animated && !isInCorrectPosition)
+                self.updateKnobLayout(animated: animated && !isInCorrectPosition)
             }
             self.updateTrackAppearance(animated: animated)
         }
@@ -273,7 +247,7 @@ public final class LegacySwitchView: UIControl {
         self.trackView.backgroundColor = self.onTintColor
         
         if animated {
-            self.startTrackFadeAnimation(toOn: self.isOn, duration: self.thumbAnimationDurationSetting)
+            self.startTrackFadeAnimation(toOn: self.isOn, duration: self.knobAnimationDuration)
         } else {
             self.stopTrackFadeAnimation()
             self.trackView.alpha = self.isOn ? 1.0 : 0.0
@@ -282,103 +256,83 @@ public final class LegacySwitchView: UIControl {
     
     private func resetDragState() {
         self.isDragging = false
-        self.isThumbMoved = false
+        self.isKnobMoved = false
         self.dragStartLocationX = 0.0
-        self.dragStartThumbOriginX = self.isOn ? (self.bounds.width - self.thumbInset - self.thumbSize.width) : self.thumbInset
+        self.dragStartKnobOriginX = self.isOn ? (self.bounds.width - self.knobInset - self.knobSize.width) : self.knobInset
     }
     
-    private func syncGlassDurationsToThumb() {
-        let halfDuration = CGFloat(self.thumbAnimationDurationSetting * 0.5)
-        self.thumbView.legacyGlassView.interactionScaleUpDuration = halfDuration
-        self.thumbView.legacyGlassView.interactionScaleDownDuration = halfDuration
-        self.thumbView.legacyGlassView.interactionActivationUpDuration = halfDuration
-        self.thumbView.legacyGlassView.interactionActivationDownDuration = halfDuration
+    private func syncGlassDurationsToKnob() {
+        let halfDuration = CGFloat(self.knobAnimationDuration * 0.5)
+        self.knobView.legacyGlassView.interactionScaleUpDuration = halfDuration
+        self.knobView.legacyGlassView.interactionScaleDownDuration = halfDuration
+        self.knobView.legacyGlassView.interactionActivationUpDuration = halfDuration
+        self.knobView.legacyGlassView.interactionActivationDownDuration = halfDuration
     }
     
-    private func startThumbAnimation(to targetFrame: CGRect, duration: CFTimeInterval) {
-        self.stopThumbAnimation()
+    private func startKnobAnimation(to targetFrame: CGRect, duration: CFTimeInterval) {
+        self.stopKnobAnimation()
         self.stopTrackFadeAnimation()
         
-        self.thumbAnimationStartX = self.thumbView.frame.origin.x
-        self.thumbAnimationEndX = targetFrame.origin.x
-        self.thumbAnimationDuration = max(0.01, duration)
-        self.thumbAnimationStartTime = CACurrentMediaTime()
+        let startX = self.knobView.frame.origin.x
+        let endX = targetFrame.origin.x
+        let animationDuration = max(0.01, duration)
+        let deltaX = endX - startX
         
-        self.trackFadeStartAlpha = self.trackView.alpha
-        self.trackFadeEndAlpha = self.isOn ? 1.0 : 0.0
-        self.trackFadeDuration = self.thumbAnimationDuration
-        self.trackFadeStartTime = self.thumbAnimationStartTime
-        self.isTrackFadeDrivenByThumb = true
+        let trackFadeStartAlpha = self.trackView.alpha
+        let trackFadeEndAlpha = self.isOn ? 1.0 : 0.0
         
-        self.thumbAnimationLink = SharedDisplayLinkDriver.shared.add(framesPerSecond: .max) { [weak self] _ in
-            self?.thumbAnimationTick()
-        }
+        self.knobAnimator = DisplayLinkAnimator(
+            duration: animationDuration,
+            from: 0.0,
+            to: 1.0,
+            update: { [weak self] linearProgress in
+                guard let self = self else { return }
+                let easedProgress = 1.0 - pow(1.0 - linearProgress, 3.0)
+                let easedX = startX + deltaX * easedProgress
+                self.knobView.frame.origin.x = easedX
+                
+                let fadeEased = easedProgress
+                self.trackView.alpha = trackFadeStartAlpha * (1.0 - fadeEased) + trackFadeEndAlpha * fadeEased
+            },
+            completion: { [weak self] in
+                guard let self = self else { return }
+                self.knobView.frame = CGRect(origin: CGPoint(x: endX, y: self.knobInset), size: self.knobSize)
+                self.trackView.alpha = trackFadeEndAlpha
+            }
+        )
     }
     
-    private func stopThumbAnimation() {
-        self.thumbAnimationLink?.invalidate()
-        self.thumbAnimationLink = nil
-    }
-
     private func startTrackFadeAnimation(toOn: Bool, duration: CFTimeInterval) {
         self.stopTrackFadeAnimation()
         
-        self.trackFadeStartAlpha = self.trackView.alpha
-        self.trackFadeEndAlpha = toOn ? 1.0 : 0.0
-        self.trackFadeDuration = max(0.01, duration)
-        self.trackFadeStartTime = CACurrentMediaTime()
-        self.isTrackFadeDrivenByThumb = false
+        let startAlpha = self.trackView.alpha
+        let endAlpha: CGFloat = toOn ? 1.0 : 0.0
+        let animationDuration = max(0.01, duration)
         
-        self.trackFadeLink = SharedDisplayLinkDriver.shared.add(framesPerSecond: .max) { [weak self] _ in
-            self?.trackFadeTick()
-        }
+        self.trackFadeAnimator = DisplayLinkAnimator(
+            duration: animationDuration,
+            from: 0.0,
+            to: 1.0,
+            update: { [weak self] linearProgress in
+                guard let self = self else { return }
+                let easedProgress = 1.0 - pow(1.0 - linearProgress, 3.0)
+                self.trackView.alpha = startAlpha * (1.0 - easedProgress) + endAlpha * easedProgress
+            },
+            completion: { [weak self] in
+                guard let self = self else { return }
+                self.trackView.alpha = endAlpha
+            }
+        )
+    }
+    
+    private func stopKnobAnimation() {
+        self.knobAnimator?.invalidate()
+        self.knobAnimator = nil
     }
     
     private func stopTrackFadeAnimation() {
-        self.trackFadeLink?.invalidate()
-        self.trackFadeLink = nil
-    }
-    
-    private func trackFadeTick() {
-        guard self.trackFadeLink != nil else { return }
-        
-        let now = CACurrentMediaTime()
-        let tRaw = (now - self.trackFadeStartTime) / max(self.trackFadeDuration, 0.0001)
-        let t = CGFloat(min(max(tRaw, 0.0), 1.0))
-        let eased = 1.0 - pow(1.0 - t, 3.0)
-        
-        self.trackView.alpha = self.trackFadeStartAlpha * (1.0 - eased) + self.trackFadeEndAlpha * eased
-
-        if t >= 1.0 - .ulpOfOne {
-            self.trackView.alpha = self.trackFadeEndAlpha
-            self.stopTrackFadeAnimation()
-        }
-    }
-    
-    private func thumbAnimationTick() {
-        guard self.thumbAnimationLink != nil else { return }
-        
-        let now = CACurrentMediaTime()
-        let tRaw = (now - self.thumbAnimationStartTime) / max(self.thumbAnimationDuration, 0.0001)
-        let t = CGFloat(min(max(tRaw, 0.0), 1.0))
-        
-        let eased = 1.0 - pow(1.0 - t, 3.0)
-        self.thumbView.frame.origin.x = self.thumbAnimationStartX * (1.0 - eased) + self.thumbAnimationEndX * eased
-        
-        if self.isTrackFadeDrivenByThumb, self.trackFadeDuration > 0.0 {
-            let fadeT = CGFloat(min(max((now - self.trackFadeStartTime) / self.trackFadeDuration, 0.0), 1.0))
-            let fadeEased = 1.0 - pow(1.0 - fadeT, 3.0)
-            self.trackView.alpha = self.trackFadeStartAlpha * (1.0 - fadeEased) + self.trackFadeEndAlpha * fadeEased
-        }
-        
-        if t >= 1.0 - .ulpOfOne {
-            self.thumbView.frame = CGRect(origin: CGPoint(x: self.thumbAnimationEndX, y: self.thumbInset), size: self.thumbSize)
-            self.trackView.alpha = self.trackFadeEndAlpha
-            self.stopThumbAnimation()
-            if self.isTrackFadeDrivenByThumb {
-                self.stopTrackFadeAnimation()
-            }
-        }
+        self.trackFadeAnimator?.invalidate()
+        self.trackFadeAnimator = nil
     }
 
 }

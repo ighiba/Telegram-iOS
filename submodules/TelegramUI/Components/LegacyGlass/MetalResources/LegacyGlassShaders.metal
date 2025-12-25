@@ -12,7 +12,6 @@ struct VertexOut {
 };
 
 struct LegacyGlassUniforms {
-    float4 tintColor;
     float2 canvasSize;
     float2 lensCenterCanvas;
     float2 lensRadiusCanvas;
@@ -41,9 +40,9 @@ struct LegacyGlassUniforms {
     float  glowStrength;
     float  outerShadowWidth;
     float  outerShadowOpacity;
+    float4 tintColor;
     float4 fillColor;
     float  fillProgress;
-    uint   padding0;
 };
 
 vertex VertexOut legacyGlassVertex(VertexIn in [[stage_in]]) {
@@ -387,8 +386,6 @@ fragment float4 additionalTextureFragment(VertexOut in [[stage_in]],
     }
 
     float2 canvasToTextureScale = uniforms.backgroundTextureSize / uniforms.canvasSize;
-    
-    float2 additionalTextureOriginInTextureSpace = uniforms.additionalTextureOriginCanvas * canvasToTextureScale;
     float2 additionalTextureSizeInTextureSpace = uniforms.additionalTextureSizeCanvas * canvasToTextureScale;
 
     if (additionalTextureSizeInTextureSpace.x <= 0.0 || additionalTextureSizeInTextureSpace.y <= 0.0) {

@@ -63,9 +63,9 @@ public struct LegacyGlassQualityProfile {
     
     public static let high = LegacyGlassQualityProfile(
         level: .high,
-        captureScale: 0.75 * UIScreen.main.scale,
+        captureScale: 2.0,
         captureScaleBlurred: 0.5,
-        captureAutoUpdateSlowDebounce: 10.0,
+        captureAutoUpdateSlowDebounce: 4.0,
         dynamicFastFrequency: .automatic,
         dynamicSlowFrequency: .fps(capture: 1, render: 60),
         staticFrequency: .fps(capture: 1, render: 60)
@@ -73,9 +73,9 @@ public struct LegacyGlassQualityProfile {
     
     public static let medium = LegacyGlassQualityProfile(
         level: .medium,
-        captureScale: 0.5 * UIScreen.main.scale,
+        captureScale: 1.0,
         captureScaleBlurred: 0.4,
-        captureAutoUpdateSlowDebounce: 5.0,
+        captureAutoUpdateSlowDebounce: 3.0,
         dynamicFastFrequency: .automatic,
         dynamicSlowFrequency: .fps(capture: 1, render: 30),
         staticFrequency: .fps(capture: 1, render: 30)
@@ -83,9 +83,9 @@ public struct LegacyGlassQualityProfile {
     
     public static let low = LegacyGlassQualityProfile(
         level: .low,
-        captureScale: 0.5 * UIScreen.main.scale,
+        captureScale: 1.0,
         captureScaleBlurred: 0.3,
-        captureAutoUpdateSlowDebounce: 3.0,
+        captureAutoUpdateSlowDebounce: 2.0,
         dynamicFastFrequency: .fps(capture: 45, render: 30),
         dynamicSlowFrequency: .fps(capture: 1, render: 24),
         staticFrequency: .fps(capture: 1, render: 24)

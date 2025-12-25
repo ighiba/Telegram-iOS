@@ -4,8 +4,7 @@ import MetalKit
 import simd
 import Display
 
-
-public final class LegacyGlassContext {
+final class LegacyGlassContext {
     var style: LegacyGlassStyle
     var qualityProfile: LegacyGlassQualityProfile
     
@@ -27,7 +26,7 @@ public final class LegacyGlassContext {
     var interactionJellyTarget: CGFloat = 0.0
     let interactionJellyGain: CGFloat = 0.1
     let interactionJellyMax: CGFloat = 0.2
-    let interactionJellyDamping: CGFloat = 18.0
+    var interactionJellyDamping: CGFloat = 18.0
     var interactionJellyDirection: LegacyGlassInteraction.JellyDirection = .horizontal
 
     var interactionStretch: CGPoint = .zero
@@ -163,6 +162,11 @@ public final class LegacyGlassView: UIView {
         set { self.context.interactionJellyDirection = newValue }
     }
     
+    public var interactionJellyDamping: CGFloat {
+        get { self.context.interactionJellyDamping }
+        set { self.context.interactionJellyDamping = newValue }
+    }
+    
     public var interactionGlowSmoothing: CGFloat {
         get { self.context.interactionGlowSmoothing }
         set { self.context.interactionGlowSmoothing = newValue }
@@ -215,7 +219,7 @@ public final class LegacyGlassView: UIView {
         if let idleImage, self.context.style.isIdleImageEnabled {
             self.idleImage = idleImage
             let idleImageView = UIImageView(image: idleImage)
-            idleImageView.isHidden = self.idleImage == nil
+            idleImageView.alpha = self.idleImage == nil ? 0.0 : 1.0
             idleImageView.image = self.idleImage
             idleImageView.isOpaque = false
             idleImageView.backgroundColor = .clear
@@ -316,10 +320,14 @@ public final class LegacyGlassView: UIView {
         self.interactionEnded()
     }
     
+    public func setStyle(_ style: LegacyGlassStyle) {
+        self.context.style = style
+    }
+    
     public func updateStyle(_ block: (inout LegacyGlassStyle) -> ()) {
         var style = self.context.style
         block(&style)
-        self.context.style = style
+        self.setStyle(style)
     }
     
     public func updateQualityProfile(_ block: (inout LegacyGlassQualityProfile) -> ()) {
@@ -704,7 +712,7 @@ public final class LegacyGlassView: UIView {
     private func updateIdleImageView() {
         guard let idleImageView = self.idleImageView else { return }
         guard self.context.style.isIdleImageEnabled else {
-            idleImageView.isHidden = true
+            idleImageView.alpha = 0.0
             return
         }
         
@@ -712,7 +720,7 @@ public final class LegacyGlassView: UIView {
         if isIdle, let image = self.idleImage {
             idleImageView.image = image
             idleImageView.isHidden = false
-            idleImageView.setNeedsDisplay()
+            self.animateIdleImageAlpha(value: 1.0)
 
             idleImageView.layer.setNeedsDisplay()
             
@@ -721,7 +729,7 @@ public final class LegacyGlassView: UIView {
                 idleImageView.frame = self.bounds.insetBy(dx: -padding, dy: -padding)
             }
         } else {
-            idleImageView.isHidden = true
+            self.animateIdleImageAlpha(value: 0.0)
         }
     }
 
@@ -788,7 +796,7 @@ public final class LegacyGlassView: UIView {
 
     private func updateIdleRenderingPolicy() {
         guard
-            let idleImageView = self.idleImageView,
+            let _ = self.idleImageView,
             self.context.style.isIdleImageEnabled
         else {
             self.idleImageView?.isHidden = true
@@ -809,9 +817,9 @@ public final class LegacyGlassView: UIView {
             
             let activationProgressThreshold: CGFloat = 0.15
             if self.context.interactionActivationProgress >= activationProgressThreshold {
-                idleImageView.isHidden = true
+                self.animateIdleImageAlpha(value: 0.0)
             } else {
-                idleImageView.isHidden = false
+                self.animateIdleImageAlpha(value: 1.0)
             }
         }
     }
@@ -848,6 +856,12 @@ public final class LegacyGlassView: UIView {
     private func nestedHostScrollViewDidUpdate() {
         self.ensureFastCaptureWithDebounce(to: .dynamicBackground(.slow))
     }
+    
+    private func animateIdleImageAlpha(value: CGFloat, duration: TimeInterval = 0.1) {
+        UIView.animate(withDuration: duration, delay: 0.0, options: [.curveEaseInOut, .beginFromCurrentState]) {
+            self.idleImageView?.alpha = value
+        }
+    }
 }
 
 extension LegacyGlassView: LegacyGlassRendererDelegate {
@@ -865,13 +879,12 @@ extension LegacyGlassView: LegacyGlassRendererDelegate {
             var transform = CATransform3DIdentity
             transform = CATransform3DScale(transform, scale.x, scale.y, 1.0)
             transform = CATransform3DTranslate(transform, translation.x, translation.y, 0.0)
-            contentView.layer.sublayerTransform = transform
+            self.contentView.layer.sublayerTransform = transform
         } else {
-            contentView.layer.sublayerTransform = CATransform3DIdentity
+            self.contentView.layer.sublayerTransform = CATransform3DIdentity
         }
     }
 }
-
 
 private func clampBoundsSize(_ size: CGSize) -> CGSize {
     let maxDimension: CGFloat = 4096.0
