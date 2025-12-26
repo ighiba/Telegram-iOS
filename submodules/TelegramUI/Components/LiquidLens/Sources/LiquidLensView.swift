@@ -222,6 +222,7 @@ public final class LiquidLensView: UIView {
 
             if let backgroundLegacyGlassView = self.backgroundView.legacyGlassView {
                 backgroundLegacyGlassView.isScalingEnabled = true
+                backgroundLegacyGlassView.isStretchEnabled = false
                 backgroundLegacyGlassView.isGlowEnabled = true
                 backgroundLegacyGlassView.horizontalPadding = 10
                 backgroundLegacyGlassView.verticalPadding = 10

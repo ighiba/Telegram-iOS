@@ -150,6 +150,8 @@ public extension LegacyGlassStyle {
         idleOuterShadowOpacity: 0.15,
         activeOuterShadowWidth: 0.0,
         activeOuterShadowOpacity: 0.0,
+        glowRadius: 10.0,
+        glowStrenght: 0.3,
         isBlurEnabled: true,
     )
     

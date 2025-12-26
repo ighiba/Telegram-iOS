@@ -318,10 +318,12 @@ public class GlassBackgroundView: UIView {
     private let contentContainer: ContentContainer
     
     private var innerBackgroundView: UIView?
-    
+        
     public var contentView: UIView {
         if let nativeView = self.nativeView {
             return nativeView.contentView
+        } else if let legacyGlassView = self.legacyGlassView {
+            return legacyGlassView.contentView
         } else {
             return self.contentContainer
         }
@@ -330,6 +332,8 @@ public class GlassBackgroundView: UIView {
     public private(set) var params: Params?
         
     public static var useCustomGlassImpl: Bool = false
+
+    private var interactionGestureRecognizer: LegacyGlassInteractionGestureRecognizer?
     
     public override init(frame: CGRect) {
         if #available(iOS 26.0, *), !GlassBackgroundView.useCustomGlassImpl {
@@ -356,10 +360,19 @@ public class GlassBackgroundView: UIView {
             qualityProfile.dynamicFastFrequency = LegacyGlassQualityProfile.automatic.dynamicFastFrequency
             qualityProfile.dynamicSlowFrequency = LegacyGlassQualityProfile.automatic.dynamicSlowFrequency
             
-            self.legacyGlassView = LegacyGlassView(style: .smallBackground, qualityProfile: qualityProfile, allowsGroupSnapshotting: true)
-            self.legacyGlassView?.autoUpdatesOnScroll = true
-            self.legacyGlassView?.setBlurFilterSigma(value: 0.2)
-
+            let legacyGlassView = LegacyGlassView(style: .smallBackground, qualityProfile: qualityProfile, allowsGroupSnapshotting: true)
+            legacyGlassView.autoUpdatesOnScroll = true
+            legacyGlassView.isGlowEnabled = true
+            legacyGlassView.isScalingEnabled = true
+            legacyGlassView.isStretchEnabled = true
+            legacyGlassView.interactionScaleMax = 1.03
+            legacyGlassView.interactionScaleUpDuration = 0.2
+            legacyGlassView.interactionScaleDownDuration = 0.2
+            legacyGlassView.verticalPadding = 10
+            legacyGlassView.horizontalPadding = 10
+            legacyGlassView.setBlurFilterSigma(value: 0.2)
+            self.legacyGlassView = legacyGlassView
+            
             self.nativeView = nil
             self.nativeViewClippingContext = nil
             self.nativeParamsView = nil
@@ -409,6 +422,18 @@ public class GlassBackgroundView: UIView {
             if let result = nativeView.hitTest(self.convert(point, to: nativeView), with: event) {
                 return result
             }
+        } else if let legacyGlassView = self.legacyGlassView {
+            let contentView = legacyGlassView.contentView
+            let pointInContentView = self.convert(point, to: contentView)
+            if contentView.bounds.contains(pointInContentView) {
+                for subview in contentView.subviews.reversed() {
+                    if subview.isUserInteractionEnabled && !subview.isHidden && subview.alpha > 0 {
+                        if let result = subview.hitTest(contentView.convert(pointInContentView, to: subview), with: event) {
+                            return result
+                        }
+                    }
+                }
+            }
         } else {
             if let result = self.contentContainer.hitTest(self.convert(point, to: self.contentContainer), with: event) {
                 return result
@@ -441,16 +466,6 @@ public class GlassBackgroundView: UIView {
             }
             transition.setFrame(view: backgroundNode.view, frame: CGRect(origin: CGPoint(), size: size))
         }
-        if let legacyGlassView = self.legacyGlassView {
-            legacyGlassView.tintColor = tintColor.color
-            
-            switch shape {
-            case let .roundedRect(cornerRadius):
-                legacyGlassView.cornerRadius = cornerRadius
-            }
-            transition.setFrame(view: legacyGlassView, frame: CGRect(origin: CGPoint(), size: size))
-        }
-        
         let shadowInset: CGFloat = 32.0
         
         if let innerColor = tintColor.innerColor {
@@ -493,7 +508,8 @@ public class GlassBackgroundView: UIView {
         }
         
         let params = Params(shape: shape, isDark: isDark, tintColor: tintColor, isInteractive: isInteractive)
-        if self.params != params {
+        let paramsChanged = self.params != params
+        if paramsChanged {
             self.params = params
             
             let outerCornerRadius: CGFloat
@@ -559,7 +575,21 @@ public class GlassBackgroundView: UIView {
         if let shadowView = self.shadowView {
             transition.setFrame(view: shadowView, frame: CGRect(origin: CGPoint(), size: size).insetBy(dx: -shadowInset, dy: -shadowInset))
         }
-        transition.setFrame(view: self.contentContainer, frame: CGRect(origin: CGPoint(), size: size))
+        if let legacyGlassView = self.legacyGlassView {
+            legacyGlassView.tintColor = tintColor.color
+            legacyGlassView.isUserInteractionEnabled = false
+            
+            switch shape {
+            case let .roundedRect(cornerRadius):
+                legacyGlassView.cornerRadius = cornerRadius
+            }
+            transition.setFrame(view: legacyGlassView, frame: CGRect(origin: CGPoint(), size: size))
+            transition.setFrame(view: legacyGlassView.contentView, frame: CGRect(origin: CGPoint(), size: size))
+        } else {
+            transition.setFrame(view: self.contentContainer, frame: CGRect(origin: CGPoint(), size: size))
+        }
+        
+        self.setupGestureRecognizers()
     }
     
     public func setCaptureHostView(_ view: UIView) {
@@ -578,6 +608,55 @@ public class GlassBackgroundView: UIView {
 
     public func interactionEnded(shouldCompleteToPeak: Bool = false) {
         self.legacyGlassView?.interactionEnded(shouldCompleteToPeak: shouldCompleteToPeak)
+    }
+}
+
+extension GlassBackgroundView: UIGestureRecognizerDelegate {
+    public func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+        return true
+    }
+    
+    public func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        guard let params = self.params, params.isInteractive else {
+            return false
+        }
+        let point = touch.location(in: self)
+        return self.bounds.contains(point)
+    }
+    
+    private func setupGestureRecognizers() {
+        guard let legacyGlassView = self.legacyGlassView, let params = self.params, params.isInteractive else {
+            self.removeGestureRecognizers()
+            return
+        }
+        
+        if self.interactionGestureRecognizer == nil {
+            let recognizer = LegacyGlassInteractionGestureRecognizer()
+            recognizer.delegate = self
+            recognizer.delaysTouchesBegan = false
+            recognizer.cancelsTouchesInView = false
+            recognizer.onBegan = { point in
+                legacyGlassView.interactionBegan(at: point)
+            }
+            recognizer.onMoved = { point in
+                legacyGlassView.interactionUpdate(at: point)
+            }
+            recognizer.onEnded = {
+                legacyGlassView.interactionEnded()
+            }
+            recognizer.onCancelled = {
+                legacyGlassView.interactionEnded()
+            }
+            self.addGestureRecognizer(recognizer)
+            self.interactionGestureRecognizer = recognizer
+        }
+    }
+    
+    private func removeGestureRecognizers() {
+        if let gesture = self.interactionGestureRecognizer {
+            self.removeGestureRecognizer(gesture)
+            self.interactionGestureRecognizer = nil
+        }
     }
 }
 
