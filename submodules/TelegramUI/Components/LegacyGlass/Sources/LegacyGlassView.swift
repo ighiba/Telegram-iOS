@@ -78,6 +78,11 @@ public final class LegacyGlassView: UIView {
         }
     }
     
+    public var useAdaptiveBrightness: Bool {
+        get { self.rendererView.useAdaptiveBrightness }
+        set { self.rendererView.useAdaptiveBrightness = newValue }
+    }
+    
     public var useAdditionalFrontImage: Bool {
         get { self.rendererView.useAdditionalFrontImage }
         set { self.rendererView.useAdditionalFrontImage = newValue }
@@ -117,14 +122,14 @@ public final class LegacyGlassView: UIView {
         set { self.rendererView.isSafeBoundsCaptureEnabled = newValue }
     }
     
-    public var dimmingMin: Float {
-        get { self.rendererView.dimmingMin }
-        set { self.rendererView.dimmingMin = newValue }
+    public var brightnessAdaptationMin: Float {
+        get { self.rendererView.brightnessAdaptationMin }
+        set { self.rendererView.brightnessAdaptationMin = newValue }
     }
     
-    public var dimmingMax: Float {
-        get { self.rendererView.dimmingMax }
-        set { self.rendererView.dimmingMax = newValue }
+    public var brightnessAdaptationMax: Float {
+        get { self.rendererView.brightnessAdaptationMax }
+        set { self.rendererView.brightnessAdaptationMax = newValue }
     }
 
     public override var tintColor: UIColor? {

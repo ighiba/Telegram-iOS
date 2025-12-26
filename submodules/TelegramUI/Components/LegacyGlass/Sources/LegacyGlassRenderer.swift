@@ -22,9 +22,9 @@ private struct LegacyGlassUniforms {
     var lensRadiusCanvas: simd_float2
     var cornerRadius: Float
     var refractionStrength: Float
-    var dimmingMin: Float
-    var dimmingMax: Float
-    var dimmingStrength: Float
+    var brightnessAdaptationMin: Float
+    var brightnessAdaptationMax: Float
+    var brightnessAdaptationStrength: Float
     var averageBackgroundLuma: Float
     var textureOriginHost: simd_float2
     var textureSizeHost: simd_float2
@@ -75,6 +75,7 @@ final class LegacyGlassRenderer: MTKView {
 
     weak var glassDelegate: LegacyGlassRendererDelegate?
     
+    var useAdaptiveBrightness: Bool = false
     var useLayerBaseRender: Bool = false
     var useAdditionalFrontImage: Bool = false {
         didSet {
@@ -173,8 +174,8 @@ final class LegacyGlassRenderer: MTKView {
     private var combinedTexture: MTLTexture?
     private var lastCombinedTextureOrigin: CGPoint = .zero
     
-    var dimmingMin: Float = 0.0
-    var dimmingMax: Float = 0.1
+    var brightnessAdaptationMin: Float = 0.0
+    var brightnessAdaptationMax: Float = 0.1
     private var averageBackgroundLuma: Float = 0.5
     
     private var lensSize: CGSize {
@@ -589,7 +590,9 @@ final class LegacyGlassRenderer: MTKView {
             let texture = try self.makeTexture(from: cgImage)
             self.texture = texture
             self.textureBlurred = self.isBlurEnabled ? self.ensureBlurredTexture(fromTexture: texture) : nil
-            self.averageBackgroundLuma = self.computeAverageLuma(from: cgImage)
+            if self.useAdaptiveBrightness {
+                self.averageBackgroundLuma = self.computeAverageLuma(from: cgImage)
+            }
             self.isCombinedTextureValid = false
             self.updateCombinedTextureIfNeeded()
             self.isTextureUpdateNeeded = false
@@ -793,20 +796,21 @@ final class LegacyGlassRenderer: MTKView {
             translation: CGPoint(x: easedPivotX * lensDelta.width, y: easedPivotY * lensDelta.height)
         )
 
+        let brightnessAdaptationStrength = self.useAdaptiveBrightness ? self.context.style.brightnessAdaptationStrength : 0.0
         let activationProgress = Float(max(0.0, min(1.0, self.context.interactionActivationProgress)))
         let idleWeight = 1.0 - activationProgress
         let outerShadowWidth = self.context.style.idleOuterShadowWidth * idleWeight + self.context.style.activeOuterShadowWidth * activationProgress
         let outerShadowOpacity = self.context.style.idleOuterShadowOpacity * idleWeight + self.context.style.activeOuterShadowOpacity * activationProgress
-
+        
         var uniforms = LegacyGlassUniforms(
             canvasSize: simd_float2(Float(canvasWidth), Float(canvasHeight)),
             lensCenterCanvas: lensCenterCanvas,
             lensRadiusCanvas: lensRadiusCanvas,
             cornerRadius: Float(cornerRadiusTransformed),
             refractionStrength: self.context.style.refractionStrength,
-            dimmingMin: self.dimmingMin,
-            dimmingMax: self.dimmingMax,
-            dimmingStrength: self.context.style.dimmingStrength,
+            brightnessAdaptationMin: self.brightnessAdaptationMin,
+            brightnessAdaptationMax: self.brightnessAdaptationMax,
+            brightnessAdaptationStrength: brightnessAdaptationStrength,
             averageBackgroundLuma: self.averageBackgroundLuma,
             textureOriginHost: textureOriginNormalized,
             textureSizeHost: textureSizeNormalized,

@@ -7,7 +7,7 @@ public struct LegacyGlassStyle {
     public var refractionEdgeStrength: Float
     public var refractionXScale: Float
     public var refractionYScale: Float
-    public var dimmingStrength: Float
+    public var brightnessAdaptationStrength: Float
     public var rimHighlightWidth: Float
     public var rimHighlightStrength: Float
     public var chromaticAberrationStrength: Float
@@ -32,7 +32,7 @@ public struct LegacyGlassStyle {
         refractionEdgeStrength: Float,
         refractionXScale: Float,
         refractionYScale: Float,
-        dimmingStrength: Float,
+        brightnessAdaptationStrength: Float,
         rimHighlightWidth: Float,
         rimHighlightStrength: Float,
         chromaticAberrationStrength: Float,
@@ -56,7 +56,7 @@ public struct LegacyGlassStyle {
         self.refractionEdgeStrength = refractionEdgeStrength
         self.refractionXScale = refractionXScale
         self.refractionYScale = refractionYScale
-        self.dimmingStrength = dimmingStrength
+        self.brightnessAdaptationStrength = brightnessAdaptationStrength
         self.rimHighlightWidth = rimHighlightWidth
         self.rimHighlightStrength = rimHighlightStrength
         self.chromaticAberrationStrength = chromaticAberrationStrength
@@ -84,7 +84,7 @@ public extension LegacyGlassStyle {
         refractionEdgeStrength: -0.25,
         refractionXScale: 1.0,
         refractionYScale: 0.8,
-        dimmingStrength: 0.3,
+        brightnessAdaptationStrength: 0.3,
         rimHighlightWidth: 3.0,
         rimHighlightStrength: 1.0,
         chromaticAberrationStrength: 0.25,
@@ -103,7 +103,7 @@ public extension LegacyGlassStyle {
         refractionEdgeStrength: -0.45,
         refractionXScale: 1.0,
         refractionYScale: 0.8,
-        dimmingStrength: 0.5,
+        brightnessAdaptationStrength: 0.5,
         rimHighlightWidth: 2.0,
         rimHighlightStrength: 1.0,
         chromaticAberrationStrength: 0.25,
@@ -122,7 +122,7 @@ public extension LegacyGlassStyle {
         refractionEdgeStrength: -0.25,
         refractionXScale: 1.0,
         refractionYScale: 0.8,
-        dimmingStrength: 0.3,
+        brightnessAdaptationStrength: 0.3,
         rimHighlightWidth: 1.5,
         rimHighlightStrength: 0.5,
         chromaticAberrationStrength: 0.95,
@@ -134,14 +134,35 @@ public extension LegacyGlassStyle {
         isBlurEnabled: false
     )
     
-    static let smallBackground = LegacyGlassStyle(
-        refractionStrength: -1.5,
-        refractionEdgeWidth: 1.01,
+    static let inputBackground = LegacyGlassStyle(
+        refractionStrength: -1.3,
+        refractionEdgeWidth: 0.95,
         refractionCenterStrength: 0.0,
         refractionEdgeStrength: 0.2,
         refractionXScale: 1.0,
         refractionYScale: 10.0,
-        dimmingStrength: 0.0,
+        brightnessAdaptationStrength: 0.0,
+        rimHighlightWidth: 0.5,
+        rimHighlightStrength: 0.25,
+        chromaticAberrationStrength: 0.05,
+        coreRadius: 0.2,
+        idleOuterShadowWidth: 0.1,
+        idleOuterShadowOpacity: 0.15,
+        activeOuterShadowWidth: 0.0,
+        activeOuterShadowOpacity: 0.0,
+        glowRadius: 10.0,
+        glowStrenght: 0.3,
+        isBlurEnabled: true,
+    )
+    
+    static let smallBackground = LegacyGlassStyle(
+        refractionStrength: -1.5,
+        refractionEdgeWidth: 1.0,
+        refractionCenterStrength: 0.0,
+        refractionEdgeStrength: 0.2,
+        refractionXScale: 1.0,
+        refractionYScale: 10.0,
+        brightnessAdaptationStrength: 0.0,
         rimHighlightWidth: 0.5,
         rimHighlightStrength: 0.25,
         chromaticAberrationStrength: 0.05,
@@ -162,7 +183,7 @@ public extension LegacyGlassStyle {
         refractionEdgeStrength: 0.25,
         refractionXScale: 1.0,
         refractionYScale: 10.0,
-        dimmingStrength: 0.0,
+        brightnessAdaptationStrength: 0.0,
         rimHighlightWidth: 1.0,
         rimHighlightStrength: 0.35,
         chromaticAberrationStrength: 0.05,
@@ -183,7 +204,7 @@ public extension LegacyGlassStyle {
         refractionEdgeStrength: 2.9,
         refractionXScale: 1.1,
         refractionYScale: 0.9,
-        dimmingStrength: 0.75,
+        brightnessAdaptationStrength: 0.75,
         rimHighlightWidth: 1.0,
         rimHighlightStrength: 0.5,
         chromaticAberrationStrength: 0.37,
@@ -202,7 +223,7 @@ public extension LegacyGlassStyle {
         refractionEdgeStrength: -0.97,
         refractionXScale: 1.0,
         refractionYScale: 0.9,
-        dimmingStrength: 0.3,
+        brightnessAdaptationStrength: 0.3,
         rimHighlightWidth: 1.0,
         rimHighlightStrength: 0.3,
         chromaticAberrationStrength: 1.5,

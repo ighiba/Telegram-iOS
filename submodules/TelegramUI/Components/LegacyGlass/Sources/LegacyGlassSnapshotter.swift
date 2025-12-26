@@ -11,7 +11,6 @@ protocol LegacyGlassSnapshotRequest: AnyObject {
 }
 
 final class LegacyGlassSnapshotter {
-
     private final class RequestToken: LegacyGlassSnapshotRequest {
         weak var snapshotter: LegacyGlassSnapshotter?
         weak var hostView: UIView?

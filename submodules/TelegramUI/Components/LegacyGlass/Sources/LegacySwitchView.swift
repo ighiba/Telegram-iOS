@@ -74,6 +74,7 @@ public final class LegacySwitchView: UIControl {
 
         self.knobView.isUserInteractionEnabled = false
         self.knobView.legacyGlassView.fillColor = .white
+        self.knobView.legacyGlassView.useAdaptiveBrightness = true
         self.knobView.legacyGlassView.isActivationEnabled = true
         self.knobView.legacyGlassView.isScalingEnabled = true
         self.knobView.legacyGlassView.isJellyEnabled = true

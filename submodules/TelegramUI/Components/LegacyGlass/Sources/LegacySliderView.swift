@@ -213,6 +213,7 @@ public final class LegacySliderView: UIControl {
         self.captureContainerMaskView.backgroundColor = .white
         
         self.knobView.legacyGlassView.fillColor = .white
+        self.knobView.legacyGlassView.useAdaptiveBrightness = true
         self.knobView.legacyGlassView.isActivationEnabled = true
         self.knobView.legacyGlassView.isScalingEnabled = true
         self.knobView.legacyGlassView.isJellyEnabled = true

@@ -214,6 +214,7 @@ public final class LiquidLensView: UIView {
             legacyLensView.verticalPadding = 30
             legacyLensView.interactionScaleMax = 1.35
             legacyLensView.interactionJellyDirection = .vertical
+            legacyLensView.interactionJellyDamping = 14.0
             legacyLensView.interactionScaleUpDuration = 0.2
             legacyLensView.interactionScaleDownDuration = 0.2
             legacyLensView.interactionActivationUpDuration = 0.2
@@ -221,6 +222,8 @@ public final class LiquidLensView: UIView {
             self.legacyLensView = legacyLensView
 
             if let backgroundLegacyGlassView = self.backgroundView.legacyGlassView {
+                self.backgroundView.legacyDarkTintColorOverride = UIColor(white: 0.3, alpha: 0.8)
+                
                 backgroundLegacyGlassView.isScalingEnabled = true
                 backgroundLegacyGlassView.isStretchEnabled = false
                 backgroundLegacyGlassView.isGlowEnabled = true
@@ -478,7 +481,7 @@ public final class LiquidLensView: UIView {
                     let targetContainerX = containerFrame.origin.x
                     let containerDeltaX = targetContainerX - currentContainerX
                     
-                    let isLifted = params.isLifted
+//                    let isLifted = params.isLifted
                     
                     let bounds = self.liftedContainerView.bounds
                     let horizontalInset: CGFloat = 10.0
@@ -527,10 +530,8 @@ public final class LiquidLensView: UIView {
                                 origin: CGPoint(x: easedContainerX, y: currentContainerFrame.origin.y),
                                 size: containerFrame.size
                             )
-                            
-                            let lensFrameInMaskEased = legacyLiftedContainerMaskView.bounds.insetBy(dx: 4.0, dy: 4.0)
-                            let selectionFrameEased = lensFrameInMaskEased.insetBy(dx: isLifted ? -2.0 : 0.0, dy: isLifted ? -2.0 : 0.0)
-                            legacySelectionView.frame = selectionFrameEased
+
+                            legacySelectionView.frame = legacyLiftedContainerMaskView.bounds.insetBy(dx: 4.0, dy: 4.0)
                             
                             if hasAdditionalFrontImage {
                                 let croppedOriginInLens = strongSelf.liftedContainerView.convert(croppedOriginInLiftedContainer, to: legacyLensView)
@@ -554,7 +555,7 @@ public final class LiquidLensView: UIView {
                             
                             legacyLiftedContainerMaskView.frame = maskFrame
                             strongSelf.liftedContainerView.frame = containerFrame
-                            legacySelectionView.frame = selectionFrame
+                            legacySelectionView.frame = lensFrameInMask
                             
                             if hasAdditionalFrontImage {
                                 let croppedOriginInLens = strongSelf.liftedContainerView.convert(croppedOriginInLiftedContainer, to: legacyLensView)
@@ -592,7 +593,7 @@ public final class LiquidLensView: UIView {
                     isFrontImageValid = isSizeSame && isThemeSame && legacyLensView.hasAdditionalFrontImage
                 }
                 
-                legacyLensView.additionalFrontImageBackgroundColor = params.isDark ? UIColor(red: 0.435, green: 0.435, blue: 0.435, alpha: 1.0) : .white
+                legacyLensView.additionalFrontImageBackgroundColor = params.isDark ? UIColor(white: 0.45, alpha: 1.0) : .white
 
                 self.legacyLastCroppedRect = croppedRect
                 self.legacyLastCroppedOriginInLens = croppedOriginInLens

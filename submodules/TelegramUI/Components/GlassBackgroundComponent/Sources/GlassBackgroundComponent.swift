@@ -305,6 +305,7 @@ public class GlassBackgroundView: UIView {
     private let backgroundNode: NavigationBackgroundNode?
     
     public let legacyGlassView: LegacyGlassView?
+    public var legacyDarkTintColorOverride: UIColor?
     
     private let nativeView: UIVisualEffectView?
     private let nativeViewClippingContext: ClippingShapeContext?
@@ -372,6 +373,7 @@ public class GlassBackgroundView: UIView {
             legacyGlassView.horizontalPadding = 10
             legacyGlassView.setBlurFilterSigma(value: 0.2)
             self.legacyGlassView = legacyGlassView
+            self.legacyDarkTintColorOverride = UIColor(white: 0.34, alpha: 0.7)
             
             self.nativeView = nil
             self.nativeViewClippingContext = nil
@@ -576,9 +578,9 @@ public class GlassBackgroundView: UIView {
             transition.setFrame(view: shadowView, frame: CGRect(origin: CGPoint(), size: size).insetBy(dx: -shadowInset, dy: -shadowInset))
         }
         if let legacyGlassView = self.legacyGlassView {
-            legacyGlassView.tintColor = tintColor.color
             legacyGlassView.isUserInteractionEnabled = false
-            
+            legacyGlassView.tintColor = isDark ? (self.legacyDarkTintColorOverride ?? tintColor.color) : tintColor.color
+
             switch shape {
             case let .roundedRect(cornerRadius):
                 legacyGlassView.cornerRadius = cornerRadius

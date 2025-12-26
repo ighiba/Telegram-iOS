@@ -17,9 +17,9 @@ struct LegacyGlassUniforms {
     float2 lensRadiusCanvas;
     float  cornerRadius;
     float  refractionStrength;
-    float  dimmingMin;
-    float  dimmingMax;
-    float  dimmingStrength;
+    float  brightnessAdaptationMin;
+    float  brightnessAdaptationMax;
+    float  brightnessAdaptationStrength;
     float  averageBackgroundLuma;
     float2 textureOriginHost;
     float2 textureSizeHost;
@@ -54,19 +54,19 @@ vertex VertexOut legacyGlassVertex(VertexIn in [[stage_in]]) {
 
 float roundedRectSDF(float2 lensUV, float2 lensRadius, float2 canvasSize, float cornerRadius) {
     const float2 lensSizePx = lensRadius * 2.0 * canvasSize;
-    const float  minDimPx   = min(lensSizePx.x, lensSizePx.y);
-    const float2 sizeUV     = lensSizePx / max(minDimPx, 1e-4);
-    const float  rUV        = clamp(cornerRadius / max(minDimPx, 1e-4), 0.0, min(sizeUV.x, sizeUV.y) * 0.5);
+    const float  minDimPx = min(lensSizePx.x, lensSizePx.y);
+    const float2 sizeUV = lensSizePx / max(minDimPx, 1e-4);
+    const float  rUV = clamp(cornerRadius / max(minDimPx, 1e-4), 0.0, min(sizeUV.x, sizeUV.y) * 0.5);
 
-    const float2 halfSize     = sizeUV * 0.5;
+    const float2 halfSize = sizeUV * 0.5;
     const float2 halfSizeSafe = max(halfSize, float2(1e-4, 1e-4));
-    const float  r            = clamp(rUV, 0.0, min(halfSizeSafe.x, halfSizeSafe.y));
+    const float  r = clamp(rUV, 0.0, min(halfSizeSafe.x, halfSizeSafe.y));
 
     float2 p = lensUV - 0.5;
     float2 pScaled = p * sizeUV;
     float2 q = abs(pScaled) - (halfSizeSafe - float2(r, r));
     float outside = length(max(q, 0.0));
-    float inside  = min(max(q.x, q.y), 0.0);
+    float inside = min(max(q.x, q.y), 0.0);
     return outside + inside - r;
 }
 
@@ -96,15 +96,15 @@ RefractionResult applyEdgeRefraction(float2 baseHostUV,
                                      float edgeStrength,
                                      float refractionYScale) {
     const float centerK = centerStrength * refractionStrength;
-    const float edgeK   = edgeStrength   * refractionStrength;
+    const float edgeK = edgeStrength * refractionStrength;
 
     const float coreRangeInv = 1.0 / max(1.0 - coreRadius, 1e-4);
     const float normalizedRadius = clamp((sdf + 0.5) * coreRangeInv, 0.0, 1.0);
 
     const float ringEdgeStart = max(0.0, 1.0 - edgeWidth);
-    const float t             = clamp((normalizedRadius - ringEdgeStart) / max(edgeWidth, 1e-4), 0.0, 1.0);
+    const float t = clamp((normalizedRadius - ringEdgeStart) / max(edgeWidth, 1e-4), 0.0, 1.0);
 
-    const float tSoft    = smoothstep(0.0, 1.0, pow(t, 1.2));
+    const float tSoft = smoothstep(0.0, 1.0, pow(t, 1.2));
     const float edgeTerm = pow(tSoft, 2) * edgeK;
 
     const float centerTerm = (1.0 - pow(normalizedRadius, 2)) * centerK;
@@ -134,8 +134,8 @@ float4 sampleChromaticAberration(texture2d<float> texture,
     }
 
     const float caEdgeWeight = smoothstep(0.5, 1.0, normalizedRadius);
-    const float caStrength   = chromaticStrength * 0.05;
-    const float caScale      = caStrength * caEdgeWeight;
+    const float caStrength = chromaticStrength * 0.05;
+    const float caScale = caStrength * caEdgeWeight;
 
     const float2 caOffset = caDirection * caScale * float2(1.0, refractionYScale);
 
@@ -169,12 +169,12 @@ float4 applyEdgeBlur(texture2d<float> texture,
 
     float4 hBlur = 0.0;
     hBlur += texture.sample(textureSampler, textureUV - float2(texel.x, 0.0)) * 0.25;
-    hBlur += texture.sample(textureSampler, textureUV)                          * 0.50;
+    hBlur += texture.sample(textureSampler, textureUV) * 0.50;
     hBlur += texture.sample(textureSampler, textureUV + float2(texel.x, 0.0)) * 0.25;
 
     float4 vBlur = 0.0;
     vBlur += texture.sample(textureSampler, textureUV - float2(0.0, texel.y)) * 0.25;
-    vBlur += hBlur                                                            * 0.50;
+    vBlur += hBlur * 0.50;
     vBlur += texture.sample(textureSampler, textureUV + float2(0.0, texel.y)) * 0.25;
 
     return mix(baseColor, vBlur, blurMix);
@@ -194,14 +194,14 @@ RimResult applyRimHighlight(float sdf,
     const float2 lightDir2 = normalize(float2(0.5, 0.8));
 
     const float rimWidth = aaWidth * rimHighlightWidth + 0.01;
-    const float rimBand  = 1.0 - smoothstep(0.0, rimWidth, abs(sdf));
+    const float rimBand = 1.0 - smoothstep(0.0, rimWidth, abs(sdf));
 
     const float2 sdfGrad = float2(dfdx(sdf), dfdy(sdf));
     const float2 rimNormal = normalize(sdfGrad + float2(1e-6, 0.0));
 
     float rimBias1 = clamp(dot(rimNormal, lightDir1), 0.0, 1.0);
     float rimBias2 = clamp(dot(rimNormal, lightDir2), 0.0, 1.0);
-    float rimBias  = clamp(rimBias1 + rimBias2, 0.0, 1.0);
+    float rimBias = clamp(rimBias1 + rimBias2, 0.0, 1.0);
 
     const float rimWeight = rimBand * rimBias;
 
@@ -211,7 +211,7 @@ RimResult applyRimHighlight(float sdf,
     float3 rimmedColor = mix(baseColor, rimHighlightColor, rimGlow);
 
     float rimAlphaMin = 0.9;
-    float rimFactor   = mix(1.0, rimAlphaMin, rimWeight);
+    float rimFactor = mix(1.0, rimAlphaMin, rimWeight);
 
     RimResult result;
     result.color = rimmedColor;
@@ -230,7 +230,7 @@ float4 applyGlow(float2 uv,
                  float glowRadius,
                  float glowStrength) {
     const float2 lensRadiusPx = lensRadiusCanvas * canvasSize;
-    const float  minRadiusPx  = min(lensRadiusPx.x, lensRadiusPx.y);
+    const float minRadiusPx = min(lensRadiusPx.x, lensRadiusPx.y);
 
     float2 deltaPx = (uv - glowCenter) * canvasSize;
     float distGlowPx = length(deltaPx);
@@ -259,12 +259,20 @@ float4 applyGlow(float2 uv,
     return color;
 }
 
-float4 applyDimming(float4 color, float min, float max, float dimmingStrength, float averageLuma) {
+float4 applyAdaptiveBrightness(float4 color, float min, float max, float strength, float averageLuma) {
     const float luma = clamp(averageLuma, 0.0, 1.0);
-    const float dimmingCurve = 1.1;
-    float dimming = mix(min, max, pow(luma, dimmingCurve));
-    dimming *= clamp(dimmingStrength, 0.0, 1.0);
-    color.rgb = mix(color.rgb, float3(0.0), dimming);
+    const float adaptationCurve = 1.1;
+    float adaptationAmount = mix(min, max, pow(luma, adaptationCurve));
+    adaptationAmount *= clamp(strength, 0.0, 1.0);
+    
+    const float darkThreshold = 0.5;
+    if (luma < darkThreshold) {
+        const float darkFactor = 1.0 - (luma / darkThreshold);
+        const float brightnessBoost = strength * darkFactor * max * 0.15;
+        color.rgb = mix(color.rgb, float3(1.0), brightnessBoost);
+    } else {
+        color.rgb = mix(color.rgb, float3(0.0), adaptationAmount);
+    }
     return color;
 }
 
@@ -280,7 +288,10 @@ fragment float4 legacyGlassFragment(VertexOut in [[stage_in]],
 
     float2 lensUV = (uv - lensMin) / (lensMax - lensMin);
     
-    const float sdf = roundedRectSDF(lensUV, uniforms.lensRadiusCanvas, uniforms.canvasSize, uniforms.cornerRadius);
+    const float sdf = roundedRectSDF(lensUV,
+                                     uniforms.lensRadiusCanvas,
+                                     uniforms.canvasSize,
+                                     uniforms.cornerRadius);
 
     const float aaWidth = fwidth(sdf) * 1.0;
 
@@ -329,7 +340,11 @@ fragment float4 legacyGlassFragment(VertexOut in [[stage_in]],
         color.rgb = mix(color.rgb, uniforms.tintColor.rgb, uniforms.tintColor.a);
     }
     
-    RimResult rim = applyRimHighlight(sdf, aaWidth, uniforms.rimHighlightWidth, uniforms.rimHighlightStrength, color.rgb);
+    RimResult rim = applyRimHighlight(sdf,
+                                      aaWidth,
+                                      uniforms.rimHighlightWidth,
+                                      uniforms.rimHighlightStrength,
+                                      color.rgb);
     color.rgb = rim.color;
 
     if (uniforms.glowProgress > 0.0) {
@@ -345,11 +360,11 @@ fragment float4 legacyGlassFragment(VertexOut in [[stage_in]],
                           uniforms.glowStrength);
     }
 
-    color = applyDimming(color,
-                         uniforms.dimmingMin,
-                         uniforms.dimmingMax,
-                         uniforms.dimmingStrength,
-                         uniforms.averageBackgroundLuma);
+    color = applyAdaptiveBrightness(color,
+                                    uniforms.brightnessAdaptationMin,
+                                    uniforms.brightnessAdaptationMax,
+                                    uniforms.brightnessAdaptationStrength,
+                                    uniforms.averageBackgroundLuma);
 
     if (uniforms.fillProgress > 0.0 && uniforms.fillColor.a > 0.0) {
         float fillMix = clamp(uniforms.fillProgress, 0.0, 1.0);

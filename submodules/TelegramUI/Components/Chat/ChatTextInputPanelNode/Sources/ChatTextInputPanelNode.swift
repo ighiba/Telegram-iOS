@@ -630,6 +630,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         self.glassBackgroundContainer = GlassBackgroundContainerView()
         
         self.textInputContainerBackgroundView = GlassBackgroundView(frame: CGRect())
+        self.textInputContainerBackgroundView.legacyGlassView?.setStyle(.inputBackground)
         
         self.accessoryPanelContainer = UIView()
         self.accessoryPanelContainer.clipsToBounds = true
