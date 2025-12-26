@@ -116,7 +116,7 @@ public extension LegacyGlassStyle {
     )
     
     static let lens = LegacyGlassStyle(
-        refractionStrength: 1.61,
+        refractionStrength: 1.63,
         refractionEdgeWidth: 0.80,
         refractionCenterStrength: 0.0,
         refractionEdgeStrength: -0.25,
@@ -135,8 +135,8 @@ public extension LegacyGlassStyle {
     )
     
     static let inputBackground = LegacyGlassStyle(
-        refractionStrength: -1.3,
-        refractionEdgeWidth: 0.95,
+        refractionStrength: -1.21,
+        refractionEdgeWidth: 1.02,
         refractionCenterStrength: 0.0,
         refractionEdgeStrength: 0.2,
         refractionXScale: 1.0,
@@ -151,7 +151,7 @@ public extension LegacyGlassStyle {
         activeOuterShadowWidth: 0.0,
         activeOuterShadowOpacity: 0.0,
         glowRadius: 10.0,
-        glowStrenght: 0.3,
+        glowStrenght: 0.4,
         isBlurEnabled: true,
     )
     
@@ -172,7 +172,7 @@ public extension LegacyGlassStyle {
         activeOuterShadowWidth: 0.0,
         activeOuterShadowOpacity: 0.0,
         glowRadius: 10.0,
-        glowStrenght: 0.3,
+        glowStrenght: 0.4,
         isBlurEnabled: true,
     )
     

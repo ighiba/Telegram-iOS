@@ -214,7 +214,7 @@ public final class LiquidLensView: UIView {
             legacyLensView.verticalPadding = 30
             legacyLensView.interactionScaleMax = 1.35
             legacyLensView.interactionJellyDirection = .vertical
-            legacyLensView.interactionJellyDamping = 14.0
+            legacyLensView.interactionJellyDamping = 12.0
             legacyLensView.interactionScaleUpDuration = 0.2
             legacyLensView.interactionScaleDownDuration = 0.2
             legacyLensView.interactionActivationUpDuration = 0.2

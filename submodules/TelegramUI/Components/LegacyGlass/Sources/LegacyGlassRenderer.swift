@@ -945,7 +945,6 @@ final class LegacyGlassRenderer: MTKView {
     }
     
     private func didUpdateCaptureMode(_ captureMode: LegacyGlassCaptureMode) {
-        print(captureMode)
         self.preferredFramesPerSecond = self.currentUpdateFrequency().renderFrameRate
         self.isTextureUpdateNeeded = true
         LegacyGlassSnapshotter.shared.updateMinCaptureFrameRate()

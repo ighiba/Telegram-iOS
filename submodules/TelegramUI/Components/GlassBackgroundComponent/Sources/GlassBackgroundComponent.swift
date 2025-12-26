@@ -371,7 +371,8 @@ public class GlassBackgroundView: UIView {
             legacyGlassView.interactionScaleDownDuration = 0.2
             legacyGlassView.verticalPadding = 10
             legacyGlassView.horizontalPadding = 10
-            legacyGlassView.setBlurFilterSigma(value: 0.2)
+            legacyGlassView.setBlurFilterSigma(value: 0.15)
+
             self.legacyGlassView = legacyGlassView
             self.legacyDarkTintColorOverride = UIColor(white: 0.34, alpha: 0.7)
             

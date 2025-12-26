@@ -266,7 +266,7 @@ final class LegacyGlassSnapshotter {
             format: self.groupRendererFormat
         )
         
-        self.currentSnapshot = self.captureSnapshotImage(
+        self.captureSnapshotImageAsync(
             using: imageRenderer,
             hostView: hostView,
             rect: self.captureRegion,
@@ -274,6 +274,28 @@ final class LegacyGlassSnapshotter {
         )
     }
 
+    private func captureSnapshotImageAsync(
+        using imageRenderer: UIGraphicsImageRenderer,
+        hostView: UIView,
+        rect: CGRect,
+        viewToExclude: UIView? = nil,
+        useLayerBasedRender: Bool = false
+    ) {
+        DispatchQueue.main.async { [weak self] in
+            guard let strongSelf = self else { return }
+            
+            let cgImage = strongSelf.captureSnapshotImage(
+                using: imageRenderer,
+                hostView: hostView,
+                rect: rect,
+                viewToExclude: viewToExclude,
+                useLayerBasedRender: useLayerBasedRender
+            )
+
+            strongSelf.currentSnapshot = cgImage
+        }
+    }
+    
     private func captureSnapshotImage(
         using imageRenderer: UIGraphicsImageRenderer,
         hostView: UIView,

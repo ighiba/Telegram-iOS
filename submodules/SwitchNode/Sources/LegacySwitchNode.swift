@@ -17,7 +17,7 @@ open class LegacySwitchNode: ASDisplayNode, SwitchNodeProtocol {
         }
     }
     
-    public var frameColor = UIColor(rgb: 0xe0e0e0) {
+    public var frameColor = UIColor(red: 0.92, green: 0.92, blue: 0.96, alpha: 0.3) {
         didSet {
             if self.isNodeLoaded {
                 if oldValue != self.frameColor {
@@ -33,7 +33,7 @@ open class LegacySwitchNode: ASDisplayNode, SwitchNodeProtocol {
             }
         }
     }
-    public var contentColor = UIColor(rgb: 0x42d451) {
+    public var contentColor = UIColor(red: 0.4, green: 0.81, blue: 0.4, alpha: 1.0) {
         didSet {
             if self.isNodeLoaded {
                 if oldValue != self.contentColor {

@@ -31,10 +31,10 @@ public final class LegacySwitchView: UIControl {
     public var knobTintColor: UIColor = .white {
         didSet { self.updateTrackAppearance(animated: true) }
     }
-    public var onTintColor: UIColor = .systemGreen {
+    public var onTintColor: UIColor = UIColor(red: 0.4, green: 0.81, blue: 0.4, alpha: 1.0) {
         didSet { self.updateTrackAppearance(animated: true) }
     }
-    public var offTintColor: UIColor = .tertiaryLabel {
+    public var offTintColor: UIColor = UIColor(red: 0.92, green: 0.92, blue: 0.96, alpha: 0.3) {
         didSet { self.updateTrackAppearance(animated: true) }
     }
     public override var tintColor: UIColor! {
